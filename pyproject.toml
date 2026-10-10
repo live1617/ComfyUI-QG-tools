@@ -1,0 +1,15 @@
+[project]
+name = "comfyui-qg-tools"
+description = "A ComfyUI custom node pack by QG. Currently ships a full-featured LoRA Loader (searchable rows, drag-to-set model/CLIP strengths, trigger-word merging, named templates, and model-chain LoRA absorption)."
+version = "0.3.0"
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/live1617/ComfyUI-QG-tools"
+
+[tool.comfy]
+PublisherId = "live1617"
+DisplayName = "ComfyUI-QG-Tools"

@@ -1,0 +1,7 @@
+# 本插件不依赖任何需要额外安装的第三方包。
+#
+# 它只用到 ComfyUI 运行期本来就有的模块：
+#   torch / comfy.sd / comfy.utils / folder_paths / aiohttp / server.PromptServer
+#
+# 保持本文件为空（仅注释）是有意为之：ComfyUI Manager 会读它，
+# 空文件表示「安装本插件时无需执行 pip install」。
