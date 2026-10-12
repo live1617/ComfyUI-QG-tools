@@ -1,17 +1,17 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026101216";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026101216";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026101216";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs";
-import { makeScrubInput } from "../shared/scrub_input.mjs";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs";
+} from "../shared/settings_menu.mjs?v=2026101216";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026101216";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101216";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026101216";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -31,7 +31,6 @@ import {
   applyTemplate,
   cycleMasterToggle,
   duplicateLoraKeys,
-  importNeedsSeparateStrengths,
   importSummary,
   isScrubbing,
   loaderLoraEntries,
@@ -63,8 +62,8 @@ import {
   toggleAllState,
   toggleTrigger,
   upsertTemplate,
-} from "../shared/lora_stack.mjs";
-import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs";
+} from "../shared/lora_stack.mjs?v=2026101216";
+import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026101216";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -547,6 +546,19 @@ function openPopup(element, anchorRect, { width } = {}) {
   return { place };
 }
 
+// Re-run the zh translator over a body-level popup. The translator hooks
+// insertions into <body> only; content swapped in afterwards (the async LoRA
+// info card, a repopulated picker list) is invisible to it. Re-inserting the
+// same element fires the observer again and is a no-op when no translator is
+// installed. Re-insertion drops focus, so give it back to whoever had it.
+function retranslate(element) {
+  if (!element.isConnected) return;
+  const active = document.activeElement;
+  const restore = active && element.contains(active) ? active : null;
+  element.replaceWith(element);
+  if (restore) restore.focus();
+}
+
 // Every commit is a user gesture and enters undo history; a drag passes
 // record: false for its intermediate values and records once on release.
 function commitRows(state, rows, { structural = false, record = true } = {}) {
@@ -671,9 +683,11 @@ function applyRangeTint(input, row, key) {
   input.classList.toggle("out-of-range", outside);
   // The border moved to the wrapper when the stepper arrived; tint it too.
   input.closest(".qgtools-lora-strengthbox")?.classList.toggle("out-of-range", outside);
-  input.title = range && (range.min !== null || range.max !== null)
-    ? `Suggested range ${range.min ?? "any"} to ${range.max ?? "any"}. ` + input.dataset.baseTitle
-    : input.dataset.baseTitle;
+  // The old title prefixed "Suggested range -2 to 2." - but the translator
+  // matches whole attributes only, so the varying numbers kept the whole
+  // tooltip English forever. The static base title translates; the range
+  // itself stays visible as the orange tint and in the info card's editors.
+  input.title = input.dataset.baseTitle;
 }
 
 // ---------- strength boxes ----------
@@ -685,6 +699,10 @@ function strengthBox(state, index, key) {
   input.dataset.baseTitle = key === "strength"
     ? "Model strength. Drag left/right to scrub, click to type, arrows to step. Shift = fine."
     : "CLIP strength. Drag left/right to scrub, click to type, arrows to step. Shift = fine.";
+  // The title must exist BEFORE insertion: the zh translator only reads
+  // attributes of elements present at insert time, and applyRangeTint first
+  // runs after the async range fetch - too late for a freshly-set title.
+  input.title = input.dataset.baseTitle;
   input.readOnly = true;
   input.__qgRead = () => state.rows[index]?.[key].toFixed(2) ?? "1.00";
   input.__qgTint = () => state.rows[index] && applyRangeTint(input, state.rows[index], key);
@@ -756,7 +774,9 @@ function strengthBox(state, index, key) {
     const button = el("button");
     button.type = "button";
     button.tabIndex = -1;
-    button.title = `Strength ${direction > 0 ? "up" : "down"} one step. Shift = fine.`;
+    button.title = direction > 0
+      ? "Strength up one step. Shift = fine."
+      : "Strength down one step. Shift = fine.";
     button.innerHTML = chevronIconSvg(direction > 0);
     button.addEventListener("click", (event) => {
       const coarse = state.settings?.step ?? DEFAULT_STEP;
@@ -852,6 +872,7 @@ function openPicker(state, index, anchor) {
     if (!filtered.length) {
       list.append(el("div", "qgtools-lora-empty",
         names.length ? "No matches." : "Put LoRA files in models/loras."));
+      retranslate(pop);
       return;
     }
     const searching = search.value.trim() !== "";
@@ -919,6 +940,7 @@ function openPicker(state, index, anchor) {
     .catch(() => {
       list.textContent = "";
       list.append(el("div", "qgtools-lora-empty", "Could not list LoRAs."));
+      retranslate(pop);
     });
 }
 
@@ -968,13 +990,20 @@ function openInfo(state, index, anchor) {
     image.addEventListener("error", () => image.remove());
     if (info.has_preview) card.append(image);
     card.append(el("h4", "", info.civitai_title || rowLabel(state, row.name)));
-    if (info.base_model) card.append(el("div", "qgtools-lora-meta", `Base model: ${info.base_model}`));
+    if (info.base_model) {
+      // "Base model" stays its own text node so the translator can match it;
+      // the value after it is data and needs no translation.
+      const base = el("div", "qgtools-lora-meta", "Base model");
+      base.append(`: ${info.base_model}`);
+      card.append(base);
+    }
     const size = formatFileSize(info.size_bytes);
     if (size) {
-      const when = Number.isFinite(info.mtime)
-        ? ` · modified ${new Date(info.mtime * 1000).toLocaleDateString()}`
-        : "";
-      card.append(el("div", "qgtools-lora-meta", `${size}${when}`));
+      const meta = el("div", "qgtools-lora-meta", size);
+      if (Number.isFinite(info.mtime)) {
+        meta.append(" · ", "modified", ` ${new Date(info.mtime * 1000).toLocaleDateString()}`);
+      }
+      card.append(meta);
     }
     if (Number.isInteger(info.civitai_model_id)) {
       const link = el("a", "qgtools-lora-civitai-link", "View on Civitai ↗");
@@ -1023,15 +1052,18 @@ function openInfo(state, index, anchor) {
       fetchButton.addEventListener("click", async () => {
         fetchButton.disabled = true;
         fetchButton.textContent = "Fetching...";
+        retranslate(card);
         try {
           if (!(await lookUpOnCivitai(serverName))) {
             fetchButton.textContent = "Not found on Civitai";
+            retranslate(card);
             return;
           }
           load();
         } catch (error) {
           fetchButton.textContent = "Civitai lookup failed";
           fetchButton.title = String(error?.message || error);
+          retranslate(card);
         }
       });
       card.append(fetchButton);
@@ -1063,7 +1095,9 @@ function openInfo(state, index, anchor) {
         value: info.range?.[key] ?? null, allowEmpty: true, emptyStart: key === "min" ? 0 : 1,
         placeholder: "any", min: STRENGTH_MIN, max: STRENGTH_MAX,
         step: 0.05, fineStep: 0.01, decimals: 2, width: 76,
-        title: `Suggested ${key === "min" ? "lowest" : "highest"} strength; erase it for any.`,
+        title: key === "min"
+          ? "Suggested lowest strength; erase it for any. Drag to scrub, click to type, arrows to step; Shift = fine."
+          : "Suggested highest strength; erase it for any. Drag to scrub, click to type, arrows to step; Shift = fine.",
         onSettle: saveRange,
       });
     }
@@ -1100,6 +1134,12 @@ function openInfo(state, index, anchor) {
     });
     custom.append(wordInput, addButton);
     card.append(custom);
+    // The zh translation plugin translates a popup once, at the moment it is
+    // appended to <body>; its observer does not watch subtree changes, so a
+    // card repopulated after the async lookup would stay English. Swapping
+    // the card with itself re-triggers that observer over the finished
+    // content (a no-op when no translator is installed).
+    retranslate(card);
   };
 
   const load = () => {
@@ -1112,6 +1152,7 @@ function openInfo(state, index, anchor) {
       .catch(() => {
         card.textContent = "";
         card.append(el("div", "qgtools-lora-empty", "Could not read LoRA info."));
+        retranslate(card);
       });
   };
   load();
@@ -1233,7 +1274,7 @@ function openRowMenu(state, index, event) {
   item("🗑 Delete all LoRAs…", () => {
     const confirmation = el("div", "qgtools-lora-menu");
     const message = el("div", "qgtools-lora-empty",
-      `Remove all ${state.rows.length} LoRA rows from this node? Files on disk are kept.`);
+      "Remove every LoRA row from this node? Files on disk are kept.");
     const cancel = el("button", "", "Cancel — keep LoRAs");
     const remove = el("button", "qgtools-lora-danger", "🗑 Yes, delete all rows");
     cancel.type = remove.type = "button";
@@ -1311,7 +1352,11 @@ function updateRowValues(state) {
     if (input.__qgTint) input.__qgTint();
   });
   const summary = state.panel.querySelector(".qgtools-lora-summary");
-  if (summary) summary.textContent = summarizeRows(state.rows);
+  if (summary) {
+    if (summary.firstChild) summary.firstChild.nodeValue = summarizeRows(state.rows);
+    const word = summary.querySelector(".qgtools-lora-sumword");
+    if (word) word.hidden = !state.rows.some((row) => row.name);
+  }
   const master = state.panel.querySelector(".qgtools-lora-master");
   if (master) {
     const overall = toggleAllState(state.rows);
@@ -1370,18 +1415,18 @@ async function runReconnect(state, { quiet = false } = {}) {
   }
   if (!quiet || repaired) {
     const lead = repaired
-      ? `Reconnected ${repaired} LoRA path${repaired === 1 ? "" : "s"}`
-      : "LoRA list refreshed";
+      ? zhCount("Reconnected {n} LoRA path", "Reconnected {n} LoRA paths", repaired)
+      : zh("LoRA list refreshed");
     if (unresolved) {
-      loraToast(`${lead}; ${unresolved} row${unresolved === 1 ? "" : "s"} still missing.`);
+      loraToast(`${lead}${zhSep()}${zhCount("{n} row still missing", "{n} rows still missing", unresolved)}`);
     } else {
-      loraToast(repaired ? `${lead}.` : `${lead}; every row points at a real file.`);
+      loraToast(repaired ? `${lead}${zhEnd()}` : `${lead}${zhSep()}${zh("every row points at a real file")}`);
     }
   }
 }
 
 function loraToast(detail) {
-  showToast({ summary: "LoRA Loader \u{1F18E}", detail, life: 7000 });
+  showToast({ summary: "LoRA Loader", detail, life: 7000 });
 }
 
 async function runImportChain(state) {
@@ -1451,16 +1496,10 @@ async function runImportChain(state) {
     loraToast(`Absorb needs more than ${MAX_ROWS} rows. Free some stack rows first; source loaders remain active.`);
     return;
   }
-  // Rows that patch model and CLIP differently need both boxes visible, or
-  // the difference is invisible and lost on the first scrub. The flip is
-  // node-local (unified stays the default for new nodes) and the toast
-  // names it so it never reads as a settings change.
-  let separated = false;
-  if (importNeedsSeparateStrengths([...upResolved, ...downResolved])
-      && linked(state)) {
-    state.node.properties.qgLoraLinked = false;
-    separated = true;
-  }
+  // Imported rows keep whatever strength mode the node is already in: new
+  // nodes start unified, so the CLIP box stays hidden unless the user turns
+  // on "Separate model / CLIP strength" in Settings (2026-10-12 user request:
+  // importing must not flip the view by itself).
   const absorbed = [...activeUp, ...activeDown];
   for (const loader of absorbed) loader.mode = BYPASS_MODE;
   commitRows(state, downMerge.rows, { structural: true });
@@ -1473,10 +1512,7 @@ async function runImportChain(state) {
     remapped,
     missing,
     ambiguous,
-  }) + (separated
-    ? " An imported row patches model and CLIP differently, so this node "
-      + "now shows both strength boxes."
-    : ""));
+  }));
 }
 
 function openSettings(state, anchor) {
@@ -1586,7 +1622,11 @@ function renderRows(state) {
   gear.innerHTML = gearIconSvg();
   gear.addEventListener("click", () => openSettings(state, gear));
   const group = el("div", "qgtools-lora-bargroup");
-  group.append(templates, master, el("span", "qgtools-lora-summary", summarizeRows(state.rows)), recheck, gear);
+  const summary = el("span", "qgtools-lora-summary", summarizeRows(state.rows));
+  const sumWord = el("span", "qgtools-lora-sumword", "enabled");
+  summary.append(sumWord);
+  sumWord.hidden = !state.rows.some((row) => row.name);
+  group.append(templates, master, summary, recheck, gear);
   bar.append(group);
   body.append(bar);
 

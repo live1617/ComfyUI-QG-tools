@@ -8,9 +8,9 @@
 //                        title: "LoRA Loader settings",
 //                        onChange: (values, key) => rerender(values) });
 
-import { makeScrubInput } from "./scrub_input.mjs";
-import { BRAND } from "./index.mjs";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101216";
+import { BRAND } from "./index.mjs?v=2026101216";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026101216";
 import {
   isOverrideActive,
   isOverrideEntry,
@@ -18,7 +18,7 @@ import {
   overrideEnableValue,
   overrideIsCustom,
   schemaDefaults,
-} from "./node_settings.mjs";
+} from "./node_settings.mjs?v=2026101216";
 
 const CSS_ID = "qgtools-settings-css";
 
@@ -119,7 +119,7 @@ function ensureSettingsCss() {
   .qgtools-set-seg { display: flex; flex: none; border: 1px solid #3a4047; border-radius: 5px;
     overflow: hidden; }
   .qgtools-set-seg button { height: 24px; border: none; background: #23272c; color: #9ba2aa;
-    cursor: pointer; padding: 0 9px; font: inherit; }
+    cursor: pointer; padding: 0 9px; font: inherit; white-space: nowrap; }
   .qgtools-set-seg button + button { border-left: 1px solid #3a4047; }
   .qgtools-set-seg button.on { background: ${BRAND}; color: #08211f; font-weight: 600; }
   .qgtools-set-foot { display: flex; align-items: center; gap: 8px; padding: 9px 10px;
@@ -136,7 +136,8 @@ function ensureSettingsCss() {
   .qgtools-set-dl .term { color: ${BRAND}; font-weight: 600; }
   .qgtools-set-dl .detail { color: #9ba2aa; line-height: 1.4; }
   .qgtools-set-btn { height: 24px; border: 1px solid #3a4047; border-radius: 5px;
-    background: #23272c; color: #d7dde2; cursor: pointer; padding: 0 12px; font: inherit; }
+    background: #23272c; color: #d7dde2; cursor: pointer; padding: 0 12px; font: inherit;
+    flex: none; white-space: nowrap; }
   .qgtools-set-btn:hover { border-color: ${BRAND}; }
   .qgtools-set-btn.primary { margin-left: auto; border-color: ${BRAND}; color: ${BRAND}; }
   .qgtools-set-btn.primary:hover { background: ${BRAND}; color: #08211f; }

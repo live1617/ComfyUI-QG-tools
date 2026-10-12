@@ -5,11 +5,15 @@
 // entry points live in web/<node>/index.js and import from here.
 
 import { app } from "/scripts/app.js";
+import { zh } from "./zh.mjs?v=2026101216";
+
+// Re-exported so node entry points keep a single shared import path.
+export { zh, zhOn, zhCount, zhSep, zhEnd } from "./zh.mjs?v=2026101216";
 
 // Kept in lockstep with __version__ in the pack's __init__.py by hand.
 // The backend does not serve a matching version endpoint here, so this
 // is informational: bump it if the frontend and backend drift apart.
-export const QG_JS_VERSION = "0.3.0";
+export const QG_JS_VERSION = "0.4.0";
 
 export const BRAND = "#00b4aa"; // QG-tools teal — keep node accents consistent.
 export const BRAND_DARK = "#007f78";
@@ -49,17 +53,21 @@ export function isQgNode(node) {
 // One toast for every QG-tools message. The frontend's toast store queues a
 // PrimeVue toast; a frontend without one gets the console instead, and this
 // never throws - a message must not break the action that raised it.
+// Summary/detail go through zh() because PrimeVue toasts render inside the
+// app root, where the zh DOM translator's observer never looks; see zh.mjs.
 export function showToast({ detail, severity = "info", summary = "QG-tools", life = 5000 } = {}) {
+  const title = zh(summary);
+  const body = zh(detail);
   try {
     const toast = app?.extensionManager?.toast;
     if (typeof toast?.add === "function") {
-      toast.add({ severity, summary, detail, life });
+      toast.add({ severity, summary: title, detail: body, life });
       return;
     }
   } catch (_error) {
     // Toast store missing or incompatible: fall through to the console.
   }
-  const line = `[QG-tools] ${summary === "QG-tools" ? "" : `${summary}: `}${detail}`;
+  const line = `[QG-tools] ${summary === "QG-tools" ? "" : `${title}: `}${body}`;
   if (severity === "error" || severity === "warn") console.warn(line);
   else console.log(line);
 }

@@ -4,6 +4,8 @@
 // master-toggle memory. DOM wiring lives in js/lora_loader/index.js;
 // everything here runs under node:test.
 
+import { zhCount, zhSep, zhEnd } from "./zh.mjs?v=2026101216";
+
 export const STRENGTH_MIN = -10;
 export const STRENGTH_MAX = 10;
 export const DEFAULT_STEP = 0.05;
@@ -180,7 +182,9 @@ export function toggleTrigger(triggers, word) {
 export function summarizeRows(rows) {
   const on = rows.filter((row) => row.enabled && row.name).length;
   const total = rows.filter((row) => row.name).length;
-  return total === 0 ? "no LoRAs" : `${on} / ${total} on`;
+  // The "enabled" word is appended as its own text node at the call sites,
+  // so the translator can match it as a static string.
+  return total === 0 ? "no LoRAs" : `${on} / ${total}`;
 }
 
 // Master toggle model: "on" when every named row is enabled, "off" when none
@@ -651,16 +655,36 @@ export function importNeedsSeparateStrengths(entries) {
   );
 }
 
+// Toast summaries are composed from "{n}" templates (see shared/zh.mjs) so
+// the zh plugin's dictionary can translate each fragment; counts never break
+// whole-string matching because translation happens here, before the toast.
+const SUMMARY_SEGMENTS = {
+  empty: "No LoRA loaders found in the model chain.",
+  imported1: "Imported {n} LoRA",
+  importedN: "Imported {n} LoRAs",
+  bypassed1: "bypassed {n} loader node",
+  bypassedN: "bypassed {n} loader nodes",
+  skipped: "skipped {n} already in the stack",
+  remapped1: "{n} path remapped to this install",
+  remappedN: "{n} paths remapped to this install",
+  broken1: "{n} name not resolved - check the red rows",
+  brokenN: "{n} names not resolved - check the red rows",
+};
+
+function segment(key, n) {
+  return zhCount(SUMMARY_SEGMENTS[key], SUMMARY_SEGMENTS[key], n);
+}
+
 export function importSummary({ added = 0, skipped = 0, bypassed = 0,
                                 remapped = 0, missing = 0, ambiguous = 0 } = {}) {
-  if (!added && !skipped && !bypassed) return "No LoRA loaders found in the model chain.";
-  const parts = [`Imported ${added} LoRA${added === 1 ? "" : "s"}`];
-  if (bypassed) parts.push(`bypassed ${bypassed} loader node${bypassed === 1 ? "" : "s"}`);
-  if (skipped) parts.push(`skipped ${skipped} already in the stack`);
-  if (remapped) parts.push(`${remapped} path${remapped === 1 ? "" : "s"} remapped to this install`);
+  if (!added && !skipped && !bypassed) return segment("empty", 0);
+  const parts = [segment(added === 1 ? "imported1" : "importedN", added)];
+  if (bypassed) parts.push(segment(bypassed === 1 ? "bypassed1" : "bypassedN", bypassed));
+  if (skipped) parts.push(segment("skipped", skipped));
+  if (remapped) parts.push(segment(remapped === 1 ? "remapped1" : "remappedN", remapped));
   const broken = missing + ambiguous;
-  if (broken) parts.push(`${broken} name${broken === 1 ? "" : "s"} not resolved - check the red rows`);
-  return `${parts.join("; ")}.`;
+  if (broken) parts.push(segment(broken === 1 ? "broken1" : "brokenN", broken));
+  return `${parts.join(zhSep())}${zhEnd()}`;
 }
 
 function upstreamModelNode(node) {

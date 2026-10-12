@@ -1,85 +1,386 @@
 {
   "pack": "ComfyUI-QG-tools",
-  "pack_version": "0.3.0",
+  "pack_version": "0.4.0",
   "source": {
     "plugin": "ComfyUI-AusBoss",
     "version": "2.10.1",
     "archive": "ComfyUI-AusBoss-main.zip (ausboss/ComfyUI-AusBoss)",
     "license": "MIT — licenses/ComfyUI-AusBoss-LICENSE.txt"
   },
-  "node": {
-    "id": "QG_LoraLoader",
-    "class": "QGLoraLoader",
-    "display": "QG LoRA Loader",
-    "category": "QG-tools",
-    "source_id": "AUSBOSS_NODES_LoraLoader",
-    "source_class": "AusBossLoraLoader",
-    "source_display": "LoRA Loader 🆎",
-    "source_category": "🆎 AusBoss/Loaders"
+  "scripts": {
+    "port_lora_loader": "tools/port_node.py（v0.3.0）",
+    "rename_to_qg": "tools/rename_to_qg.py（v0.3.0，统一 QG 命名）",
+    "rename_css_prefix": "tools/rename_css_prefix.py（v0.3.0，CSS 前缀 qgtools-）",
+    "port_note_and_switches": "tools/port_nodes_41_42.py（v0.4.0）",
+    "verify": "tools/verify_port.py（残留 / import 对齐 / 注册一致性）"
   },
-  "files": [
+  "nodes": [
     {
-      "from": "nodes/node_lora_loader.py",
-      "to": "nodes/qg_lora_loader.py",
-      "stage1_rewrites": [
-        { "old": "from ._lora_helpers import", "new": "from ._ausboss_lora_helpers import", "count": 1 }
+      "id": "QG_LoraLoader",
+      "class": "QGLoraLoader",
+      "display": "QG LoRA Loader",
+      "category": "QG-tools",
+      "source_id": "AUSBOSS_NODES_LoraLoader",
+      "source_class": "AusBossLoraLoader",
+      "source_display": "LoRA Loader 🆎",
+      "source_category": "🆎 AusBoss/Loaders",
+      "files": [
+        {
+          "from": "nodes/node_lora_loader.py",
+          "to": "nodes/qg_lora_loader.py",
+          "stage1_rewrites": [
+            {
+              "old": "from ._lora_helpers import",
+              "new": "from ._ausboss_lora_helpers import",
+              "count": 1
+            }
+          ],
+          "stage2_renamed_from": "nodes/ausboss_lora_loader.py"
+        },
+        {
+          "from": "nodes/_lora_helpers.py",
+          "to": "nodes/_qg_lora_helpers.py",
+          "stage1_rewrites": [
+            {
+              "old": "/ausboss/lora/",
+              "new": "/qg/lora/",
+              "count": 6
+            },
+            {
+              "old": "_ausboss_lora_routes",
+              "new": "_qg_lora_routes",
+              "count": 2
+            }
+          ],
+          "stage2_renamed_from": "nodes/_ausboss_lora_helpers.py"
+        },
+        {
+          "from": "js/lora_loader/index.js",
+          "to": "web/lora_loader/index.js",
+          "stage1_rewrites": [
+            {
+              "old": "/ausboss/lora/",
+              "new": "/qg/lora/",
+              "count": 9
+            }
+          ]
+        },
+        {
+          "from": "js/shared/canvas_passthrough.mjs",
+          "to": "web/shared/canvas_passthrough.mjs"
+        },
+        {
+          "from": "js/shared/civitai_lookup.mjs",
+          "to": "web/shared/civitai_lookup.mjs"
+        },
+        {
+          "from": "js/shared/index.mjs",
+          "to": "web/shared/index.mjs"
+        },
+        {
+          "from": "js/shared/lora_stack.mjs",
+          "to": "web/shared/lora_stack.mjs"
+        },
+        {
+          "from": "js/shared/node_settings.mjs",
+          "to": "web/shared/node_settings.mjs"
+        },
+        {
+          "from": "js/shared/panel_layout.mjs",
+          "to": "web/shared/panel_layout.mjs"
+        },
+        {
+          "from": "js/shared/scrub_input.mjs",
+          "to": "web/shared/scrub_input.mjs"
+        },
+        {
+          "from": "js/shared/settings_menu.mjs",
+          "to": "web/shared/settings_menu.mjs"
+        },
+        {
+          "from": "js/shared/widget_card_math.mjs",
+          "to": "web/shared/widget_card_math.mjs"
+        },
+        {
+          "from": "js/shared/widget_visibility.mjs",
+          "to": "web/shared/widget_visibility.mjs"
+        }
       ],
-      "stage2_renamed_from": "nodes/ausboss_lora_loader.py"
+      "stage1_port_script": "tools/port_node.py",
+      "stage2_rename_script": "tools/rename_to_qg.py",
+      "stage2_changes": {
+        "node_id": {
+          "old": "AUSBOSS_NODES_LoraLoader",
+          "new": "QG_LoraLoader"
+        },
+        "display_name": {
+          "old": "LoRA Loader 🆎",
+          "new": "QG LoRA Loader"
+        },
+        "category": {
+          "old": "🆎 AusBoss/Loaders",
+          "new": "QG-tools"
+        },
+        "python_class": {
+          "old": "AusBossLoraLoader",
+          "new": "QGLoraLoader"
+        },
+        "route_handlers": {
+          "old": "ausboss_lora_*",
+          "new": "qg_lora_*",
+          "count": 6
+        },
+        "log_prefix": {
+          "old": "[AusBoss] LoRA Loader:",
+          "new": "[QG-tools] LoRA Loader:",
+          "count": 3
+        },
+        "toast_summary": {
+          "old": "AusBoss",
+          "new": "QG-tools"
+        },
+        "extension_name": {
+          "old": "AusBoss.LoraLoader",
+          "new": "QG.LoraLoader"
+        },
+        "templates_key": {
+          "old": "AusBoss.lora_loader.templates",
+          "new": "QG.lora_loader.templates"
+        },
+        "settings_key": {
+          "old": "ausboss.settings.<scope>",
+          "new": "qg.settings.<scope>"
+        },
+        "dom_widget": {
+          "old": "ausboss_lora_rows",
+          "new": "qg_lora_rows"
+        },
+        "node_property": {
+          "old": "ausbossLoraLinked",
+          "new": "qgLoraLinked"
+        },
+        "dataset_and_selector": {
+          "old": "ausbossFull / [data-ausboss-full]",
+          "new": "qgFull / [data-qg-full]"
+        },
+        "is_own_node_prefix": {
+          "old": "startsWith(\"AUSBOSS_NODES_\")",
+          "new": "startsWith(\"QG_\")"
+        },
+        "user_store_dir": {
+          "old": "<ComfyUI>/user/ausboss/",
+          "new": "<ComfyUI>/user/QG-tools/"
+        },
+        "js_version_const": {
+          "old": "AUSBOSS_JS_VERSION",
+          "new": "QG_JS_VERSION"
+        }
+      },
+      "stage3_rename_script": "tools/rename_css_prefix.py",
+      "stage3_changes": {
+        "note": "阶段 2 故意保留的私有 CSS 类名 / style 元素 id，阶段 3 统一改成 qgtools- 前缀（qg- 太短易误匹配其它插件）。共 4 个前端文件 / 278 处。",
+        "lora_loader_panel": {
+          "old": "ausboss-lora-* / ausboss-lora-styles",
+          "new": "qgtools-lora-* / qgtools-lora-styles",
+          "count": 169
+        },
+        "settings_menu": {
+          "old": "ausboss-set-* / ausboss-settings-css",
+          "new": "qgtools-set-* / qgtools-settings-css",
+          "count": 87
+        },
+        "scrub_input": {
+          "old": "ausboss-scrub* / ausboss-scrub-css",
+          "new": "qgtools-scrub* / qgtools-scrub-css",
+          "count": 19
+        },
+        "own_panel_detect": {
+          "old": "className.includes(\"ausboss-\")",
+          "new": "className.includes(\"qgtools-\")",
+          "count": 3
+        }
+      }
     },
     {
-      "from": "nodes/_lora_helpers.py",
-      "to": "nodes/_qg_lora_helpers.py",
-      "stage1_rewrites": [
-        { "old": "/ausboss/lora/", "new": "/qg/lora/", "count": 6 },
-        { "old": "_ausboss_lora_routes", "new": "_qg_lora_routes", "count": 2 }
+      "id": "QG_WorkflowNote",
+      "class": "QGWorkflowNote",
+      "display": "QG Workflow Note",
+      "category": "QG-tools",
+      "source_id": "AUSBOSS_NODES_WorkflowNote",
+      "source_class": "AusBossWorkflowNote",
+      "source_display": "Workflow Note 🆎",
+      "source_category": "🆎 AusBoss/Utility",
+      "kind": "纯前端节点：无输入无输出、不进提示词；Python 侧只是空壳注册。",
+      "files": [
+        {
+          "from": "nodes/node_workflow_note.py",
+          "to": "nodes/qg_workflow_note.py"
+        },
+        {
+          "from": "js/workflow_note/index.js",
+          "to": "web/workflow_note/index.js"
+        },
+        {
+          "from": "js/shared/appearance.mjs",
+          "to": "web/shared/appearance.mjs"
+        },
+        {
+          "from": "js/shared/clipboard.mjs",
+          "to": "web/shared/clipboard.mjs"
+        },
+        {
+          "from": "js/shared/discard_prompt.mjs",
+          "to": "web/shared/discard_prompt.mjs"
+        },
+        {
+          "from": "js/shared/media_list.mjs",
+          "to": "web/shared/media_list.mjs"
+        },
+        {
+          "from": "js/shared/media_picker.mjs",
+          "to": "web/shared/media_picker.mjs"
+        },
+        {
+          "from": "js/shared/pad_canvas.mjs",
+          "to": "web/shared/pad_canvas.mjs"
+        },
+        {
+          "from": "js/shared/transform_geometry.mjs",
+          "to": "web/shared/transform_geometry.mjs"
+        },
+        {
+          "from": "js/shared/widget_card.mjs",
+          "to": "web/shared/widget_card.mjs"
+        },
+        {
+          "from": "js/shared/workflow_note.mjs",
+          "to": "web/shared/workflow_note.mjs"
+        }
       ],
-      "stage2_renamed_from": "nodes/_ausboss_lora_helpers.py"
+      "skipped_already_present": [
+        "web/shared/index.mjs",
+        "web/shared/canvas_passthrough.mjs",
+        "web/shared/lora_stack.mjs",
+        "web/shared/panel_layout.mjs",
+        "web/shared/scrub_input.mjs",
+        "web/shared/widget_card_math.mjs",
+        "web/shared/widget_visibility.mjs"
+      ],
+      "rename_rules": {
+        "note": "v0.4.0 用 tools/port_nodes_41_42.py 一次完成复制 + 改名，共 460 处替换，每条规则带命中计数断言；替换后残留扫描归零。",
+        "node_id": {
+          "old": "AUSBOSS_NODES_WorkflowNote / AUSBOSS_NODES_WorkflowSwitches",
+          "new": "QG_WorkflowNote / QG_WorkflowSwitches"
+        },
+        "own_lora_loader_ref": {
+          "old": "AUSBOSS_NODES_LoraLoader",
+          "new": "QG_LoraLoader",
+          "count": 2
+        },
+        "extension_name": {
+          "old": "AusBoss.WorkflowNote / AusBoss.WorkflowSwitches",
+          "new": "QG.WorkflowNote / QG.WorkflowSwitches"
+        },
+        "shared_symbols": {
+          "old": "notifyAusbossChange / isAusbossNode",
+          "new": "notifyQgChange / isQgNode",
+          "why": "必须与 v0.3.0 搬进来的 shared/index.mjs 导出一致"
+        },
+        "css_prefix": {
+          "old": "ausboss-note-* / ausboss-ws-* / ausboss-card-* / ausboss-media-* / ausboss-discard-*",
+          "new": "同前缀换成 qgtools-"
+        },
+        "dom_widget_and_props": {
+          "old": "ausboss_workflow_note_panel / __ausbossNote / __ausbossWorkflowSwitches / ausboss_show_edit ...",
+          "new": "qg_*"
+        },
+        "settings_property": {
+          "old": "ausboss_workflow_switches",
+          "new": "qg_workflow_switches"
+        },
+        "color_scheme_row": {
+          "old": "{ name: \"AusBoss\" }",
+          "new": "{ name: \"QG-tools\" }"
+        }
+      }
     },
     {
-      "from": "js/lora_loader/index.js",
-      "to": "web/lora_loader/index.js",
-      "stage1_rewrites": [
-        { "old": "/ausboss/lora/", "new": "/qg/lora/", "count": 9 }
-      ]
-    },
-    { "from": "js/shared/canvas_passthrough.mjs", "to": "web/shared/canvas_passthrough.mjs" },
-    { "from": "js/shared/civitai_lookup.mjs", "to": "web/shared/civitai_lookup.mjs" },
-    { "from": "js/shared/index.mjs", "to": "web/shared/index.mjs" },
-    { "from": "js/shared/lora_stack.mjs", "to": "web/shared/lora_stack.mjs" },
-    { "from": "js/shared/node_settings.mjs", "to": "web/shared/node_settings.mjs" },
-    { "from": "js/shared/panel_layout.mjs", "to": "web/shared/panel_layout.mjs" },
-    { "from": "js/shared/scrub_input.mjs", "to": "web/shared/scrub_input.mjs" },
-    { "from": "js/shared/settings_menu.mjs", "to": "web/shared/settings_menu.mjs" },
-    { "from": "js/shared/widget_card_math.mjs", "to": "web/shared/widget_card_math.mjs" },
-    { "from": "js/shared/widget_visibility.mjs", "to": "web/shared/widget_visibility.mjs" }
+      "id": "QG_WorkflowSwitches",
+      "class": "QGWorkflowSwitches",
+      "display": "QG Workflow Switches",
+      "category": "QG-tools",
+      "source_id": "AUSBOSS_NODES_WorkflowSwitches",
+      "source_class": "AusBossWorkflowSwitches",
+      "source_display": "Workflow Switches 🆎",
+      "source_category": "🆎 AusBoss/Utility",
+      "kind": "纯前端节点：开关状态存在节点属性里，随工作流保存。",
+      "files": [
+        {
+          "from": "nodes/node_workflow_switches.py",
+          "to": "nodes/qg_workflow_switches.py"
+        },
+        {
+          "from": "js/workflow_switches/index.js",
+          "to": "web/workflow_switches/index.js"
+        },
+        {
+          "from": "js/shared/workflow_switches.mjs",
+          "to": "web/shared/workflow_switches.mjs"
+        },
+        {
+          "from": "js/shared/widget_card.mjs",
+          "to": "web/shared/widget_card.mjs",
+          "note": "与说明卡共用，只搬一份"
+        }
+      ],
+      "skipped_already_present": [
+        "web/shared/index.mjs",
+        "web/shared/canvas_passthrough.mjs",
+        "web/shared/lora_stack.mjs",
+        "web/shared/panel_layout.mjs",
+        "web/shared/scrub_input.mjs",
+        "web/shared/widget_card_math.mjs",
+        "web/shared/widget_visibility.mjs"
+      ],
+      "rename_rules": {
+        "note": "v0.4.0 用 tools/port_nodes_41_42.py 一次完成复制 + 改名，共 460 处替换，每条规则带命中计数断言；替换后残留扫描归零。",
+        "node_id": {
+          "old": "AUSBOSS_NODES_WorkflowNote / AUSBOSS_NODES_WorkflowSwitches",
+          "new": "QG_WorkflowNote / QG_WorkflowSwitches"
+        },
+        "own_lora_loader_ref": {
+          "old": "AUSBOSS_NODES_LoraLoader",
+          "new": "QG_LoraLoader",
+          "count": 2
+        },
+        "extension_name": {
+          "old": "AusBoss.WorkflowNote / AusBoss.WorkflowSwitches",
+          "new": "QG.WorkflowNote / QG.WorkflowSwitches"
+        },
+        "shared_symbols": {
+          "old": "notifyAusbossChange / isAusbossNode",
+          "new": "notifyQgChange / isQgNode",
+          "why": "必须与 v0.3.0 搬进来的 shared/index.mjs 导出一致"
+        },
+        "css_prefix": {
+          "old": "ausboss-note-* / ausboss-ws-* / ausboss-card-* / ausboss-media-* / ausboss-discard-*",
+          "new": "同前缀换成 qgtools-"
+        },
+        "dom_widget_and_props": {
+          "old": "ausboss_workflow_note_panel / __ausbossNote / __ausbossWorkflowSwitches / ausboss_show_edit ...",
+          "new": "qg_*"
+        },
+        "settings_property": {
+          "old": "ausboss_workflow_switches",
+          "new": "qg_workflow_switches"
+        },
+        "color_scheme_row": {
+          "old": "{ name: \"AusBoss\" }",
+          "new": "{ name: \"QG-tools\" }"
+        }
+      }
+    }
   ],
-  "stage2_rename_script": "tools/rename_to_qg.py",
-  "stage2_changes": {
-    "node_id": { "old": "AUSBOSS_NODES_LoraLoader", "new": "QG_LoraLoader" },
-    "display_name": { "old": "LoRA Loader 🆎", "new": "QG LoRA Loader" },
-    "category": { "old": "🆎 AusBoss/Loaders", "new": "QG-tools" },
-    "python_class": { "old": "AusBossLoraLoader", "new": "QGLoraLoader" },
-    "route_handlers": { "old": "ausboss_lora_*", "new": "qg_lora_*", "count": 6 },
-    "log_prefix": { "old": "[AusBoss] LoRA Loader:", "new": "[QG-tools] LoRA Loader:", "count": 3 },
-    "toast_summary": { "old": "AusBoss", "new": "QG-tools" },
-    "extension_name": { "old": "AusBoss.LoraLoader", "new": "QG.LoraLoader" },
-    "templates_key": { "old": "AusBoss.lora_loader.templates", "new": "QG.lora_loader.templates" },
-    "settings_key": { "old": "ausboss.settings.<scope>", "new": "qg.settings.<scope>" },
-    "dom_widget": { "old": "ausboss_lora_rows", "new": "qg_lora_rows" },
-    "node_property": { "old": "ausbossLoraLinked", "new": "qgLoraLinked" },
-    "dataset_and_selector": { "old": "ausbossFull / [data-ausboss-full]", "new": "qgFull / [data-qg-full]" },
-    "is_own_node_prefix": { "old": "startsWith(\"AUSBOSS_NODES_\")", "new": "startsWith(\"QG_\")" },
-    "user_store_dir": { "old": "<ComfyUI>/user/ausboss/", "new": "<ComfyUI>/user/QG-tools/" },
-    "js_version_const": { "old": "AUSBOSS_JS_VERSION", "new": "QG_JS_VERSION" }
-  },
-  "stage3_rename_script": "tools/rename_css_prefix.py",
-  "stage3_changes": {
-    "note": "阶段 2 故意保留的私有 CSS 类名 / style 元素 id，阶段 3 统一改成 qgtools- 前缀（qg- 太短易误匹配其它插件）。共 4 个前端文件 / 278 处。",
-    "lora_loader_panel": { "old": "ausboss-lora-* / ausboss-lora-styles", "new": "qgtools-lora-* / qgtools-lora-styles", "count": 169 },
-    "settings_menu": { "old": "ausboss-set-* / ausboss-settings-css", "new": "qgtools-set-* / qgtools-settings-css", "count": 87 },
-    "scrub_input": { "old": "ausboss-scrub* / ausboss-scrub-css", "new": "qgtools-scrub* / qgtools-scrub-css", "count": 19 },
-    "own_panel_detect": { "old": "className.includes(\"ausboss-\")", "new": "className.includes(\"qgtools-\")", "count": 3 }
-  },
   "kept_on_purpose": [
     {
       "what": "AUSBOSS_LAB_LoraLoader",
@@ -89,15 +390,26 @@
     {
       "what": "licenses/ComfyUI-AusBoss-LICENSE.txt",
       "why": "MIT 许可证要求保留原始版权声明。"
+    },
+    {
+      "what": "https://github.com/ausboss/ComfyUI-AusBoss",
+      "where": "web/workflow_note/index.js",
+      "why": "上游作者的仓库地址（卡片默认链接行、节点包行的默认 URL）。路径里的 ausboss 是对方的 GitHub 账号，改了就是死链。"
+    },
+    {
+      "what": "AUSBOSS_LAB_LoraLoader",
+      "where": "web/shared/lora_stack.mjs",
+      "why": "本批文件里出现 0 次；列入保护名单是防止将来改名时误伤（见 LoRA Loader 那节的长解释）。"
     }
   ],
   "not_ported": [
-    "js/ 下 11 个全局前端层目录（chrome / appearance / notify / replace_missing / recreate / run_check / editor_command / face_handover / prompt_scope / cache_guard / workflow_note）—— 不绑定具体节点，搬过来会和原插件抢同一批 UI 钩子。",
-    "js/shared 里未被本节点 import 闭包引用的模块。",
-    "其余 41 个节点及其专属前端。"
+    "js/ 下 11 个全局前端层目录（chrome / appearance / notify / replace_missing / recreate / run_check / editor_command / face_handover / prompt_scope / cache_guard）—— 不绑定具体节点，搬过来会和原插件抢同一批 UI 钩子。",
+    "js/shared 里未被已搬节点 import 闭包引用的模块。",
+    "其余 39 个节点及其专属前端。"
   ],
   "known_limits": [
-    "节点 ID 已改为 QG_LoraLoader，含 AUSBOSS_NODES_LoraLoader 的旧工作流需要重新放节点。",
-    "CSS 类名已统一为 qgtools- 前缀（阶段 3）；canvas_passthrough.mjs 的自家面板判定已同步改为 includes(\"qgtools-\")。若日后自行增设面板元素，类名也要带 qgtools- 前缀才会被认作自家面板。"
+    "节点 ID 已改为 QG_*，含 AUSBOSS_NODES_* 的旧工作流需要重新放节点。",
+    "CSS 类名统一 qgtools- 前缀；canvas_passthrough.mjs 的自家面板判定靠 includes(\"qgtools-\")，日后自设面板元素也要带这个前缀。",
+    "workflow_note / workflow_switches 的部分配套功能（节点配色方案、顶部 chrome、toast 汇总）来自未搬过来的全局前端层：少了它们，卡片和开关的样式仍可用，但不参与原插件的全局外观联动。"
   ]
 }

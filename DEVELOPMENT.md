@@ -23,12 +23,20 @@ ComfyUI-QG-tools/
 ├── nodes/
 │   ├── __init__.py                    # 占位，不要在这里写节点
 │   ├── _qg_lora_helpers.py            # 被引用，不注册节点（下划线开头 = 不扫）
-│   └── qg_lora_loader.py              # 注册 QG_LoraLoader
+│   ├── qg_lora_loader.py              # 注册 QG_LoraLoader
+│   ├── qg_workflow_note.py            # 注册 QG_WorkflowNote（纯前端节点，无依赖）
+│   └── qg_workflow_switches.py        # 注册 QG_WorkflowSwitches（纯前端节点，无依赖）
 └── web/                               # WEB_DIRECTORY
     ├── qg_init.js                     # 本插件自己的前端入口
     ├── lora_loader/index.js           # LoRA Loader 的界面（= 一个 ComfyUI 前端扩展）
+    ├── workflow_note/index.js         # 工作流说明卡界面
+    ├── workflow_switches/index.js     # 工作流开关界面
     └── shared/*.mjs                   # 被上面 import 的共享模块（.mjs = 不会被当扩展加载）
 ```
+
+`web/shared/` 里有两类模块：本插件节点自己抽出来的（`lora_stack`、`widget_card`、`panel_layout`…），
+以及被它们串起来带进来的通用工具（`transform_geometry`、`media_picker`、`pad_canvas`…）。
+后一类当前没有节点直接用，但**别删** —— 删了会让 `widget_card.mjs` 的 import 断链。
 
 ## 命名约定
 
@@ -70,7 +78,16 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "QG 我的节点"}
   （改名的第一次尝试就踩了这个坑，靠改名脚本的「命中计数校验」抓出来）。
 - **批量改名一律用带「命中计数断言」的脚本**，别用裸 `sed`。
 - 备份 / 临时文件**不要放进插件目录内被扫描的子目录**（如 `web/`），否则外部 `grep -r` 会连备份一起数进去。
-- 前端 JS 改动后浏览器要 `Ctrl+Shift+R` 强刷。
+- **改了 `web/shared/*.mjs` 必须跑 `tools/bump_module_versions.py <新版本串> --apply`（工作区脚本）**。
+  原因：ComfyUI 只给**扩展入口文件**（`web/<node>/index.js`、`web/qg_init.js`，
+  即 `WEB_DIRECTORY` 注册的那几个）加 `Cache-Control: no-store`；被它们 `import`
+  间接加载的 `shared/*.mjs` 走静态文件默认处理，**没有任何缓存头**，浏览器于是
+  启发式长期缓存且不校验 —— 于是入口是新的、子模块还是旧的，用户 `Ctrl+Shift+R`
+  也刷不掉（缓存的键是子模块 URL）。脚本给所有本地 import 说明符加上
+  `?v=<版本串>`：入口每次都是 no-store 新内容 → 子模块 URL 随版本变化 → 旧缓存自然失效，
+  用户普通刷新即可生效。**每次改了 shared 模块都要换一个新版本串**（建议用
+  `YYYYMMDDNN`），否则 URL 不变等于没打。
+- 前端 JS 改动后浏览器要 `Ctrl+Shift+R` 强刷（带版本串的模块改动只需普通刷新）。
 - 节点 ID 若与已有插件冲突，`__init__.py` 会保留先加载的并在控制台点名，不会静默覆盖。
 - 验证 ComfyUI 前**先确认端口上的进程是谁**（用户可能正开着 8188），验证用 `--port 8199` 起独立实例。
 
@@ -82,7 +99,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "QG 我的节点"}
 
 | 来源插件 | 抽取的节点 | 当前 ID | 说明 |
 |---|---|---|---|
-| ComfyUI-AusBoss v2.10.1（MIT） | LoRA Loader | `QG_LoraLoader` | 见下方「搬家记录」 |
+| ComfyUI-AusBoss v2.10.1（MIT） | LoRA Loader | `QG_LoraLoader` | 见下方「LoRA Loader 搬家记录」 |
+| ComfyUI-AusBoss v2.10.1（MIT） | Workflow Note | `QG_WorkflowNote` | 见「说明卡 / 开关 搬家记录」 |
+| ComfyUI-AusBoss v2.10.1（MIT） | Workflow Switches | `QG_WorkflowSwitches` | 同上 |
 
 搬运与改名用的是一批开发期脚本（`port_node.py` 抽节点、`rename_to_qg.py` 统一命名、
 `rename_css_prefix.py` 改 CSS 前缀），**不随本仓库分发** —— 它们是按当时那个版本的
@@ -159,6 +178,61 @@ AusBoss 源码硬编码路径写的，通用性有限。下面「搬家记录」
 - `licenses/ComfyUI-AusBoss-LICENSE.txt`：MIT 许可证要求保留。
 
 **改名带来的后果**：节点 ID 变了，含 `AUSBOSS_NODES_LoraLoader` 的工作流需要重新放一次节点。
+
+## 说明卡 / 开关 搬家记录（v0.4.0）
+
+节点 #41 `AUSBOSS_NODES_WorkflowNote`、#42 `AUSBOSS_NODES_WorkflowSwitches`。
+
+两个都是**纯前端节点**：Python 侧只有一个空壳类（无输入无输出、不进提示词，只负责在菜单里出现，
+并给 Registry / Manager 提供识别用的注册键），全部逻辑在 `web/<节点>/index.js` 与其共享模块里。
+
+### 搬了什么
+
+| Python | 说明 |
+|---|---|
+| `nodes/node_workflow_note.py` → `nodes/qg_workflow_note.py` | 类名 `AusBossWorkflowNote` → `QGWorkflowNote` |
+| `nodes/node_workflow_switches.py` → `nodes/qg_workflow_switches.py` | 类名 `AusBossWorkflowSwitches` → `QGWorkflowSwitches` |
+
+前端从两个入口算 import 闭包共 **19 个文件**，其中 7 个（`index`、`canvas_passthrough`、`lora_stack`、
+`panel_layout`、`scrub_input`、`widget_card_math`、`widget_visibility`）早在 v0.3.0 就搬过，
+**跳过不覆盖**；本次新增 12 个：`appearance`、`clipboard`、`discard_prompt`、`media_list`、
+`media_picker`、`pad_canvas`、`transform_geometry`、`widget_card`、`workflow_note`、`workflow_switches`
++ 两个 `index.js`。
+
+### 改名规则（共 460 处，全部带命中计数断言）
+
+| 类别 | 从 | 到 |
+|---|---|---|
+| 节点 ID | `AUSBOSS_NODES_WorkflowNote` / `...WorkflowSwitches` | `QG_WorkflowNote` / `QG_WorkflowSwitches` |
+| 引用自家 LoRA 加载器 | `AUSBOSS_NODES_LoraLoader` | `QG_LoraLoader` |
+| 扩展注册名 | `AusBoss.WorkflowNote` / `AusBoss.WorkflowSwitches` | `QG.WorkflowNote` / `QG.WorkflowSwitches` |
+| 共享 API 符号 | `notifyAusbossChange` / `isAusbossNode` | `notifyQgChange` / `isQgNode`（必须与 v0.3.0 的 `shared/index.mjs` 对齐） |
+| 私有 CSS 类名 / style id | `ausboss-note-*`、`ausboss-ws-*`、`ausboss-card-*`、`ausboss-media-*`、`ausboss-discard-*` | 同前缀换 `qgtools-` |
+| DOM widget 名 / 节点私有属性 | `ausboss_workflow_note_panel`、`__ausbossNote`、`__ausbossWorkflowSwitches`、`ausboss_show_edit` … | `qg_*` |
+| 节点设置属性键 | `ausboss_workflow_switches` | `qg_workflow_switches` |
+| 颜色方案里的旗舰行 | `{ name: "AusBoss" }` | `{ name: "QG-tools" }` |
+
+### 故意保留的两类字符串
+
+- **上游署名链接**：`https://github.com/ausboss/ComfyUI-AusBoss`（卡片默认链接行 / 节点包行的默认 URL）。
+  路径里的 `ausboss` 是别人的 GitHub 账号，改了就成了死链。
+  脚本用「保护占位符 → 改名 → 还原」三步确保不被波及。
+- **`AUSBOSS_LAB_LoraLoader`**：同 LoRA Loader 那节的理由（那是「认别人」，不是「我们的名字」）。
+  本批文件里出现次数为 0，写进保护名单只是防止将来误改。
+
+### 校验
+
+- `tools/verify_port.py`：①`web/`+`nodes/` 里 `ausboss` 残留归零（白名单除外）；
+  ②196 条具名 import 全部能在目标模块里找到对应 export（含 `export *` 递归跟随）；
+  ③`NODE_CLASS` 常量与 Python 注册表一致；④`CATEGORY` 都在 `QG-tools` 下。
+- `tools/js_check.py`：24 个前端文件 `node --check` 全过。
+
+### 中文文案
+
+`locales/zh/nodeDefs.json`（官方格式，3 个节点）+ 汉化插件里的 `ui` 字典
+（`QG_WorkflowNote` 49 条、`QG_WorkflowSwitches` 47 条）。写 `ui` 字典时必须**逐条断言**
+英文键在原 JS 里真实存在 —— 汉化插件是拿英文原文去匹配 DOM 文本的，键写错了不会报错，
+只会静默不生效。
 
 ## 发布到 Registry
 

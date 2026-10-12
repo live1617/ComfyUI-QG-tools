@@ -24,7 +24,7 @@
 // at 1 goes 8, 16, 24 instead of 9, 17, 25, and back down to its minimum.
 // Shift's fine step and typed values are never snapped.
 
-import { keepKeyInField } from "./canvas_passthrough.mjs";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101216";
 
 // Keep in sync with BRAND in shared/index.mjs - importing it would pull
 // /scripts/app.js into node:test, and this module's math must stay testable.
@@ -145,7 +145,11 @@ export function makeScrubInput(options = {}) {
   input.inputMode = "decimal";
   input.readOnly = true;
   if (opts.placeholder) input.placeholder = opts.placeholder;
-  if (opts.title) input.title = `${opts.title} Drag to scrub, click to type, arrows to step; Shift = fine.`;
+  // The title must be the caller's complete sentence: the zh translator
+  // matches whole attributes only, so appending a suffix here would keep
+  // every scrub tooltip English. Callers that want the drag hint bake it
+  // into their own static title string.
+  if (opts.title) input.title = opts.title;
 
   const format = (value) => (value === null ? "" : value.toFixed(Math.max(0, opts.decimals)));
   input.value = format(current);
