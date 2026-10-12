@@ -32,7 +32,7 @@
 
 打开 ComfyUI Manager → `Install Custom Nodes` → 搜索 `ComfyUI-QG-Tools`。
 
-> 这条要在插件发布到 [Comfy Registry](https://comfyregistry.org) 之后才可用；
+> 这条要在插件发布到 [Comfy Registry](https://registry.comfy.org) 之后才可用；
 > 还没发布时请用下面的方式二 / 方式三。
 
 **方式二：git clone**

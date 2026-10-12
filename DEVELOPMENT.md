@@ -238,11 +238,14 @@ AusBoss 源码硬编码路径写的，通用性有限。下面「搬家记录」
 
 `pyproject.toml` 与 `.github/workflows/publish_action.yml` 已经按官方模板配好：
 
-1. 到 [comfyregistry.org](https://comfyregistry.org) 注册 publisher，把生成的 ID 填进
-   `pyproject.toml` 的 `[tool.comfy] PublisherId`。
+1. Registry 站点是 **[registry.comfy.org](https://registry.comfy.org)**（注意不是 `comfyregistry.org`，
+   那个域名打不开）。`PublisherId = "live1617"` 已核实为该站点上真实存在的 publisher，
+   邮箱与仓库 git 身份一致，无需再改。
 2. 在本仓库 `Settings → Secrets and variables → Actions` 新建 secret，
-   名字 `REGISTRY_ACCESS_TOKEN`，值填 registry 上生成的 personal access token。
-3. 以后发版只需改 `pyproject.toml` 的 `version` 并推到 `main`，workflow 会自动发布。
+   名字 `REGISTRY_ACCESS_TOKEN`，值填 registry 上生成的 personal access token
+   （登入 registry.comfy.org 后在个人/发布页生成）。
+3. 以后发版只需改 `pyproject.toml` 的 `version` 并推到 `main`，workflow 会自动发布；
+   也可在 Actions 页面手动 `workflow_dispatch` 重跑。
 
 ## 打包
 

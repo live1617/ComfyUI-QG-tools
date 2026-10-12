@@ -18,6 +18,6 @@ jobs:
         uses: Comfy-Org/publish-node-action@main
         with:
           # 在仓库 Settings -> Secrets and variables -> Actions 里
-          # 新建名为 REGISTRY_ACCESS_TOKEN 的 secret，值填 comfyregistry.org 上
-          # 生成的 personal access token。
+          # 新建名为 REGISTRY_ACCESS_TOKEN 的 secret，值填 registry.comfy.org 上
+          # 生成的 personal access token（站点是 registry.comfy.org）。
           personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
