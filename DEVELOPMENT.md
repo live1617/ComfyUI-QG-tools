@@ -88,6 +88,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "QG 我的节点"}
   用户普通刷新即可生效。**每次改了 shared 模块都要换一个新版本串**（建议用
   `YYYYMMDDNN`），否则 URL 不变等于没打。
 - 前端 JS 改动后浏览器要 `Ctrl+Shift+R` 强刷（带版本串的模块改动只需普通刷新）。
+- **面板上的文案：静态串进字典，拼接串/后写的 `title`/画布文字必须走 `zh()`。**
+  汉化插件只整串全等匹配、且不监听属性变化，细节与纪律见下方「汉化深度清理」。
 - 节点 ID 若与已有插件冲突，`__init__.py` 会保留先加载的并在控制台点名，不会静默覆盖。
 - 验证 ComfyUI 前**先确认端口上的进程是谁**（用户可能正开着 8188），验证用 `--port 8199` 起独立实例。
 
@@ -233,6 +235,211 @@ AusBoss 源码硬编码路径写的，通用性有限。下面「搬家记录」
 （`QG_WorkflowNote` 49 条、`QG_WorkflowSwitches` 47 条）。写 `ui` 字典时必须**逐条断言**
 英文键在原 JS 里真实存在 —— 汉化插件是拿英文原文去匹配 DOM 文本的，键写错了不会报错，
 只会静默不生效。
+
+## Image Crop + Rotate + Pad 搬家记录（v0.5.0）
+
+节点 #10 `AUSBOSS_NODES_ImageCropRotatePad`（"Image Crop + Rotate + Pad"）——
+本包第一个**重型图像节点**：Python 闭包 10 个文件，前端闭包 29 个文件（新增 16 个）。
+
+### ⚠️ 版本错位（与前三批不同）
+
+前三批（v0.3.0 / v0.4.0）的源是 AusBoss **2.10.1**，这一批本机装的已经是 **2.11.1**。
+所以 `web/shared/` 里的旧副本（2.10.1 时代搬过来、改过名、补过汉化）与新引入的文件
+**不是同一个版本**。处理原则：
+
+- 已存在的 shared 模块**一律不覆盖**（保 v0.4.0 的改名与汉化成果），先核对新文件
+  从旧模块里 import 的每个符号是否存在——实测只差 `transform_geometry.mjs` 的
+  `axisLayout` / `keptCrop` / `alignChanges`。
+- 该文件是纯几何、没有汉化改动，且 2.11.1 的 `resolvePadding` 改成按
+  `_pad_helpers._axis_layout` 的语义补齐/裁切（旧版只在远端多补一截）。
+  面板预览要和 Python 输出对得上，就必须整份换成 2.11.1 —— 逐行反向归一核对过，
+  差异只有这几个新函数，所以**整份覆盖**是安全的（脚本里 `OVERWRITE` 白名单）。
+
+### 搬了什么
+
+Python（全部 `_qg_` 前缀，与 `_qg_lora_helpers.py` 一致）：
+
+| 源 | 目标 |
+|---|---|
+| `nodes/node_image_crop_rotate_pad.py` | `nodes/qg_image_crop_rotate_pad.py` |
+| `nodes/_inpaint_crop_helpers.py` | `nodes/_qg_inpaint_crop_helpers.py` |
+| `nodes/_media_helpers.py` | `nodes/_qg_media_helpers.py` |
+| `nodes/_media_upload.py` | `nodes/_qg_media_upload.py` |
+| `nodes/_transform_engine.py` | `nodes/_qg_transform_engine.py` |
+| `nodes/_transform_inputs.py` | `nodes/_qg_transform_inputs.py` |
+| `nodes/_pad_helpers.py` | `nodes/_qg_pad_helpers.py` |
+| `nodes/_mask_helpers.py` | `nodes/_qg_mask_helpers.py` |
+| `nodes/_color_helpers.py` | `nodes/_qg_color_helpers.py` |
+| `nodes/_execution_helpers.py` | `nodes/_qg_execution_helpers.py` |
+| `ausboss_presets_example.json`（仓库根） | `qg_presets_example.json`（插件根） |
+
+前端新增 16 个：`image_crop_rotate_pad/index.js`、`widget_kv/index.js`、
+`load_video/trim_preview.mjs`，以及 `shared/` 下的 `transform_editor`、`transform_trim`、
+`transform_geometry`（覆盖）、`widget_kv`、`wired_limits`、`core_preview`、`video_preview`、
+`video_source_card`、`stitch_preview`、`timeline_math`、`timecode`、`fill_color`、`clip_rate`。
+另有 13 个 shared 模块已在 v0.3.0/v0.4.0 搬过，跳过不覆盖。
+
+`transform_editor.mjs` 一个文件就 167 KB —— 它是图像/视频两类节点共用的旋转裁切补边编辑器，
+所以顺带把视频预览那一支（`trim_preview`/`timeline_math`/`video_preview`/`stitch_preview`）也带进来了。
+整批前端约 400 KB。
+
+### 改名规则（共 505 处，全部带命中计数断言）
+
+| 类别 | 从 | 到 |
+|---|---|---|
+| 节点 ID | `AUSBOSS_NODES_ImageCropRotatePad` | `QG_ImageCropRotatePad` |
+| Python 类名 | `AusBossImageCropRotatePad` | `QGImageCropRotatePad` |
+| 分类 | `🆎 AusBoss/Image` | `QG-tools/Image` |
+| 显示名 | `Image Crop + Rotate + Pad 🆎` | `QG Image Crop + Rotate + Pad` |
+| 前端扩展注册名 | `ausboss.transform.<节点ID>` | `QG.transform.<节点ID>` |
+| | `ausboss.widget_kv` | `QG.widget_kv` |
+| **后端路由** | `/ausboss/transform/video/*`（4 条）、`/ausboss/pack_version` | `/qg/transform/video/*`、`/qg/pack_version` |
+| 路由幂等标志 | `_ausboss_transform_routes` | `_qg_transform_routes` |
+| 响应头 | `X-AusBoss-Frame-Index/Time` | `X-QG-Frame-Index/Time` |
+| 预设文件 | `ausboss_presets.json` | `qg_presets.json` |
+| 私有 CSS 类 / style id | `ausboss-*`（256+62+…处） | `qgtools-*` |
+| widget 名 / 节点属性 / 内部标识符 | `ausboss_*`、`__ausbossTransformState`、`notifyAusbossChange`… | `qg_*`、`__qgTransformState`、`notifyQgChange`… |
+
+**路由必须改名**：`_media_helpers.py` 的 `register_video_routes()` 是模块级注册，
+如果沿用 `/ausboss/...`，会和 AusBoss 自己的注册撞车 —— aiohttp 对同路径同方法的
+重复注册是直接抛 `RuntimeError`，两个插件会一起加载失败。
+
+### 两处刻意的改动（不是纯改名）
+
+1. `register_video_routes()` 的调用点：源插件里由两个**视频**节点调用；我们只搬了图像节点，
+   就把这个调用挪到 `qg_image_crop_rotate_pad.py` 末尾 —— 面板的「来源」框能载入视频，
+   需要这几条路由（图片走核心 `/upload/image`，用不到它们）。
+2. `web/widget_kv/index.js` 的 `NODE_TYPES` 集合：原本列了 6 个 AusBoss 节点 ID，
+   收窄成只剩 `QG_ImageCropRotatePad` —— AusBoss 自带的 `widget_kv` 扩展已经在管它自己的
+   那些节点，两边都接管会重复序列化 / 恢复同一份 `widgets_values`。
+
+### 故意保留的三类字符串
+
+- `AUSBOSS_STITCHER`（socket 类型）与 `ausboss_inpaint_stitcher`（stitcher 里的 `kind` 字段）：
+  **跨插件数据契约**，要能接 AusBoss 的 Stitch Inpaint 把结果贴回原图。
+  改了这两个字符串，本节点就成了孤岛。
+- `AUSBOSS_NODES_Float` / `AUSBOSS_NODES_Integer`：`clip_rate.mjs` 靠它们认 AusBoss 的
+  字面量节点（本插件没搬），留着在装了 AusBoss 的机器上仍能识别。
+- 上游署名 URL 与 `ComfyUI-AusBoss` 字样（文件头出处注释）。
+
+### 校验
+
+- `tools/port_node_10.py`：改名 + `--apply` 落盘，带逐条命中数与整批总量断言，残留归零。
+- `tools/verify_port.py`：残留 / 329 条具名 import 对齐 / 注册一致性 / CATEGORY。
+- `tools/js_check.py`：40 个前端文件 `node --check` 全过。
+- `tools/import_check_10.py`（新增，用 ComfyUI 自己的解释器跑）：
+  走 `import nodes` → 构造 `PromptServer` → 载入本插件的真实路径，断言 4 个节点已注册、
+  接口是 14 必 + 7 选、`AUSBOSS_STITCHER` 仍在输出里、5 条 `/qg/` 路由进了注册表、
+  并且 `add_routes()` 能干净合并（撞车会在这里抛错）。
+  比 `main.py --quick-test-for-ci` 快得多，也不受 ComfyUI-Manager 预启动重启干扰。
+
+### 中文文案
+
+`locales/zh/nodeDefs.json` 增加第 4 个节点；汉化插件 `ui` 字典增加 `QG_ImageCropRotatePad`
+条目。新增词条同样逐条断言英文键在源码里存在。
+
+真机（headless Chrome + CDP）第一轮就露出马脚：面板里 `Source` / `pick a ratio first` /
+`Feather` / `Center` / `Megapixels` / `Step` / `off` / `on` / `crop` / `pad` 还是英文。
+根因是**扫描工具的系统性盲区**——这三类位置 `scan_en_strings_v2.py` 都不认：
+
+1. `createElement(tag, cls, "文本")` 第 3 参、`addScrubField(区, "标签", …)` 第 2 参
+   （`scan_en_strings_v3.py` 专门扫这两类）；
+2. **纯小写字符串**会被「选择器」噪音过滤规则（`^[#.a-z0-9_\-\s...]+$`）整个吃掉，
+   `off` / `on` / `crop` / `pad` / `pick a ratio first` 全栽在这儿；
+3. 模板字面量拼出来的整串（`${kind === "video" ? "Video" : "Image"} Crop + Rotate + Pad`）
+   源码里没有整串字面量，要按「拼接后的运行时串」入字典，断言时改查拼接位。
+
+`tools/add_ui_entries_10.py` 补了 29 条（ui 128 → 157），逐条断言后在真机复验，面板
+DOM 文本里除单位（`px` / `MP`）和比例（`1:1` / `4:3`…）外已无英文。
+`tools/scan_en_strings_v4.py` 是宽口径版（所有字面量都提出来对账），噪音多但最保险，
+以后新增节点建议 v2 + v4 各跑一遍再人工过目。
+
+**⚠️ 三元拼串差点留死键**：上面第 3 类的键只能做「片段断言」（证明 `"Video"` 和
+`" Crop + Rotate + Pad"` 两段碎片都在源码里），而片段断言**证明不了可达性**。
+`${state.kind === "video" ? "Video" : "Image"}` 这个三元里，本插件只有一处
+`registerTransformExtension(...)` 调用、`kind` 传的是 `"image"`，所以 `"Video"` 那一支
+永远不执行 —— `Video Crop + Rotate + Pad` 是**死键**，DOM 里永远匹配不到它。
+是 `verify_i18n.py` 第 [2] 项把它揪出来的，已用 `tools/fix_ui_entries_dedup.py` 删除
+（ui 157 → 156）。**以后遇到三元拼串，先确认两条分支都可达再入字典。**
+
+同批顺手对齐两处文案：`Image Crop + Rotate + Pad settings` 的译文改成与节点显示名同一套
+写法（`图像裁剪 + 旋转 + 补边 设置`）；`Reset rotation, crop, padding…` 那条 tooltip 里的
+「保留**视频**来源」改成「保留来源」（本节点只载入图片）。
+
+### 前端扩展注册名的坑
+
+`app.registerExtension({name})` 里的 name 是**纯前端标识符**，不参与节点功能，但排查时会
+按前缀筛。这一批最初照抄上游结构留成了小写 `qgtools.transform.<节点ID>`（由
+`transform_editor.mjs` 的 `registerTransformExtension` 统一注册），`widget_kv` 同理留成
+`qgtools.widget_kv` —— 结果真机检查里按「以 `QG.` 开头」筛扩展名时**整个漏掉了这个节点**，
+差点误判成「没注册扩展」。
+
+现已统一回 `QG.` 命名空间（`QG.transform.<节点ID>` / `QG.widget_kv`，与
+`QG.tools.init` / `QG.LoraLoader` / `QG.WorkflowNote` / `QG.WorkflowSwitches` 一致）。
+`verify_port.py` 第 4 项会扫出所有 `registerExtension` 的名字并断言前缀是 `QG.`，
+以后再有新节点忘记改会在这里炸。
+
+注意 `qgtools-`（**连字符**）是另一套约定，用于私有 CSS 类名与 style 元素 id，不要改。
+
+### 汉化深度清理：什么时候必须走 `zh()`（v0.5.0 第二遍）
+
+第一遍把「静态文本」补进字典就完事，真机上仍留下几类英文。根因是汉化插件的机制：
+
+- 它**只做整串全等匹配**（文本节点按 `trim()` 后比对，属性按原值比对）；
+- 它的 `MutationObserver` 只订阅 `{childList:true, subtree:true}`，**不订阅 attributes**，
+  且只挂在**节点自己的 DOMWidget 根元素**与 **`document.body` 顶层新增元素**上；
+- 节点面 DOM 只用**本节点自己的 ui 字典**（`main.js:430`），弹层才用全节点汇总。
+
+于是下面三类它**永远够不到**，必须在源码里用 `shared/zh.mjs` 的 `zh()` 拼句子时查字典：
+
+| 类别 | 例子 |
+|---|---|
+| **拼接出来的句子** | `` `Pad to ${ratio}: keep every pixel…` ``、`` `already ${request}: pick another ratio` ``、`sendLines` 的 `Source {a} × {b}` |
+| **插入之后才写的属性** | `sync()` 里重赋的 `title`、`aria-label`（首帧在插入前赋的能翻，之后每次重赋都会退回英文） |
+| **画布上画的字** | `drawEmptyCanvas` 的「先选择一个来源」、`drawOutputSize` 框里的 token 与警告 —— canvas 文字对 DOM 观察器完全不可见 |
+
+`zh()` 的字典来源是**后端路由 `/translation_node/get_translation` 的合并结果**
+（不是某节点的 ui），所以模板键放哪个节点的 ui 里都能被查到；但**节点面上的纯文本**
+仍必须进**本节点**的 ui，否则汉化插件的 DOM 兜底那一层抓不到。
+
+约定：
+- 字典里放**带 `{a}` / `{n}` 占位符的模板**，源码里写 `zh("… {a} …").replace("{a}", …)`；
+  占位符模板必须是**字面量**（`tools/verify_i18n.py` 第 [2] 项是源码子串查找，
+  `` `Filter {a} image${s}…` `` 这种带 `${}` 的模板会被判「源码里没有这个键」）。
+- 不要用「一个词一个槽」拆句子（`{pad ? "add" : "trim"}`）—— 单词键（`add`/`trim`）
+  容易撞上别处的文本节点。**两种说法各写一整条模板**。
+- 数字/单位留在模板外或放 `{n}`，别把 `%` 同时写进模板和参数（踩过：`{a}% wider`
+  配上 `"3.4%"` → `3.4%%`）。
+- 字典到达是**异步**的：`transform_editor.mjs` 在模块顶层挂
+  `zhReady().then(() => { if (zhOn()) for (const live of liveStates) draw(live) })`，
+  字典落地后重绘所有活面板，把「首帧还没字典」的那些拼接串补上。
+- **只加可达的键**。共享组件按参数分叉（`kind === "video" ? … : …`）时，先确认哪一支
+  真的会被走到（本插件 `state.kind` 恒为 `image`，`widget_card` 的 `preview.kind` 没有
+  任何配置在用），不可达的那支**不写进字典**，留英文兜底即可 —— 这就是上次
+  「片段断言证明不了可达性」的正面用法。
+
+本轮落地（ui 156 → **222**）：
+
+- `transform_editor.mjs`：比例行（翻转/caption/比例块/锁）、Fit 行、填充色、居中按钮、
+  读数提示、拉伸警告、状态面板与读数 tooltip 的尺寸链、来源选择器（placeholder/label）、
+  空画布文字。
+- `transform_geometry.mjs`：`sizeChainTokens` / `alignChanges` 的 token 与警告片段。
+- `media_picker.mjs`（共享）：`Click to choose another …`、过滤框 placeholder 与
+  `aria-label`、`Can't preview this …`。
+- `scrub_input.mjs`（共享）：步进按钮的 `Step up/down; Shift = fine.`
+  （拆成两条整句，替换掉原来的三元拼串）。
+- `settings_menu.mjs`（共享）：`Send {a} with the request…` / `Reset {a} to {b}`
+  （`{a}` 用 `zh(entry.label)` 填，标签本身已在字典里）。
+
+排查工具：`tools/scan_en_strings_v5.py`（**按节点作用域**对账 —— v2/v3/v4 都把全部节点的
+ui 合并后比对，看不出「某个键在别的节点有、在本节点没有」这种缺口，`Custom` 就是这么漏的；
+它扫 `createElement#3` / `.title=` / `setAttribute` / `.textContent=`，并把三元分支、
+模板片段的假键单独列出来人工过目）。真机端 `tools/frontend_cdp_check.py` 第 5 节会把
+面板与弹层里「含英文单词又不含中文」的文本与 `title`/`placeholder`/`aria-label` 全列出来。
+
+**顺带修掉一个真 bug**：`updateModalInfo` 找的是 `[data-qgtools-status]`，而元素上写的是
+`dataset.qgStatus`（= `data-qg-status`），选择器对不上 → 编辑器右侧的尺寸状态栏一直是空的。
+现在两边统一为 `data-qg-status`。
 
 ## 发布到 Registry
 

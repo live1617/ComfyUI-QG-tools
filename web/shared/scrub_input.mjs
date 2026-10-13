@@ -24,7 +24,8 @@
 // at 1 goes 8, 16, 24 instead of 9, 17, 25, and back down to its minimum.
 // Shift's fine step and typed values are never snapped.
 
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101216";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101316";
+import { zh } from "./zh.mjs?v=2026101316";
 
 // Keep in sync with BRAND in shared/index.mjs - importing it would pull
 // /scripts/app.js into node:test, and this module's math must stay testable.
@@ -244,7 +245,10 @@ export function makeScrubInput(options = {}) {
     const button = document.createElement("button");
     button.type = "button";
     button.tabIndex = -1;
-    button.title = `Step ${direction > 0 ? "up" : "down"}; Shift = fine.`;
+    // Two whole literals rather than "Step " + up/down + "; Shift = fine.":
+    // the zh dictionary matches whole strings (and never sees a title written
+    // after insertion), so the composed form could never be translated.
+    button.title = direction > 0 ? zh("Step up; Shift = fine.") : zh("Step down; Shift = fine.");
     button.innerHTML = chevronSvg(direction > 0);
     button.addEventListener("click", (event) => {
       commit(stepped(direction, event.shiftKey));

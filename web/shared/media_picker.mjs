@@ -10,9 +10,10 @@
 // options when it opens and hands the chosen value back through onChange.
 // Pure decisions live in media_list.mjs for node:test; this file is the DOM.
 
-import { BRAND } from "./index.mjs?v=2026101216";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026101216";
-import { filterMedia, mediaLabel, moveHighlight } from "./media_list.mjs?v=2026101216";
+import { BRAND } from "./index.mjs?v=2026101316";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026101316";
+import { filterMedia, mediaLabel, moveHighlight } from "./media_list.mjs?v=2026101316";
+import { zh } from "./zh.mjs?v=2026101316";
 
 const CSS_ID = "qgtools-media-picker-css";
 const LIST_CAP = 400; // a crowded input folder shows this many; typing narrows it
@@ -86,7 +87,12 @@ export function createMediaPicker({ kind = "image", className = "", placeholder,
     const shown = value == null ? "" : String(value);
     text.textContent = shown || placeholder;
     text.classList.toggle("empty", !shown);
-    button.title = shown ? `${shown}\nClick to choose another ${noun}` : placeholder;
+    // Only the "Click to choose…" line is composed; the placeholder came in
+    // already translated from the caller. A title written here lands after
+    // insertion, which the zh plugin's DOM pass never revisits.
+    button.title = shown
+      ? `${shown}\n${zh(kind === "video" ? "Click to choose another video" : "Click to choose another image")}`
+      : placeholder;
   };
 
   const open = () => {
@@ -98,8 +104,16 @@ export function createMediaPicker({ kind = "image", className = "", placeholder,
     const filter = el("input", "qgtools-media-filter");
     filter.type = "text";
     filter.spellcheck = false;
-    filter.placeholder = all.length ? `Filter ${all.length} ${noun}${all.length === 1 ? "" : "s"}…` : `No ${noun}s in the input folder`;
-    filter.setAttribute("aria-label", `Filter ${noun}s`);
+    // Counted sentences and per-kind wording, both spelled out as whole
+    // literals: the zh dictionary matches whole strings, so every key has to
+    // appear verbatim in the source (tools/verify_i18n.py asserts it).
+    const filterHint = all.length === 1
+      ? (kind === "video" ? "Filter {a} video…" : "Filter {a} image…")
+      : (kind === "video" ? "Filter {a} videos…" : "Filter {a} images…");
+    filter.placeholder = all.length
+      ? zh(filterHint).replace("{a}", String(all.length))
+      : zh(kind === "video" ? "No videos in the input folder" : "No images in the input folder");
+    filter.setAttribute("aria-label", zh(kind === "video" ? "Filter videos" : "Filter images"));
     const list = el("div", "qgtools-media-list");
     list.setAttribute("role", "listbox");
     column.append(filter, list);
@@ -122,7 +136,7 @@ export function createMediaPicker({ kind = "image", className = "", placeholder,
       if (value == null) return;
       const failed = () => {
         if (mine !== serial) return;
-        stage.replaceChildren(el("div", "qgtools-media-note", `Can't preview this ${noun}`));
+        stage.replaceChildren(el("div", "qgtools-media-note", zh(kind === "video" ? "Can't preview this video" : "Can't preview this image")));
       };
       if (kind === "video") {
         const video = document.createElement("video");

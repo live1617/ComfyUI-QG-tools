@@ -1,7 +1,11 @@
 # 本插件不依赖任何需要额外安装的第三方包。
 #
 # 它只用到 ComfyUI 运行期本来就有的模块：
-#   torch / comfy.sd / comfy.utils / folder_paths / aiohttp / server.PromptServer
+#   torch / numpy / PIL / PyAV(av) / comfy.sd / comfy.utils / folder_paths / aiohttp / server.PromptServer
+#
+# QG_ImageCropRotatePad 会 import av（读视频帧）—— av 是 ComfyUI 核心自己的依赖，
+# 任何一套能跑起来的 ComfyUI 都已经有它，所以这里不用列。
+# scipy / pymatting 只在该节点用到的高级分支里可选调用，缺了有内置回退，也不会报错。
 #
 # 保持本文件为空（仅注释）是有意为之：ComfyUI Manager 会读它，
 # 空文件表示「安装本插件时无需执行 pip install」。

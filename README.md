@@ -1,6 +1,14 @@
 # ComfyUI-QG-tools
 
-一个 ComfyUI 自定义节点包，目前包含三个节点：**LoRA 加载器**、**工作流说明卡**、**工作流开关**。
+一个 ComfyUI 自定义节点包，目前包含四个节点：**LoRA 加载器**、**图像裁剪 + 旋转 + 补边**、
+**工作流说明卡**、**工作流开关**。
+
+**QG Image Crop + Rotate + Pad —— 在节点上直接把画面摆正、裁好、补出画布**
+
+- **看得见地编辑** —— 节点上就是一块编辑面板：拖动画面旋转、拖角裁切、拖边补边，不用来回改参数
+- **补出来的地方自动进遮罩** —— 新补的边、旋转留下的角、原图里透明的地方都算「待生成区域」，一路 `mask` 输出
+- **附带缝合器** —— `stitcher` 输出把生成结果贴回原图，接下游的缝合节点即可
+- **能出规则尺寸** —— 「Divisible by」让输出的长宽能被 8/16/32 整除，模型和 VAE 都开心
 
 **QG LoRA Loader —— 把整摞 LoRA 收进一个节点里管**
 
@@ -21,9 +29,10 @@
 - 也能当参数预设用：为「开」和「关」各存一套选中节点的设置值，一键切换
 - 折叠后只剩标签和开关，不占画布
 
-- **当前版本**：v0.4.0
-- **节点**：3 个（`QG LoRA Loader` / `QG Workflow Note` / `QG Workflow Switches`，分类 `QG-tools`）
-- **依赖**：无，只用 ComfyUI 运行期自带的模块
+- **当前版本**：v0.5.0
+- **节点**：4 个（`QG LoRA Loader` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` / `QG Workflow Switches`，分类 `QG-tools`）
+- **依赖**：无额外 pip 包。只用 ComfyUI 运行期自带的模块（torch / numpy / PIL / PyAV / folder_paths / comfy.*）；
+  `scipy`、`pymatting` 用到了才用，缺了有内置回退，不报错。
 - **许可证**：[GPL-3.0-or-later](LICENSE)
 
 ## 安装
@@ -50,10 +59,73 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 装完**完整重启 ComfyUI**，控制台应出现：
 
 ```
-[QG-tools] v0.4.0 加载完成 | 节点数 3
+[QG-tools] v0.5.0 加载完成 | 节点数 4
 ```
 
-无需 `pip install` 任何东西。三个节点都在 `QG-tools` 分类下，搜索 `lora`、`note`、`switch` 等也能找到。
+无需 `pip install` 任何东西。四个节点都在 `QG-tools` 分类下（图像节点在 `QG-tools/Image`），
+搜索 `lora`、`crop`、`note`、`switch` 等也能找到。
+
+---
+
+## QG Image Crop + Rotate + Pad（裁剪 + 旋转 + 补边）
+
+载入一张图，在节点上的编辑面板里做**一次**旋转 / 裁切 / 补边，输出摆正并补好画布的画面，
+外加一份标出「该生成哪里」的遮罩。
+
+### 面板怎么用
+
+| 操作 | 效果 |
+|---|---|
+| 拖画面 | 平移取景框里的画面 |
+| 拖角 / 拖边 | 改裁切框 |
+| 旋转 | 顺时针旋转（`rotation_degrees`，-180 ~ 180） |
+| 拖画布边 | 给某一边补出 `fill_color` 的边（拖出来的就是 padding） |
+| 比例 | `crop_aspect_ratio`：锁定裁切框比例，`free` 任意、`source` 跟随原图 |
+
+面板上的改动会直接写回节点参数，所以保存、撤销、API 调用都走 ComfyUI 原生路径。
+
+### 遮罩里有什么
+
+`mask` 白的地方就是「可以让模型画」的地方：
+
+- 补出来的边（padding）；
+- 旋转留下的空角；
+- 原图里**透过去**的地方（实心度不足 90% 的像素，比如抠图留下的透明边）。
+
+不想让透明区域被当成待生成区域，把 `painted_area` 设成 `keep picture` —— 底下原样保留，
+只靠遮罩标记。
+
+### 缝合器
+
+`stitcher` 是一份「怎么把生成结果贴回原图」的说明，接到下游的缝合节点
+（AusBoss 的 Stitch Inpaint，或本插件将来搬过来的同类节点）就能自动对齐贴回。
+`stitch_blend` 控制贴回的过渡带宽度，`stitch_grow` 控制贴回边界往哪偏。
+
+### 出规则尺寸
+
+`canvas_multiple`（Divisible by）把输出长宽凑成它的整数倍：有补边的那一侧多补几个像素，
+没补边的那一侧就裁掉几个像素（两侧各裁一半）。要 8/16/32 整除的模型设这里，`1` = 关闭。
+`resize_to_megapixels` + `megapixels` 可以再把结果缩到指定像素预算（与核心
+Scale Image to Total Pixels 同语义）。
+
+### 输入 / 输出
+
+14 个必填 + 7 个可选，全部是画布上的参数；画面上常用的一些
+（比如旋转、裁切、补边）藏在面板里，不会挤满节点。
+
+| 输出 | 说明 |
+|---|---|
+| `image` | 变换后的图像 |
+| `mask` | 待生成区域（补边 / 旋转空角 / 透明处） |
+| `stitcher` | 缝合器（贴回原图用） |
+| `original` | 变换前的原图 |
+| `width` / `height` | 输出尺寸 |
+| `prompt_image` | 给模型看的提示图（带待生成区域的示意） |
+
+### 自定义比例预设（可选）
+
+把插件根目录的 `qg_presets_example.json` 复制成 `qg_presets.json` 再改，
+可以往比例下拉里加自己的 `W:H` 条目。文件里有坏条目只会警告一次并跳过，不影响节点注册。
 
 ---
 
@@ -222,9 +294,11 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 
 1. 首次安装要**完整重启 ComfyUI**（不是刷新页面）。
 2. 之后前端有更新时，浏览器要 `Ctrl+Shift+R` 强刷 —— ComfyUI 只在页面加载时读一次扩展列表。
-3. 后端有 6 条路由，可用这条命令快速自检：
+   （本插件的前端子模块都带版本串，正常情况下普通 F5 也能拿到新代码。）
+3. 后端共 11 条路由（LoRA 6 条 + 图像面板的视频预览 4 条 + 版本探针 1 条），可用这条命令快速自检：
 
    ```bash
+   curl http://127.0.0.1:8188/qg/pack_version
    curl http://127.0.0.1:8188/qg/lora/list
    ```
 
@@ -232,7 +306,7 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 
 本项目以 **GPL-3.0-or-later** 发布，全文见 [`LICENSE`](LICENSE)。
 
-其中的三个节点（LoRA 加载器、工作流说明卡、工作流开关）抽取并改写自
+其中的四个节点（LoRA 加载器、图像裁剪 + 旋转 + 补边、工作流说明卡、工作流开关）抽取并改写自
 [ComfyUI-AusBoss](https://github.com/ausboss/ComfyUI-AusBoss)（MIT）。
 按 MIT 的要求，原许可证全文保留在 [`licenses/ComfyUI-AusBoss-LICENSE.txt`](licenses/ComfyUI-AusBoss-LICENSE.txt)；
 被改写部分的原始版权仍归原作者所有。MIT 与 GPLv3 兼容，因此整体以 GPLv3 分发是合规的。

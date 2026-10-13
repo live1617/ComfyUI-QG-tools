@@ -34,6 +34,11 @@ function warm() {
 // Warm on module load; toasts fire on user actions, well after this settles.
 warm();
 
+/** Resolves once the dictionary fetch settles (usable or not). */
+export function zhReady() {
+  return zhWarm;
+}
+
 /** True once a zh dictionary is actually loaded and usable. */
 export function zhOn() {
   return Boolean(zhDict);

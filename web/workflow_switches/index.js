@@ -25,16 +25,16 @@
 // decisions live in js/shared/workflow_switches.mjs under node:test.
 
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026101216";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101216";
-import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026101216";
-import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026101216";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026101316";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101316";
+import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026101316";
+import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026101316";
 import {
   DEFAULT_SETTINGS, SETTINGS_PROPERTY, SWITCHES_MAX, TITLE_MAX, addMembers, addSwitch, flipTo, frameBounds, groupBounds, heldCount,
   hideGroup, listedRows, modeMatters, moveSwitch, normalizeSettings, pairValue, placeNodes, readGroups, readSwitches,
   removeMembers, removeSwitch, renameSwitch, restoreGroups, rowsSignature, saveValues, snapshotNode, suggestTitle, switchAllPlan,
   switchPlan, valueAllPlan, valuePlan,
-} from "../shared/workflow_switches.mjs?v=2026101216";
+} from "../shared/workflow_switches.mjs?v=2026101316";
 
 const NODE_CLASS = "QG_WorkflowSwitches";
 const CSS_ID = "qgtools-workflow-switches-css";

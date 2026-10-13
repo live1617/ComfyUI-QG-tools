@@ -1,0 +1,10 @@
+{
+  "docs": [
+    "Copy this file to qg_presets.json in the same folder to customize",
+    "the Crop + Rotate + Pad aspect dropdown; that copy is gitignored so it",
+    "survives updates. crop_aspect_ratios entries must be W:H integer pairs",
+    "and are appended after the built-in list (free and source are always",
+    "available). Restart ComfyUI or reload the browser tab after editing."
+  ],
+  "crop_aspect_ratios": ["1:1", "9:16", "16:9", "2:3", "3:2", "3:4", "4:3", "9:21", "21:9"]
+}

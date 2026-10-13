@@ -8,9 +8,10 @@
 //                        title: "LoRA Loader settings",
 //                        onChange: (values, key) => rerender(values) });
 
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101216";
-import { BRAND } from "./index.mjs?v=2026101216";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026101216";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101316";
+import { BRAND } from "./index.mjs?v=2026101316";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026101316";
+import { zh } from "./zh.mjs?v=2026101316";
 import {
   isOverrideActive,
   isOverrideEntry,
@@ -18,7 +19,7 @@ import {
   overrideEnableValue,
   overrideIsCustom,
   schemaDefaults,
-} from "./node_settings.mjs?v=2026101216";
+} from "./node_settings.mjs?v=2026101316";
 
 const CSS_ID = "qgtools-settings-css";
 
@@ -412,13 +413,16 @@ export function openSettingsMenu({ scope, schema, anchor, title, onChange, initi
       // of relying on the user knowing the neutral value by heart.
       const check = el("input", "qgtools-set-check");
       check.type = "checkbox";
-      check.title = `Send ${entry.label} with the request; off leaves it to the server`;
+      // The menu hangs off <body>, so the zh plugin's per-node DOM pass never
+      // sees it; its titles are written here and would stay English.
+      check.title = zh("Send {a} with the request; off leaves it to the server").replace("{a}", zh(entry.label));
       const dot = el("span", "qgtools-set-moddot hidden");
       dot.title = "Changed from the suggested value";
       const trash = el("button", "qgtools-set-trash hidden");
       trash.type = "button";
       trash.innerHTML = trashIconSvg();
-      trash.title = `Reset ${entry.label} to ${overrideEnableValue(entry, undefined)}`;
+      trash.title = zh("Reset {a} to {b}")
+        .replace("{a}", zh(entry.label)).replace("{b}", String(overrideEnableValue(entry, undefined)));
 
       const syncRow = () => {
         const on = isOverrideActive(entry, values[entry.key]);

@@ -1,18 +1,21 @@
 {
   "pack": "ComfyUI-QG-tools",
-  "pack_version": "0.4.0",
+  "pack_version": "0.5.0",
   "source": {
     "plugin": "ComfyUI-AusBoss",
-    "version": "2.10.1",
+    "version": "2.10.1（前三个节点） / 2.11.1（QG_ImageCropRotatePad）",
     "archive": "ComfyUI-AusBoss-main.zip (ausboss/ComfyUI-AusBoss)",
-    "license": "MIT — licenses/ComfyUI-AusBoss-LICENSE.txt"
+    "license": "MIT — licenses/ComfyUI-AusBoss-LICENSE.txt",
+    "note": "2.11.1 只用于 #10 那批新引入的文件；早先搬过来的 shared 模块保持 2.10.1 副本（已改名 + 汉化），仅 transform_geometry.mjs 整份换成 2.11.1。"
   },
   "scripts": {
     "port_lora_loader": "tools/port_node.py（v0.3.0）",
     "rename_to_qg": "tools/rename_to_qg.py（v0.3.0，统一 QG 命名）",
     "rename_css_prefix": "tools/rename_css_prefix.py（v0.3.0，CSS 前缀 qgtools-）",
     "port_note_and_switches": "tools/port_nodes_41_42.py（v0.4.0）",
-    "verify": "tools/verify_port.py（残留 / import 对齐 / 注册一致性）"
+    "port_image_crop_rotate_pad": "tools/port_node_10.py（v0.5.0）",
+    "verify": "tools/verify_port.py（残留 / import 对齐 / 注册一致性）",
+    "verify_backend": "tools/import_check_10.py（用 ComfyUI 解释器真加载 + 路由断言）"
   },
   "nodes": [
     {
@@ -379,6 +382,67 @@
           "new": "{ name: \"QG-tools\" }"
         }
       }
+    },
+    {
+      "id": "QG_ImageCropRotatePad",
+      "class": "QGImageCropRotatePad",
+      "display": "QG Image Crop + Rotate + Pad",
+      "category": "QG-tools/Image",
+      "source_id": "AUSBOSS_NODES_ImageCropRotatePad",
+      "source_class": "AusBossImageCropRotatePad",
+      "source_display": "Image Crop + Rotate + Pad 🆎",
+      "source_category": "🆎 AusBoss/Image",
+      "source_version": "2.11.1",
+      "kind": "重型图像节点：14 必 + 7 选输入，7 个输出（含 AUSBOSS_STITCHER），节点上是旋转/裁切/补边编辑器。",
+      "files_py": [
+        "nodes/node_image_crop_rotate_pad.py -> nodes/qg_image_crop_rotate_pad.py",
+        "nodes/_inpaint_crop_helpers.py -> nodes/_qg_inpaint_crop_helpers.py",
+        "nodes/_media_helpers.py -> nodes/_qg_media_helpers.py",
+        "nodes/_media_upload.py -> nodes/_qg_media_upload.py",
+        "nodes/_transform_engine.py -> nodes/_qg_transform_engine.py",
+        "nodes/_transform_inputs.py -> nodes/_qg_transform_inputs.py",
+        "nodes/_pad_helpers.py -> nodes/_qg_pad_helpers.py",
+        "nodes/_mask_helpers.py -> nodes/_qg_mask_helpers.py",
+        "nodes/_color_helpers.py -> nodes/_qg_color_helpers.py",
+        "nodes/_execution_helpers.py -> nodes/_qg_execution_helpers.py",
+        "ausboss_presets_example.json -> qg_presets_example.json"
+      ],
+      "files_new_js": [
+        "web/image_crop_rotate_pad/index.js",
+        "web/widget_kv/index.js",
+        "web/load_video/trim_preview.mjs",
+        "web/shared/transform_editor.mjs",
+        "web/shared/transform_trim.mjs",
+        "web/shared/transform_geometry.mjs（整份覆盖为 2.11.1）",
+        "web/shared/widget_kv.mjs",
+        "web/shared/wired_limits.mjs",
+        "web/shared/core_preview.mjs",
+        "web/shared/video_preview.mjs",
+        "web/shared/video_source_card.mjs",
+        "web/shared/stitch_preview.mjs",
+        "web/shared/timeline_math.mjs",
+        "web/shared/timecode.mjs",
+        "web/shared/fill_color.mjs",
+        "web/shared/clip_rate.mjs"
+      ],
+      "skipped_already_present_count": 13,
+      "rename_rules": {
+        "note": "用 tools/port_node_10.py 一次完成复制 + 改名，共 505 处替换，每条规则带命中计数断言；替换后残留扫描归零。",
+        "node_id": "AUSBOSS_NODES_ImageCropRotatePad -> QG_ImageCropRotatePad",
+        "python_class": "AusBossImageCropRotatePad -> QGImageCropRotatePad",
+        "category": "🆎 AusBoss/Image -> QG-tools/Image",
+        "extension_name": "ausboss.transform.<node> / ausboss.widget_kv -> QG.transform.<节点ID> / QG.widget_kv（统一回 QG. 命名空间）",
+        "routes": "/ausboss/transform/video/*（4 条）+ /ausboss/pack_version -> /qg/ 前缀（aiohttp 重复路由会抛 RuntimeError）",
+        "route_guard": "_ausboss_transform_routes -> _qg_transform_routes",
+        "response_headers": "X-AusBoss-Frame-Index/Time -> X-QG-Frame-Index/Time",
+        "css_prefix": "ausboss-* -> qgtools-*",
+        "identifiers": "ausboss_* / __ausbossXxx / notifyAusbossChange -> qg_* / __qgXxx / notifyQgChange",
+        "presets_file": "ausboss_presets.json -> qg_presets.json"
+      },
+      "deliberate_edits": [
+        "register_video_routes() 的调用从视频节点挪到 qg_image_crop_rotate_pad.py 末尾（图像面板也能载入视频源）。",
+        "web/widget_kv/index.js 的 NODE_TYPES 收窄成只含 QG_ImageCropRotatePad，避免与 AusBoss 自带的 widget_kv 重复接管同一批节点。"
+      ]
     }
   ],
   "kept_on_purpose": [
