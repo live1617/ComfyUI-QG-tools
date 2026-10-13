@@ -105,15 +105,23 @@ function moduleOfType(type) {
 const QG_REPOSITORY = "https://github.com/live1617/ComfyUI-QG-tools";
 
 // Pack name -> repository URL. ComfyUI itself never hands out a pack's repo
-// URL; the only local source is ComfyUI-Manager's index. Measured on this
-// machine: the endpoint re-assembles a ~5 MB payload on EVERY call, taking
-// 10s+ server-side. So: one module-level single-flight promise, warmed as
-// soon as the page is up, so "Detect" is instant in the common case.
+// URL; the only local source is ComfyUI-Manager's index. Two rules, learned
+// the hard way (v0.4.0 regression):
+//   * skip_update=true is mandatory. Without it Manager runs its git update
+//     check on the way out; every pack it flags "updatable" is appended to
+//     Manager's startup queue and the next launch execv-restarts. A page
+//     view must never have that side effect.
+//   * even with the flag the endpoint still assembles a ~5 MB payload
+//     server-side (measured 2.6 s here), so the lookup is lazy: it runs when
+//     a note editor opens or "Detect" is pressed, never on page load.
 let packUrlIndexPromise = null;
 function packUrlsByName() {
   packUrlIndexPromise ??= (async () => {
     const index = new Map();
-    for (const path of ["/api/customnode/getlist?mode=cache", "/customnode/getlist?mode=cache"]) {
+    for (const path of [
+      "/api/customnode/getlist?mode=cache&skip_update=true",
+      "/customnode/getlist?mode=cache&skip_update=true",
+    ]) {
       try {
         const res = await api.fetchApi(path);
         if (!res.ok) continue;
@@ -136,9 +144,11 @@ function packUrlsByName() {
   })();
   return packUrlIndexPromise;
 }
-// Warm the index in the background right after the page settles - by the time
-// anyone opens this editor, the 10s+ fetch has usually finished long ago.
-setTimeout(() => void packUrlsByName(), 2000);
+// No page-load warm-up on purpose. Warming right after page load was the
+// v0.4.0 regression: every page view hit Manager's getlist without
+// skip_update and refilled its restart queue. The note editor warms this on
+// open (see the packUrlsByName() call in the editor builder) and "Detect
+// from this workflow" awaits it, so nothing is lost by being lazy here.
 
 // ---------------------------------------------------------------------------
 // CSS
@@ -843,7 +853,8 @@ async function openEditor(state) {
   form.append(field("Models", models.box, "Each row shows a Download button until the file is found in its folder (subfolders count). The note shows in grey under the file name."), modelTools);
 
   // packUrlsByName() is the module-level single-flight lookup (see top of
-  // file); calling it here just piggybacks on the warm-up already running.
+  // file). This call warms it lazily: the first editor open pays the ~3 s
+  // fetch once, later opens and "Detect" reuse the same promise.
   void packUrlsByName();
 
   const packs = table("packs", ["Pack", "URL", "Probe node class"], draft.packs, (row) => [
@@ -863,9 +874,10 @@ async function openEditor(state) {
   detect.addEventListener("click", async () => {
     const types = collectGraphNodes(app.rootGraph ?? app.graph).map((node) => node.type);
     const have = new Set(packs.entries.map((entry) => entry.controls[0].value.trim()));
-    // The Manager index can take 10s+ on its first assembly; reflect that on
-    // the button instead of leaving it looking dead. Restoring the text it had
-    // at click time keeps any translated label intact.
+    // The Manager index is a ~5 MB payload assembled server-side on first
+    // call; reflect that on the button instead of leaving it looking dead.
+    // Restoring the text it had at click time keeps any translated label
+    // intact.
     const idleText = detect.textContent;
     detect.disabled = true;
     detect.textContent = "Detecting…";

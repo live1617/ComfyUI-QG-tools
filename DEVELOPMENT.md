@@ -90,6 +90,16 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "QG 我的节点"}
 - 前端 JS 改动后浏览器要 `Ctrl+Shift+R` 强刷（带版本串的模块改动只需普通刷新）。
 - **面板上的文案：静态串进字典，拼接串/后写的 `title`/画布文字必须走 `zh()`。**
   汉化插件只整串全等匹配、且不监听属性变化，细节与纪律见下方「汉化深度清理」。
+- **前端绝不在页面加载时调用 ComfyUI-Manager 的接口；非要用必须带 `skip_update=true`**。
+  原理：`/customnode/getlist`（不带 `skip_update`）会让 Manager 顺路对每个 git 插件跑
+  git 更新检查，被判「有更新」的插件（本机 detached HEAD 的都算）会被追加一条
+  `#LAZY-INSTALL-SCRIPT` 到 `ComfyUI/user/__manager/startup-scripts/install-scripts.txt`，
+  **下次启动 ComfyUI 就会 `os.execv` 自动重启一次**（KK 启动器显示 `PID: --`）。
+  v0.4.0 的 `workflow_note/index.js` 曾在页面加载 2 秒后自动预热这个接口 ——
+  等于每打开一次页面就替用户点一次「检查更新」，每次启动都被重启（v0.5.0 修复：
+  URL 加 `&skip_update=true` + 删掉页面加载预热，只在打开卡片编辑器 / 点 Detect 时懒加载）。
+  实测：带 `skip_update=true` 后 22.9 s → 2.6 s，返回的 `node_packs`/`reference`/`files` 照旧，
+  队列不再被写。验证脚本：工作区 `tools/verify_no_queue_on_load.py`（含阳性对照）。
 - 节点 ID 若与已有插件冲突，`__init__.py` 会保留先加载的并在控制台点名，不会静默覆盖。
 - 验证 ComfyUI 前**先确认端口上的进程是谁**（用户可能正开着 8188），验证用 `--port 8199` 起独立实例。
 
