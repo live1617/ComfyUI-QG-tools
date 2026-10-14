@@ -1,9 +1,9 @@
 {
   "pack": "ComfyUI-QG-tools",
-  "pack_version": "0.5.0",
+  "pack_version": "0.6.0",
   "source": {
     "plugin": "ComfyUI-AusBoss",
-    "version": "2.10.1（前三个节点） / 2.11.1（QG_ImageCropRotatePad）",
+    "version": "2.10.1（前三个节点） / 2.11.1（QG_ImageCropRotatePad） / 2.12.x（QG_RunTimer）",
     "archive": "ComfyUI-AusBoss-main.zip (ausboss/ComfyUI-AusBoss)",
     "license": "MIT — licenses/ComfyUI-AusBoss-LICENSE.txt",
     "note": "2.11.1 只用于 #10 那批新引入的文件；早先搬过来的 shared 模块保持 2.10.1 副本（已改名 + 汉化），仅 transform_geometry.mjs 整份换成 2.11.1。"
@@ -442,6 +442,42 @@
       "deliberate_edits": [
         "register_video_routes() 的调用从视频节点挪到 qg_image_crop_rotate_pad.py 末尾（图像面板也能载入视频源）。",
         "web/widget_kv/index.js 的 NODE_TYPES 收窄成只含 QG_ImageCropRotatePad，避免与 AusBoss 自带的 widget_kv 重复接管同一批节点。"
+      ]
+    },
+    {
+      "id": "QG_RunTimer",
+      "class": "QGRunTimer",
+      "display": "QG Run Timer",
+      "category": "QG-tools",
+      "source_id": "AUSBOSS_NODES_RunTimer",
+      "source_class": "AusBossRunTimer",
+      "source_ref": "ComfyUI-AusBoss #31（node_run_timer.py）",
+      "kind": "纯展示节点：无输入无输出，不进提示词；靠监听队列状态计时。",
+      "files_new": [
+        "nodes/qg_run_timer.py（Python 空壳注册）",
+        "web/run_timer/index.js（canvas 自绘读数 + Vue 回退）",
+        "web/shared/run_timer.mjs（计时判定逻辑，纯逻辑可脱离浏览器单测）"
+      ],
+      "notes": [
+        "右键菜单三条文案走 zh()（画布弹层够不着，汉化插件 observer 看不见）。",
+        "读数窗底色是节点前端自设的 READOUT_COLOR（#07090a），不是配色方案漏了。"
+      ]
+    },
+    {
+      "id": "QG_TextEditOutput",
+      "class": "QGTextEditOutput",
+      "display": "QG Text Edit",
+      "category": "QG-tools/文本",
+      "source_id": "MuyeTextEditOutput",
+      "source_class": "MuyeTextEditOutput",
+      "source_ref": "ComfyUI-Muye-nodes #24（text/text_edit_output.py）",
+      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "kind": "纯 Python 输出节点：零依赖，多行文本整段作为单元素 STRING 列表输出。",
+      "files_new": [
+        "nodes/qg_text_edit_output.py"
+      ],
+      "notes": [
+        "上游 display 为中文「文本」，按本包约定改成英文名。"
       ]
     }
   ],

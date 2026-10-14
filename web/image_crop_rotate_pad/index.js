@@ -1,6 +1,6 @@
-import { TRANSFORM_MIN_WIDTH, registerTransformExtension, transformPanelFloor } from "../shared/transform_editor.mjs?v=2026101316";
-import { keepDomWidgetWidthAuto } from "../shared/index.mjs?v=2026101316";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026101316";
+import { TRANSFORM_MIN_WIDTH, registerTransformExtension, transformPanelFloor } from "../shared/transform_editor.mjs?v=2026101402";
+import { keepDomWidgetWidthAuto } from "../shared/index.mjs?v=2026101402";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026101402";
 
 const PANEL_MIN_WIDTH = TRANSFORM_MIN_WIDTH;
 

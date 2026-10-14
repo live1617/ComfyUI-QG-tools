@@ -1,27 +1,28 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026101316";
-import { hideInputsInDef, hideWidget } from "./widget_visibility.mjs?v=2026101316";
-import { mountTransformTrim } from "./transform_trim.mjs?v=2026101316";
-import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026101316";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026101316";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026101316";
-import { mediaViewQuery } from "./media_list.mjs?v=2026101316";
-import { createMediaPicker } from "./media_picker.mjs?v=2026101316";
-import { normalizeFillColor } from "./fill_color.mjs?v=2026101316";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101316";
-import { confirmDiscard } from "./discard_prompt.mjs?v=2026101316";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101316";
-import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026101316";
-import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026101316";
-import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026101316";
+import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026101402";
+import { hideInputsInDef, hideWidget } from "./widget_visibility.mjs?v=2026101402";
+import { mountTransformTrim } from "./transform_trim.mjs?v=2026101402";
+import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026101402";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026101402";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026101402";
+import { mediaViewQuery } from "./media_list.mjs?v=2026101402";
+import { createMediaPicker } from "./media_picker.mjs?v=2026101402";
+import { normalizeFillColor } from "./fill_color.mjs?v=2026101402";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101402";
+import { confirmDiscard } from "./discard_prompt.mjs?v=2026101402";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101402";
+import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026101402";
+import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026101402";
+import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026101402";
+import { createSettle } from "./settle.mjs?v=2026101402";
 import {
   INPUT_FOLDER_MODE,
   LOCAL_PATH_MODE,
   normalizeVideoOptions,
   mediaSourceState,
   videoSourceState,
-} from "./video_source_card.mjs?v=2026101316";
+} from "./video_source_card.mjs?v=2026101402";
 import {
   alignChanges,
   aspectMatches,
@@ -76,9 +77,9 @@ import {
   turnedCrop,
   wrapDegrees,
   zoomAround,
-} from "./transform_geometry.mjs?v=2026101316";
-import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026101316";
-import { liftSocket } from "./widget_card.mjs?v=2026101316";
+} from "./transform_geometry.mjs?v=2026101402";
+import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026101402";
+import { liftSocket } from "./widget_card.mjs?v=2026101402";
 
 const HIDDEN_WIDGETS = [
   "image", "upload",
@@ -121,6 +122,26 @@ function settings() {
 }
 // Every installed node, so a changed setting redraws them all at once.
 const liveStates = new Set();
+
+// The note under the size waits this long after the last change, and never
+// settles while a pointer is down (see syncReadout). One watch on the page
+// serves every transform node.
+const NOTE_SETTLE_MS = 200;
+const NO_NOTE = Object.freeze({ warnings: Object.freeze([]), tip: "", even: false, advice: false });
+let pointerHeld = false;
+let pointerWatched = false;
+function watchPointer() {
+  if (pointerWatched) return;
+  pointerWatched = true;
+  window.addEventListener("pointerdown", (event) => { if (event.button === 0) pointerHeld = true; }, true);
+  const up = () => {
+    if (!pointerHeld) return;
+    pointerHeld = false;
+    for (const live of liveStates) live.settle.release();
+  };
+  window.addEventListener("pointerup", up, true);
+  window.addEventListener("pointercancel", up, true);
+}
 
 // Titles and readout lines composed at build time go through zh(): the zh
 // plugin's DOM translator whole-string-matches and never observes attribute
@@ -168,10 +189,11 @@ function installStyles() {
     .qgtools-transform-readout{flex:0 0 auto;margin-top:-3px;color:#c9d0d6;font:11px/14px system-ui;font-variant-numeric:tabular-nums;text-align:center;overflow:hidden;max-height:56px;cursor:default;user-select:none}
     .qgtools-transform-readout:empty{display:none}
     .qgtools-transform-readout span{color:#8ca8a5}.qgtools-transform-readout b{color:#fff;font-weight:600}
-    .qgtools-transform-readout i{display:block;color:#ffc46b;font-style:normal}
+    .qgtools-transform-readout i{display:block;min-height:14px;color:#ffc46b;font-style:normal}
+    .qgtools-transform-readout i[hidden]{display:none}
     .qgtools-transform-readout em{color:#8ca8a5;font-style:normal}
     .qgtools-transform-readout em.note{color:#ffc46b}
-    .qgtools-transform-readout button{margin:0 0 0 6px;height:14px;padding:0 6px;border:1px solid #6b5a33;border-radius:3px;background:#2a2417;color:#ffd79a;font:600 9.5px/12px system-ui;cursor:pointer;vertical-align:0}
+    .qgtools-transform-readout button{margin:0 0 0 6px;height:14px;padding:0 6px;border:1px solid #6b5a33;border-radius:3px;background:#2a2417;color:#ffd79a;font:600 9.5px/12px system-ui;cursor:pointer;vertical-align:top}
     .qgtools-transform-readout button:hover{border-color:#ffc46b;color:#fff}
     .qgtools-transform-aspects{display:flex;gap:5px;align-items:center;flex:0 0 auto}
     .qgtools-transform-aspects>span{flex:0 0 auto;color:#8ca8a5;font-size:10px;padding:0 3px;user-select:none}
@@ -544,9 +566,11 @@ export function installTransformNode(node, kind, mountPanel = null) {
     view: { zoom: 1, panX: 0, panY: 0 }, grid: false, ready: false,
     source: sourceKey(node, kind), frameController: null, frameObjectUrl: null,
     playbackTimer: null, playing: false, playbackSession: 0, disposed: false, loadSerial: 0,
-    imageIndex: null, imageTime: null,
+    imageIndex: null, imageTime: null, note: NO_NOTE,
   };
   node.__qgTransformState = state;
+  watchPointer();
+  state.settle = createSettle({ delay: NOTE_SETTLE_MS, held: () => pointerHeld, onSettle: () => settleReadout(state) });
   liveStates.add(state);
   state.isClip = Boolean(widget(node, "start_seconds") && widget(node, "end_seconds"));
   state.trimViews = new Set();
@@ -586,6 +610,9 @@ export function installTransformNode(node, kind, mountPanel = null) {
   panel.append(buildMediaSourceCard(state));
   const readout = createElement("div", "qgtools-transform-readout");
   state.readout = readout;
+  // The sizes, and under them the line the amber note has to itself.
+  state.sizeLine = createElement("div");
+  state.noteLine = createElement("i");
   // Its Even out button is a click, not a node drag.
   readout.addEventListener("pointerdown", (event) => { if (event.target.closest("button")) event.stopPropagation(); });
   panel.append(preview, readout);
@@ -1302,10 +1329,16 @@ function resizeSwitch(state) {
 function syncReadout(state) {
   const readout = state.readout;
   if (!readout) return;
-  if (!state.image || !state.sourceWidth || !state.sourceHeight) { readout.replaceChildren(); state.readoutKey = ""; readout.title = ""; return; }
+  if (!state.image || !state.sourceWidth || !state.sourceHeight) {
+    readout.replaceChildren(); readout.title = "";
+    state.sizeKey = ""; state.noteKey = ""; state.unsettled = false; state.settle.cancel(); showNote(state, NO_NOTE);
+    return;
+  }
   const current = values(state.node);
   const source = rotatedSize(state.sourceWidth, state.sourceHeight, current.rotation_degrees);
-  const { tokens, warnings } = litTokens(state, sizeChainTokens(sizeChain(current, source, resizeRequest(state.node))));
+  const resize = resizeRequest(state.node);
+  const chain = sizeChain(current, source, resize);
+  const { tokens, warnings } = litTokens(state, sizeChainTokens(chain));
   const parts = [];
   tokens.forEach((token, index) => {
     if (index) parts.push(" → ");
@@ -1324,30 +1357,93 @@ function syncReadout(state) {
     parts.push(createElement("span", "", " · "));
     parts.push(createElement("em", "note", note.text));
   }
-  if (warnings.length) {
-    const line = createElement("i", "", `⚠ ${warnings.join(" · ")}`);
-    const fix = stretchFix(state);
-    line.title = fix.tip;
-    if (fix.pads) {
-      const even = createElement("button", "", "Even out");
-      even.type = "button";
-      even.title = "Add a few pixels of padding so the rounding stretches nothing.";
-      even.addEventListener("click", () => {
-        for (const [name, next] of Object.entries(fix.pads)) setValue(state.node, name, next);
-        settleRequest(state); draw(state); updateModalInfo(state); notifyQgChange();
-      });
-      line.append(even);
-    }
-    parts.push(line);
+  const wanted = sizeNote(state, chain, warnings);
+  const sizeKey = parts.map((part) => (typeof part === "string" ? part : part.outerHTML)).join("");
+  const noteKey = JSON.stringify(wanted);
+  const changed = sizeKey !== state.sizeKey || noteKey !== state.noteKey;
+  state.wantedNote = wanted;
+  state.noteKey = noteKey;
+  // True for a click, a typed number or a new picture: shown at once. False
+  // while a pointer is down or more changes are coming: settleReadout shows it.
+  const now = changed && state.settle.touch();
+  if (changed) state.unsettled = !now;
+  const sizeLine = state.sizeLine;
+  if (readout.firstChild !== sizeLine) readout.replaceChildren(sizeLine, state.noteLine);
+  // Rebuilt only when it says something new.
+  if (sizeKey !== state.sizeKey) {
+    state.sizeKey = sizeKey;
+    const before = sizeLine.offsetHeight;
+    sizeLine.replaceChildren(...parts);
+    sizeLine.style.minHeight = now ? "" : `${Math.max(before, sizeLine.offsetHeight)}px`;
   }
-  // Rebuilt only when it says something new, so a redraw between the press
-  // and the click on Even out never swaps the button out from under it.
-  const key = parts.map((part) => (typeof part === "string" ? part : part.outerHTML)).join("");
-  if (key !== state.readoutKey) {
-    state.readoutKey = key;
-    readout.replaceChildren(...parts);
-  }
+  // Every note is about the resize, so its line comes and goes with Resize.
+  state.noteLine.hidden = !resize;
+  if (now) showNote(state, wanted);
+  // A drag has made the note on show untrue: it steps out until the hand stops.
+  else if (changed && pointerHeld && noteKey !== state.shownNoteKey) hideNote(state);
   readout.title = [note?.tip, ...sizeLines(state)].filter(Boolean).join("\n");
+}
+
+// What the amber note says for these values: the warnings, the tooltip that
+// names a fix, whether Even out can do it, and whether Divisible by is
+// adding fill or trimming ahead of the resize (the editor says so).
+function sizeNote(state, chain, warnings) {
+  if (!warnings.length) return NO_NOTE;
+  const fix = stretchFix(state);
+  const { added, trimmed } = alignChanges(chain);
+  return { warnings, tip: fix.tip, even: Boolean(fix.pads), advice: Boolean(chain.resized && (added.length || trimmed.length)) };
+}
+
+// Writes the settled note: the face's amber line, and state.note, which the
+// editor's size box and status read. Rebuilt only when it says something
+// new, so a redraw between the press and the click on Even out never swaps
+// the button out from under it.
+function showNote(state, note) {
+  state.noteStale = false;
+  state.noteLine.style.visibility = "";
+  const key = JSON.stringify(note);
+  if (key === state.shownNoteKey) return;
+  state.shownNoteKey = key;
+  state.note = note;
+  const line = state.noteLine;
+  line.replaceChildren();
+  line.title = note.tip;
+  if (!note.warnings.length) return;
+  line.append(`⚠ ${note.warnings.join(" · ")}`);
+  if (!note.even) return;
+  const even = createElement("button", "", "Even out");
+  even.type = "button";
+  even.title = "Add a few pixels of padding so the rounding stretches nothing.";
+  even.addEventListener("click", () => {
+    // Worked out at the click: the note may be a moment behind the values.
+    const pads = stretchFix(state).pads;
+    if (!pads) return;
+    for (const [name, next] of Object.entries(pads)) setValue(state.node, name, next);
+    settleRequest(state); draw(state); updateModalInfo(state); notifyQgChange();
+  });
+  line.append(even);
+}
+
+// Out of sight, with its line kept, so nothing under it moves.
+function hideNote(state) {
+  state.noteStale = true;
+  state.noteLine.style.visibility = "hidden";
+}
+
+// The note as the editor's size box and status show it: none while a drag
+// has it stepped out.
+function shownNote(state) {
+  return state.noteStale ? NO_NOTE : state.note;
+}
+
+// The hand has stopped: the note says what the values say now, the size
+// line takes its own height again, and the editor's copies follow.
+function settleReadout(state) {
+  if (state.disposed) return;
+  state.unsettled = false;
+  state.sizeLine.style.minHeight = "";
+  showNote(state, state.wantedNote ?? NO_NOTE);
+  draw(state); updateModalInfo(state);
 }
 
 // A lit ratio re-applies to every new picture, so the size chain names it
@@ -2499,7 +2595,9 @@ function resizeRequest(node) {
 // amber line when the steps stretch the picture or the resize undoes Align.
 const READOUT_LINE = 15;
 function drawOutputSize(context, state, render) {
-  const { tokens, warnings } = litTokens(state, sizeChainTokens(sizeChain(values(state.node), render.source, resizeRequest(state.node))));
+  const { tokens } = litTokens(state, sizeChainTokens(sizeChain(values(state.node), render.source, resizeRequest(state.node))));
+  // The amber line is the settled note, as on the face: it waits for the hand.
+  const warnings = shownNote(state).warnings;
   const { outputRect } = render;
   context.save();
   const viewWidth = context.canvas.clientWidth || context.canvas.width;
@@ -3057,7 +3155,13 @@ function updateModalInfo(state) {
     ? `\n${zh("Stitch blend {a} px").replace("{a}", String(value(state.node, "stitch_blend", 32)))}`
       + (grow ? zh(", grow {a} px").replace("{a}", String(grow)) : "")
     : "";
+  // Mid-drag the block only grows, like the size line on the face, so the
+  // rows under it keep still while a line of it comes or goes. Its lines
+  // are not whole pixels tall, so the height is read unrounded.
+  const height = () => status.getBoundingClientRect().height;
+  const before = state.unsettled ? height() : 0;
   status.textContent = `${sizeLines(state).join("\n")}${stitch}${frame}`;
+  status.style.minHeight = state.unsettled ? `${Math.max(before, height())}px` : "";
 }
 
 // The output size in the order the run builds it, one step per line: the
@@ -3095,8 +3199,10 @@ function sizeLines(state) {
       .replace("{c}", String(chain.resized.width)).replace("{d}", String(chain.resized.height))
       .replace("{e}", megapixels));
   }
-  for (const warning of sizeChainTokens(chain).warnings) lines.push(`⚠ ${warning}`);
-  if (chain.resized && changes.length) {
+  // The settled note, not the live one: these lines would flash with a drag too.
+  const note = shownNote(state);
+  for (const warning of note.warnings) lines.push(`⚠ ${warning}`);
+  if (note.advice) {
     lines.push(zh("With Resize on, Step already rounds the size: Divisible by 1 adds no fill and trims nothing."));
   }
   return lines;
@@ -3116,7 +3222,7 @@ export function openTransformEditorForNode(node) {
 }
 
 export function disposeTransformNode(node) {
-  const state = node.__qgTransformState; if (!state) return; state.disposed = true; liveStates.delete(state); closeEditor(state); state.panelAbort?.abort(); state.panelResizeObserver?.disconnect(); state.frameController?.abort(); if (state.frameObjectUrl) URL.revokeObjectURL(state.frameObjectUrl);
+  const state = node.__qgTransformState; if (!state) return; state.disposed = true; liveStates.delete(state); closeEditor(state); state.panelAbort?.abort(); state.panelResizeObserver?.disconnect(); state.frameController?.abort(); state.settle.cancel(); if (state.frameObjectUrl) URL.revokeObjectURL(state.frameObjectUrl);
   if (node.__qgImgsSuppressed) {
     const descriptor = node.__qgImgsDescriptor;
     if (descriptor) Object.defineProperty(node, "imgs", descriptor); else delete node.imgs;

@@ -451,6 +451,68 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 `dataset.qgStatus`（= `data-qg-status`），选择器对不上 → 编辑器右侧的尺寸状态栏一直是空的。
 现在两边统一为 `data-qg-status`。
 
+## Run Timer 搬家记录（AusBoss #31，v0.6.0）
+
+最小的搬运：**1 个 Python 空壳（34 行）+ 1 个前端入口（468 行）+ 1 个新共享模块（83 行）**。
+
+- **性质**：纯展示节点。无输入无输出、`FUNCTION = "noop"` 且**永远不会被执行**
+  （没有输出就不进 prompt 图）——整个节点就是块黑底读数：无标题栏（`flags.no_title`）、
+  用 `Object.defineProperty` 把 `node.badges` 钉成空数组（不然前端挂的「哪个包」徽标悬在空白处）、
+  `color`/`bgcolor` 钉成 `#07090a`。
+- **两条渲染路径**（`usesVueNodes()` 分流）：经典画布走 `onDrawForeground` **节点自绘**
+  （没有 DOM widget，指针落点就是画布，拖拽/缩放/右键都是原生行为）；Nodes 2.0 渲染器
+  不跑 canvas paint，回退成 DOM widget（`.qgtools-timer-*`）。宽度是把手，高度按
+  176:56 锁定比例（`keepAspect` 在 draw 路径里也跑，拖完下一帧就修正）。
+- **共享层需求**：`shared/index.mjs`（BRAND/chainCallback/keepDomWidgetWidthAuto）与
+  `panel_layout.mjs`（holdNodeMinWidth）本来就有；**新增 `shared/run_timer.mjs`**
+  （83 行纯逻辑 reducer + 缓存发光层，零 import，测试友好的那部分都在这）。
+- **改名**：`tools/port_run_timer.py`，8 条改名 + 命中数断言。教训：**短串的预期命中数
+  要按改之前的原文统计**——`ausboss_run_timer` 原文 3 处 = `_panel` 1 + `PROPERTY` 值 1 +
+  DOM widget 名 1，第一版断言写成 2 被 FATAL 当场拦下（这正是断言的价值）。
+  改完 `grep -ci ausboss` 必须为 0。
+- **i18n**：右键菜单（历史记录 + 清空）是**点击时构建**的，汉化插件的 DOM 观察器够不到
+  → 三条全走 `zh()`（`Runs: {a}` / `No completed runs yet` / `Reset Run Timer history`，
+  键放本节点 ui）。两份字典都用 `tools/add_i18n_run_timer.py` 补齐（脚本先断言
+  「键的字面量在 web/ 源码里存在」再写盘）。节点本身无输入无输出，nodeDefs 两边
+  `inputs`/`outputs` 都是空对象。
+- **版本串**：新增 shared 模块 → `2026101316` → `2026101401`（82 处）。
+- **验证**：`frontend_cdp_check.py` 的「节点实测」段加了 `runTimer` 探针
+  （installed / mode=noTitle / badges=0 / size=[176,56] / color=#07090a）；
+  8199 实测 PASS、启动日志「节点数 5」、汉化与布局断言无回归。
+
+## Text Edit Output 搬家记录（Muye #24，v0.6.0）
+
+最小的一个：**1 个 Python 文件、零前端、零新增依赖**。
+
+- **性质**：纯 Python 输出节点。`multiline` 文本框 → `OUTPUT_IS_LIST = (True,)`
+  + `OUTPUT_NODE = True`，`process_text` 返回 `([text],)` —— **整段作为一个元素传出，
+  绝不按换行切分**（上游语义如此；切了就变成多路输出，接下游会炸）。
+- **改名**：`MuyeTextEditOutput` → `QG_TextEditOutput` / `QGTextEditOutput`；
+  display 从中文「文本」改成 `QG Text Edit`；CATEGORY 走 `QG-tools/文本`。
+- **许可证**：上游 `ComfyUI-Muye-nodes` 是 MIT（copyright 2025 muye_xiuluo），
+  全文已落到 `licenses/ComfyUI-Muye-nodes-LICENSE.txt`；README 的许可证段一并列了出处。
+- **i18n**：`locales/zh/nodeDefs.json` 的 `QG_TextEditOutput` 四条（display_name /
+  description / inputs.text / outputs）；汉化插件字典同步补同一份。
+
+## appearance 全局扩展（AusBoss 全局前端层，v0.6.0）
+
+用户截图反馈「QG 节点怎么没有 ? 徽章和配色」才补的 —— 之前只搬过数据层
+`shared/appearance.mjs`，节点一直没徽章也没配色。
+
+- **新增** `web/appearance/index.js`（扩展名 `QG.Appearance`，全局，不绑节点）：
+  `nodeCreated` 时按当前方案给 QG 节点上色 + 画「?」徽章；右键加「QG 配色」子菜单；
+  `installTitleInk` 给标题栏挂 `.qgTitleInk` 做墨色适配。
+- **新增** `web/shared/help_badge.mjs`（徽章绘制，纯逻辑，无 import）。
+- **「已有配色不动」**：`shouldRecolor` 只认没上过色的节点，保护用户手动挑的颜色。
+  副作用是旧会话/别的插件带来的杂色节点会一直留着 → 解法是配色子菜单最后一项
+  「把所有 QG 节点重刷为当前配色」（`repaintEveryQgNode`，无视 shouldRecolor，
+  遍历含子图强制重刷；方案选 `Theme default` 即为清色）。
+- **i18n**：菜单走 `zh()`。字典里新增**非节点的顶层条目** `QG_Appearance`
+  —— `verify_i18n.py` 只遍历 NODES 名单，独立条目不影响校验；配色方案名
+  各节点条目里本来就有，`zh()` 走合并字典直接复用。
+- **验证**：专项脚本 `tools/verify_appearance.py`（真机 CDP 造节点看上色 / 徽章 /
+  菜单）；`tools/probe_teo_color.py` 验 TextEditOutput 也吃到配色。
+
 ## 发布到 Registry
 
 `pyproject.toml` 与 `.github/workflows/publish_action.yml` 已经按官方模板配好：

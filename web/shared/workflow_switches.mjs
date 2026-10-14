@@ -35,6 +35,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   match: "", // comma-separated title text, read when groups is "matching"
   order: "canvas", // group rows: "canvas" (the way the workflow reads) | "title"
   exclusive: false, // one at a time: switching a row on switches the other rows off
+  // with one at a time on, how the card shows its rows: "rows" (each with its
+  // own off | on) | "pill" (every row is a choice in one pill, one always picked)
+  show: "rows",
   hidden: Object.freeze([]), // group titles whose rows were removed with the row's delete button
   switches: Object.freeze([]), // the made switches: { id, title, nodes, groups, on, off }
 });
@@ -43,6 +46,7 @@ const CHOICES = {
   off: ["bypass", "mute"],
   groups: ["all", "numbered", "matching", "none"],
   order: ["canvas", "title"],
+  show: ["rows", "pill"],
 };
 
 export function cleanTitle(title) {
@@ -665,6 +669,82 @@ export function valueAllPlan(rows, on) {
   const sides = new Map();
   for (const row of rows) for (const pair of row.pairs ?? []) sides.set(`${pair.node}|${pair.widget}|${pair.row ?? ""}`, [pair, on ? "on" : "off"]);
   return [...sides.values()].filter(([pair, side]) => pair.now !== side);
+}
+
+// ---------- one pill for the whole card ----------
+
+// With One at a time on, a card can show its rows as one control: every row
+// is a choice, and exactly one is picked. Up to PILL_CHOICES_MAX choices sit
+// side by side in a segmented pill; more are a list to pick from, the widget
+// cards' rule.
+export const PILL_CHOICES_MAX = 4;
+// What lies between a node's edge and the names in its pill, both sides
+// together: the panel's frame (12 a side in Nodes 2.0, 10 in the classic
+// renderer), the card's border and padding (9) and the pill's own (3).
+export const PILL_FRAME = 48;
+// The room a segment keeps beside its name: 6 px a side, and 2 for rounding.
+export const PILL_SEGMENT_PAD = 14;
+// The widest a node is made for the sake of its pill. Names that need more
+// are a list too.
+export const PILL_NODE_WIDTH_MAX = 400;
+
+// What a choice is called: the row's title, or a plain word for a group
+// nobody named.
+export function rowLabel(row) {
+  return row?.title || (row?.kind === "switch" ? "Switch" : "Group");
+}
+
+// A guess at a name's width where it cannot be measured (under node:test).
+const guessWidth = (text) => [...String(text ?? "")].length * 6.5;
+
+// How wide a node must be for its pill to show every name in full. The
+// segments are equally wide, so the longest name decides. `measure` gives a
+// name's width in pixels, drawn the way a segment draws it.
+export function pillNodeWidth(labels, measure = guessWidth) {
+  const longest = (labels ?? []).reduce((widest, label) => Math.max(widest, Number(measure(label)) || 0), 0);
+  return Math.ceil(PILL_FRAME + (labels?.length ?? 0) * (longest + PILL_SEGMENT_PAD));
+}
+
+// How a card shows its rows: "rows" (one row each, the look every card had
+// before, and the default), "pill" (one segmented pill) or "list" (one list
+// to pick from). The last two need One at a time, Show as set to one pill,
+// and at least two rows: one row alone has nothing to be picked against.
+// `width` is the node width the pill needs, which the card holds as its floor
+// so that no name is cut short; 0 for the other two.
+export function cardView(settings, rows, measure = guessWidth) {
+  const count = rows?.length ?? 0;
+  if (!settings?.exclusive || settings.show !== "pill" || count < 2) return { view: "rows", width: 0 };
+  if (count <= PILL_CHOICES_MAX) {
+    const width = pillNodeWidth(rows.map(rowLabel), measure);
+    if (width <= PILL_NODE_WIDTH_MAX) return { view: "pill", width };
+  }
+  return { view: "list", width: 0 };
+}
+
+// Where a pick-one card stands. It is settled ("one", with the row that is
+// `picked`) when exactly one row is on and no other row is partly on. Any
+// other state is told as it is: "none" (nothing on), "partly" (one row, and
+// only some of it) or "several" (`count` rows on or partly on). A graph edited
+// by hand, or saved before the card was a pill, can be in any of them.
+export function choiceState(rows) {
+  const on = (rows ?? []).filter((row) => row.state === "on");
+  const mixed = (rows ?? []).filter((row) => row.state === "mixed");
+  if (on.length === 1 && !mixed.length) return { kind: "one", picked: on[0], count: 1 };
+  if (!on.length && !mixed.length) return { kind: "none", picked: null, count: 0 };
+  if (!on.length && mixed.length === 1) return { kind: "partly", picked: null, count: 1 };
+  return { kind: "several", picked: null, count: on.length + mixed.length };
+}
+
+// What a click on a choice changes: that row goes on and every other row
+// off, as one at a time does. `modes` and `values` are switchPlan's and
+// valuePlan's answers. Both are empty for the choice that is already the only
+// one on, so a click on it does nothing and one stays picked; from any other
+// state one click leaves exactly this row on. A row with nothing in it cannot
+// be picked: it would only switch the others off.
+export function choosePlan(rows, target, settings) {
+  if (!target || target.state === "empty") return { modes: [], values: [] };
+  const one = { ...settings, exclusive: true };
+  return { modes: switchPlan(rows, target, true, one), values: valuePlan(rows, target, true, one) };
 }
 
 // ---------- making and changing switches ----------

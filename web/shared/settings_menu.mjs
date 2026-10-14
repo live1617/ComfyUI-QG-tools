@@ -8,10 +8,10 @@
 //                        title: "LoRA Loader settings",
 //                        onChange: (values, key) => rerender(values) });
 
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101316";
-import { BRAND } from "./index.mjs?v=2026101316";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026101316";
-import { zh } from "./zh.mjs?v=2026101316";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101402";
+import { BRAND } from "./index.mjs?v=2026101402";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026101402";
+import { zh } from "./zh.mjs?v=2026101402";
 import {
   isOverrideActive,
   isOverrideEntry,
@@ -19,7 +19,7 @@ import {
   overrideEnableValue,
   overrideIsCustom,
   schemaDefaults,
-} from "./node_settings.mjs?v=2026101316";
+} from "./node_settings.mjs?v=2026101402";
 
 const CSS_ID = "qgtools-settings-css";
 

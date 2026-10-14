@@ -17,8 +17,8 @@
 // fixed_frames / frame_load_cap input, which leaves only IN to set. OUT
 // always sits on the last frame the run outputs - every nth, the snap rule
 // and the Length included - so the handle and the bright bar agree.
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101316";
-import { formatTimecode } from "./timecode.mjs?v=2026101316";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101402";
+import { formatTimecode } from "./timecode.mjs?v=2026101402";
 import {
   boundaryAtFraction,
   clampFrame,
@@ -39,7 +39,7 @@ import {
   snapStep,
   snapToValid,
   windowSeconds,
-} from "./timeline_math.mjs?v=2026101316";
+} from "./timeline_math.mjs?v=2026101402";
 
 const CSS_ID = "qgtools-transform-trim-css-v4";
 const HANDLE_HIT_PX = 9;

@@ -1,7 +1,7 @@
 # ComfyUI-QG-tools
 
-一个 ComfyUI 自定义节点包，目前包含四个节点：**LoRA 加载器**、**图像裁剪 + 旋转 + 补边**、
-**工作流说明卡**、**工作流开关**。
+一个 ComfyUI 自定义节点包，目前包含六个节点：**LoRA 加载器**、**图像裁剪 + 旋转 + 补边**、
+**工作流说明卡**、**工作流开关**、**运行计时器**、**文本编辑输出**。
 
 **QG Image Crop + Rotate + Pad —— 在节点上直接把画面摆正、裁好、补出画布**
 
@@ -29,8 +29,19 @@
 - 也能当参数预设用：为「开」和「关」各存一套选中节点的设置值，一键切换
 - 折叠后只剩标签和开关，不占画布
 
-- **当前版本**：v0.5.0
-- **节点**：4 个（`QG LoRA Loader` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` / `QG Workflow Switches`，分类 `QG-tools`）
+**QG Run Timer —— 这次跑图花了多久，直接写在画布上**
+
+- 整轮队列的秒表：开始跑就走字，跑完停住总时长
+- 右键看最近几次的记录，改完设置好和上一次对比
+- 时间跟着工作流一起保存，别人打开你的图就知道作者那次跑了多久
+
+**QG Text Edit Output —— 画布上的一块随手文本框**
+
+- 手动敲的字，整段作为一路字符串输出，接给任何下游文本输入
+- 纯 Python 节点，零依赖、不加载模型
+
+- **当前版本**：v0.6.0
+- **节点**：6 个（`QG LoRA Loader` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` / `QG Workflow Switches` / `QG Run Timer` / `QG Text Edit`，分类 `QG-tools`）
 - **依赖**：无额外 pip 包。只用 ComfyUI 运行期自带的模块（torch / numpy / PIL / PyAV / folder_paths / comfy.*）；
   `scipy`、`pymatting` 用到了才用，缺了有内置回退，不报错。
 - **许可证**：[GPL-3.0-or-later](LICENSE)
@@ -59,11 +70,12 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 装完**完整重启 ComfyUI**，控制台应出现：
 
 ```
-[QG-tools] v0.5.0 加载完成 | 节点数 4
+[QG-tools] v0.6.0 加载完成 | 节点数 6
 ```
 
-无需 `pip install` 任何东西。四个节点都在 `QG-tools` 分类下（图像节点在 `QG-tools/Image`），
-搜索 `lora`、`crop`、`note`、`switch` 等也能找到。
+无需 `pip install` 任何东西。六个节点都在 `QG-tools` 分类下
+（图像节点在 `QG-tools/Image`，文本节点在 `QG-tools/文本`），
+搜索 `lora`、`crop`、`note`、`switch`、`timer`、`text` 等也能找到。
 
 ---
 
@@ -284,6 +296,56 @@ Scale Image to Total Pixels 同语义）。
 
 ---
 
+## QG Run Timer（运行计时器）
+
+给整轮队列计时的一块读数面板。它不接任何线 —— 队列一开始跑就走字，跑完停住总时长，
+纯粹靠监听队列状态工作。
+
+| 行为 | 说明 |
+|---|---|
+| 计时 | 从队列开始执行起算，运行中实时走字，结束显示总时长 |
+| 历史 | 右键节点看最近几次的用时，改完设置好跟上一次比 |
+| 保存 | 时间随工作流一起存，别人打开你的图能看到作者那次的耗时 |
+
+它不进提示词、没有输入输出，只影响画布上的显示。
+
+### 输入 / 输出
+
+| 方向 | 名称 | 说明 |
+|---|---|---|
+| 输入 | —— | 无 |
+| 输出 | —— | 无 |
+
+---
+
+## QG Text Edit Output（文本编辑输出）
+
+画布上的一块随手文本框：在这里敲的字，整段作为一路字符串输出，接给下游任何文本输入
+（提示词、文件名、说明文字都行）。
+
+- **整段输出，不切分** —— 多行文本作为一个元素传出，不会因为换行被拆成多路
+- **零依赖** —— 纯 Python 输出节点，不加载模型，不需要任何 pip 包
+
+### 输入 / 输出
+
+| 方向 | 名称 | 说明 |
+|---|---|---|
+| 输入（必填） | `text` | 手动输入的多行文本 |
+| 输出 | `text` | 整段文本（单元素 STRING 列表） |
+
+---
+
+## QG 节点的外观
+
+所有 QG 节点共用一个配色扩展：
+
+- 新建节点时按当前配色方案自动上色，标题栏带一个 `?` 徽章（点开是说明）。
+- 右键任意 QG 节点 → **QG 配色**，可以单独改这一个节点，或者换整套配色方案。
+- 已经手动挑过颜色的节点**不会被自动覆盖** —— 想统一就点配色子菜单最后一项
+  「把所有 QG 节点重刷为当前配色」（选 `Theme default` 即为清色）。
+
+---
+
 ## 中文界面
 
 - 插件自带 `locales/zh/nodeDefs.json`：把 ComfyUI 语言切成中文即生效，节点名、输入输出、提示都会变中文。
@@ -306,7 +368,11 @@ Scale Image to Total Pixels 同语义）。
 
 本项目以 **GPL-3.0-or-later** 发布，全文见 [`LICENSE`](LICENSE)。
 
-其中的四个节点（LoRA 加载器、图像裁剪 + 旋转 + 补边、工作流说明卡、工作流开关）抽取并改写自
-[ComfyUI-AusBoss](https://github.com/ausboss/ComfyUI-AusBoss)（MIT）。
-按 MIT 的要求，原许可证全文保留在 [`licenses/ComfyUI-AusBoss-LICENSE.txt`](licenses/ComfyUI-AusBoss-LICENSE.txt)；
+其中的五个节点（LoRA 加载器、图像裁剪 + 旋转 + 补边、工作流说明卡、工作流开关、运行计时器）
+抽取并改写自 [ComfyUI-AusBoss](https://github.com/ausboss/ComfyUI-AusBoss)（MIT）；
+文本编辑输出抽取并改写自
+[ComfyUI-Muye-nodes](https://github.com/muyexiuluo/ComfyUI-Muye-nodes)（MIT）。
+按 MIT 的要求，两份原许可证全文分别保留在
+[`licenses/ComfyUI-AusBoss-LICENSE.txt`](licenses/ComfyUI-AusBoss-LICENSE.txt) 与
+[`licenses/ComfyUI-Muye-nodes-LICENSE.txt`](licenses/ComfyUI-Muye-nodes-LICENSE.txt)；
 被改写部分的原始版权仍归原作者所有。MIT 与 GPLv3 兼容，因此整体以 GPLv3 分发是合规的。
