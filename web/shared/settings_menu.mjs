@@ -8,10 +8,10 @@
 //                        title: "LoRA Loader settings",
 //                        onChange: (values, key) => rerender(values) });
 
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101402";
-import { BRAND } from "./index.mjs?v=2026101402";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026101402";
-import { zh } from "./zh.mjs?v=2026101402";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101403";
+import { BRAND } from "./index.mjs?v=2026101403";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026101403";
+import { zh } from "./zh.mjs?v=2026101403";
 import {
   isOverrideActive,
   isOverrideEntry,
@@ -19,7 +19,7 @@ import {
   overrideEnableValue,
   overrideIsCustom,
   schemaDefaults,
-} from "./node_settings.mjs?v=2026101402";
+} from "./node_settings.mjs?v=2026101403";
 
 const CSS_ID = "qgtools-settings-css";
 
@@ -278,7 +278,9 @@ export function makeGearRow(titleText) {
   const row = el("div", "qgtools-set-gearrow");
   const button = el("button", "qgtools-set-gearbtn");
   button.type = "button";
-  button.title = titleText ?? "Settings";
+  // Titles written here never get a second pass (the zh plugin's observer
+  // only watches nodes being inserted), so the fallback goes through zh().
+  button.title = titleText ?? zh("Settings");
   button.innerHTML = gearIconSvg();
   row.append(button);
   return { row, button };
@@ -417,7 +419,7 @@ export function openSettingsMenu({ scope, schema, anchor, title, onChange, initi
       // sees it; its titles are written here and would stay English.
       check.title = zh("Send {a} with the request; off leaves it to the server").replace("{a}", zh(entry.label));
       const dot = el("span", "qgtools-set-moddot hidden");
-      dot.title = "Changed from the suggested value";
+      dot.title = zh("Changed from the suggested value");
       const trash = el("button", "qgtools-set-trash hidden");
       trash.type = "button";
       trash.innerHTML = trashIconSvg();
@@ -472,7 +474,7 @@ export function openSettingsMenu({ scope, schema, anchor, title, onChange, initi
   const foot = el("div", "qgtools-set-foot");
   const reset = el("button", "qgtools-set-btn", "Reset");
   reset.type = "button";
-  reset.title = "Back to defaults for this node type";
+  reset.title = zh("Back to defaults for this node type");
   reset.addEventListener("click", () => {
     resetSettings(scope);
     // persist:false entries mirror the open node, not a stored default, so

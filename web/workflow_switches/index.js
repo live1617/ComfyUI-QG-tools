@@ -25,20 +25,20 @@
 // decisions live in js/shared/workflow_switches.mjs under node:test.
 
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026101402";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101402";
-import { holdNodeMinWidth, holdVueNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026101402";
-import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026101402";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026101403";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101403";
+import { holdNodeMinWidth, holdVueNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026101403";
+import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026101403";
 import {
   DEFAULT_SETTINGS, SETTINGS_PROPERTY, SWITCHES_MAX, TITLE_MAX, addMembers, addSwitch, cardView, choiceState, choosePlan, flipTo, frameBounds, groupBounds, heldCount,
   hideGroup, listedRows, modeMatters, moveSwitch, normalizeSettings, pairValue, placeNodes, readGroups, readSwitches,
   removeMembers, removeSwitch, renameSwitch, restoreGroups, rowLabel, rowsSignature, saveValues, snapshotNode, suggestTitle, switchAllPlan,
   switchPlan, valueAllPlan, valuePlan,
-} from "../shared/workflow_switches.mjs?v=2026101402";
+} from "../shared/workflow_switches.mjs?v=2026101403";
 // Sentences the DOM translator cannot reach: every one here is built at
 // runtime (a name, a count, or a branch), or written onto a title after the
 // fact. zh() looks the whole English sentence up and falls back to it.
-import { zh, zhOn, zhReady, zhSep } from "../shared/zh.mjs?v=2026101402";
+import { zh, zhOn, zhReady, zhSep } from "../shared/zh.mjs?v=2026101403";
 
 const NODE_CLASS = "QG_WorkflowSwitches";
 const CSS_ID = "qgtools-workflow-switches-css";
@@ -153,7 +153,7 @@ function el(tag, className = "", text) {
 function button(className, text, title) {
   const node = el("button", className, text);
   node.type = "button";
-  if (title) node.title = title;
+  if (title) node.title = zh(title);
   return node;
 }
 
@@ -408,7 +408,9 @@ function setEdit(state, open) {
 function settingsRow(label, title) {
   const row = el("div", "qgtools-card-row");
   const caption = el("span", "qgtools-card-label", label);
-  caption.title = title;
+  // Titles are written after insertion, which the zh plugin's DOM pass
+  // (childList only) never revisits — so they go through zh() here.
+  caption.title = zh(title);
   const control = el("div", "qgtools-card-control");
   row.append(caption, control);
   return { row, control };
@@ -438,7 +440,7 @@ function segmentRow(state, key, label, title, values, labels = {}, { flips = fal
 function selectRow(state, key, label, title, labels) {
   const { row, control } = settingsRow(label, title);
   const select = el("select", "qgtools-card-select");
-  select.title = title;
+  select.title = zh(title);
   for (const [value, text] of Object.entries(labels)) {
     const option = el("option", "", text);
     option.value = value;
@@ -478,7 +480,7 @@ function buildSettings(state) {
   text.type = "text";
   text.spellcheck = false;
   text.placeholder = "upscale, face";
-  text.title = "Comma-separated text; a group is listed when its title contains any of it";
+  text.title = zh("Comma-separated text; a group is listed when its title contains any of it");
   text.addEventListener("input", () => patchSettings(state, { match: text.value }, { settle: false }));
   text.addEventListener("change", () => notifyQgChange());
   text.addEventListener("keydown", (event) => {
@@ -784,7 +786,7 @@ function buildRow(state, key, made) {
     name.maxLength = TITLE_MAX;
     name.spellcheck = false;
     name.hidden = true;
-    name.title = "Name this switch, then press Enter";
+    name.title = zh("Name this switch, then press Enter");
     name.addEventListener("keydown", (event) => {
       keepKeyInField(event);
       if (event.key === "Enter") name.blur();

@@ -200,5 +200,29 @@
         "name": "文本"
       }
     }
+  },
+  "QG_MDReader": {
+    "display_name": "QG 加载文档",
+    "description": "读取一个 Markdown 文件并输出它的文本。输出是 STRING，可以接任意文本输入——提示词框、CLIP Text Encode、说明卡。纯文本模式会剥掉 Markdown 标记（#、*、-、[]()），原样模式按文件原样输出。节点上会直接预览文档内容。",
+    "inputs": {
+      "md_file": {
+        "name": "文档",
+        "tooltip": "把 .md 放到 ComfyUI 的 input 目录，然后点节点上的刷新按钮。"
+      },
+      "mode": {
+        "name": "模式",
+        "tooltip": "纯文本：剥掉 Markdown 标记，读起来像一句提示词。原样：文件原封不动。"
+      },
+      "custom_path": {
+        "name": "自定义路径",
+        "tooltip": "留空用上面的列表；填了绝对路径就以它为准。"
+      }
+    },
+    "outputs": {
+      "text": {
+        "name": "文本",
+        "tooltip": "文档的文本，可以接任意 STRING 输入。"
+      }
+    }
   }
 }

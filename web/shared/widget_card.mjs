@@ -30,19 +30,20 @@
 // Pure decisions (which rows show, how tall the card is, how a number
 // scrubs, where a socket sits) live in widget_card_math.mjs for node:test;
 // this file is the DOM.
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026101402";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101402";
-import { createMediaPicker } from "./media_picker.mjs?v=2026101402";
-import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026101402";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101402";
-import { hideWidget } from "./widget_visibility.mjs?v=2026101402";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026101403";
+import { zh } from "./zh.mjs?v=2026101403";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101403";
+import { createMediaPicker } from "./media_picker.mjs?v=2026101403";
+import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026101403";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101403";
+import { hideWidget } from "./widget_visibility.mjs?v=2026101403";
 import {
   CARD_PADDING, GROUP_HEIGHT, ROW_GAP, ROW_HEIGHT, SECTION_HEIGHT, SLOT_OFFSET, UNIT_SLOT_WIDTH,
   cardHeight, commitWidgetValue, comboValues, rowHeight, rowKind, rowMuted, rowTops, scrubSteps, socketWidgetY, visibleRows,
   widgetTooltip,
-} from "./widget_card_math.mjs?v=2026101402";
+} from "./widget_card_math.mjs?v=2026101403";
 
-export * from "./widget_card_math.mjs?v=2026101402";
+export * from "./widget_card_math.mjs?v=2026101403";
 
 const CSS_ID = "qgtools-widget-card-css";
 export const CARD_WIDGET = "qg_widget_card";
@@ -366,7 +367,7 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
   const buildColor = (name, row, into) => {
     const widget = findWidget(node, name);
     const swatch = el("input", "qgtools-card-swatch"); swatch.type = "color";
-    swatch.title = "Pick a color";
+    swatch.title = zh("Pick a color");
     const input = el("input", "qgtools-card-text"); input.type = "text"; input.spellcheck = false;
     input.title = row.title ?? widgetTooltip(node, name, widget);
     const commit = () => { if (input.value !== String(findWidget(node, name)?.value ?? "")) setWidget(name, input.value.trim()); };

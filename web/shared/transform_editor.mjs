@@ -1,28 +1,28 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026101402";
-import { hideInputsInDef, hideWidget } from "./widget_visibility.mjs?v=2026101402";
-import { mountTransformTrim } from "./transform_trim.mjs?v=2026101402";
-import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026101402";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026101402";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026101402";
-import { mediaViewQuery } from "./media_list.mjs?v=2026101402";
-import { createMediaPicker } from "./media_picker.mjs?v=2026101402";
-import { normalizeFillColor } from "./fill_color.mjs?v=2026101402";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101402";
-import { confirmDiscard } from "./discard_prompt.mjs?v=2026101402";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101402";
-import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026101402";
-import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026101402";
-import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026101402";
-import { createSettle } from "./settle.mjs?v=2026101402";
+import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026101403";
+import { hideInputsInDef, hideWidget } from "./widget_visibility.mjs?v=2026101403";
+import { mountTransformTrim } from "./transform_trim.mjs?v=2026101403";
+import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026101403";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026101403";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026101403";
+import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=2026101403";
+import { createMediaPicker } from "./media_picker.mjs?v=2026101403";
+import { normalizeFillColor } from "./fill_color.mjs?v=2026101403";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101403";
+import { confirmDiscard } from "./discard_prompt.mjs?v=2026101403";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101403";
+import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026101403";
+import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026101403";
+import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026101403";
+import { createSettle } from "./settle.mjs?v=2026101403";
 import {
   INPUT_FOLDER_MODE,
   LOCAL_PATH_MODE,
   normalizeVideoOptions,
   mediaSourceState,
   videoSourceState,
-} from "./video_source_card.mjs?v=2026101402";
+} from "./video_source_card.mjs?v=2026101403";
 import {
   alignChanges,
   aspectMatches,
@@ -77,9 +77,9 @@ import {
   turnedCrop,
   wrapDegrees,
   zoomAround,
-} from "./transform_geometry.mjs?v=2026101402";
-import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026101402";
-import { liftSocket } from "./widget_card.mjs?v=2026101402";
+} from "./transform_geometry.mjs?v=2026101403";
+import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026101403";
+import { liftSocket } from "./widget_card.mjs?v=2026101403";
 
 const HIDDEN_WIDGETS = [
   "image", "upload",
@@ -425,8 +425,8 @@ function buildMediaSourceCard(state) {
   const uploadsMode = createElement("button", "", "Uploads");
   const localMode = createElement("button", "", "Server file");
   uploadsMode.type = localMode.type = "button";
-  uploadsMode.title = "Choose a video already in ComfyUI's input folder or upload another.";
-  localMode.title = "A video already on the ComfyUI server, inside its input, output or temp folder, read in place without copying it.";
+  uploadsMode.title = zh("Choose a video already in ComfyUI's input folder or upload another.");
+  localMode.title = zh("A video already on the ComfyUI server, inside its input, output or temp folder, read in place without copying it.");
   modes.append(uploadsMode, localMode);
 
   const field = createElement("div", "qgtools-transform-source-field");
@@ -448,7 +448,7 @@ function buildMediaSourceCard(state) {
   localPath.type = "text";
   localPath.spellcheck = false;
   localPath.placeholder = "/absolute/path/to/video.mp4";
-  localPath.setAttribute("aria-label", "Server file path");
+  localPath.setAttribute("aria-label", zh("Server file path"));
   const upload = createElement("label", "qgtools-transform-button qgtools-transform-file qgtools-transform-source-action");
   const uploadText = createElement("span", "", "Upload");
   upload.append(uploadText);
@@ -542,7 +542,7 @@ function sourceHeading() {
   const head = createElement("div", "qgtools-transform-source-head");
   const gear = createElement("button", "qgtools-transform-gear");
   gear.type = "button";
-  gear.title = "Image Crop + Rotate + Pad settings";
+  gear.title = zh("Image Crop + Rotate + Pad settings");
   gear.innerHTML = gearIconSvg(11);
   gear.addEventListener("click", () => openSettingsMenu({
     scope: SETTINGS_SCOPE,
@@ -597,10 +597,10 @@ export function installTransformNode(node, kind, mountPanel = null) {
   const row = createElement("div", "qgtools-transform-row");
   const open = createElement("button", "qgtools-transform-button", "Open editor");
   const resetCrop = createElement("button", "qgtools-transform-button", "Reset crop");
-  resetCrop.title = "Show the whole picture again; rotation, padding and the timeline stay. With the padlock on, the bands it added to keep the shape go too.";
+  resetCrop.title = zh("Show the whole picture again; rotation, padding and the timeline stay. With the padlock on, the bands it added to keep the shape go too.");
   resetCrop.addEventListener("click", () => resetCropKeepingShape(state));
   const reset = createElement("button", "qgtools-transform-button", "Reset");
-  reset.title = "Reset rotation, crop and padding, and turn the padlock off. Fill, feather, Divisible by and the timeline stay.";
+  reset.title = zh("Reset rotation, crop and padding, and turn the padlock off. Fill, feather, Divisible by and the timeline stay.");
   reset.addEventListener("click", () => {
     resetGeometry(node);
     fitCrop(state); updateModalInfo(state); notifyQgChange();
@@ -1259,7 +1259,7 @@ function buildCanvasRow(state) {
   featherLabel.append(createElement("span", "", "Feather"), feather.root);
   const resizeLabel = createElement("label");
   const resize = resizeSwitch(state);
-  resizeLabel.title = "Resize the output to a megapixel budget, each side rounded to the step (32 for LTX and Wan). The budget and step open in a row below.";
+  resizeLabel.title = zh("Resize the output to a megapixel budget, each side rounded to the step (32 for LTX and Wan). The budget and step open in a row below.");
   resizeLabel.append(createElement("span", "", "Resize"), resize.pill);
   row.append(fillLabel, featherLabel);
   // The resize budget and its step share a row that only shows while
@@ -1413,7 +1413,7 @@ function showNote(state, note) {
   if (!note.even) return;
   const even = createElement("button", "", "Even out");
   even.type = "button";
-  even.title = "Add a few pixels of padding so the rounding stretches nothing.";
+  even.title = zh("Add a few pixels of padding so the rounding stretches nothing.");
   even.addEventListener("click", () => {
     // Worked out at the click: the note may be a moment behind the values.
     const pads = stretchFix(state).pads;
@@ -1568,6 +1568,13 @@ async function loadSource(state) {
       });
       if (serial !== state.loadSerial || state.disposed) return;
       state.image = image; state.sourceWidth = image.naturalWidth; state.sourceHeight = image.naturalHeight;
+      // It loaded, so it is on the server and belongs in the list. The
+      // MaskEditor writes the file it saved into the widget and no list has
+      // it yet, and the frontend calls an unlisted picture missing the next
+      // time it checks this node, as when a bypass comes off.
+      const listed = widget(state.node, "image")?.options?.values;
+      const unlisted = unlistedMedia(listed, selection);
+      if (unlisted) listed.push(unlisted);
       // Core's image-upload helper also installs a source preview. This node has
       // its own transformed preview, so keep only the useful one.
       suppressCoreImagePreview(state.node);
@@ -1738,7 +1745,7 @@ function openEditor(state) {
   header.append(createElement("strong", "", `${state.kind === "video" ? "Video" : "Image"} Crop + Rotate + Pad`), createElement("span", "qgtools-transform-badge", "QG-tools"));
   header.append(createElement("span", "spacer"));
   const cancel = createElement("button", "", "Cancel");
-  cancel.title = "Close without saving: puts back everything as it was when the editor opened (Esc)";
+  cancel.title = zh("Close without saving: puts back everything as it was when the editor opened (Esc)");
   const close = createElement("button", "qgtools-transform-close", "Save & close"); header.append(cancel, close);
   const body = createElement("div", "qgtools-transform-body");
   const left = createElement("aside", "qgtools-transform-sidebar");
@@ -1858,7 +1865,7 @@ function buildStitchSection(state) {
   addLabeledControl(section, "Blend", blend.root, "px");
   const show = segmentedPill([["off", "off"], ["on", "on"]], (key) => { state.showBlend = key === "on"; show.set(key); draw(state); }, { className: "qgtools-transform-switch" });
   show.set(state.showBlend ? "on" : "off");
-  show.pill.title = "Tint the paste mask the stitcher will use - the same mask math as the backend, at preview resolution.";
+  show.pill.title = zh("Tint the paste mask the stitcher will use - the same mask math as the backend, at preview resolution.");
   // nosuffix: let the pill span the control column, matching the Blend field
   // above and the Painted area pill below (user request 2026-10-13).
   addLabeledControl(section, "Show blend", show.pill).classList.add("qgtools-transform-nosuffix");
@@ -2001,10 +2008,10 @@ function buildControls(state, sidebar) {
   let more = null;
   if (extra.length) {
     more = createElement("select");
-    more.setAttribute("aria-label", "More ratios");
+    more.setAttribute("aria-label", zh("More ratios"));
     const first = createElement("option", "", "More ratios…"); first.value = ""; more.append(first);
     for (const item of extra) { const option = createElement("option", "", item); option.value = item; more.append(option); }
-    more.title = "Your own ratios from qg_presets.json. Picking one works like a ratio button.";
+    more.title = zh("Your own ratios from qg_presets.json. Picking one works like a ratio button.");
     more.addEventListener("change", () => { if (more.value) tapRatio(state, more.value); draw(state); updateModalInfo(state); });
     addLabeledControl(cropSection, "More", more);
   }
@@ -2038,7 +2045,7 @@ function buildControls(state, sidebar) {
   centreRow.append(createElement("span", "", "Center"), centre.root);
   padSection.append(centreRow);
   state.editorSyncs.push(centre.sync);
-  const resetPad = createElement("button", "", "Reset padding"); resetPad.title = "Remove all padding.";
+  const resetPad = createElement("button", "", "Reset padding"); resetPad.title = zh("Remove all padding.");
   resetPad.addEventListener("click", () => { for (const name of ["pad_left", "pad_top", "pad_right", "pad_bottom"]) setValue(node, name, 0); settleRequest(state); draw(state); updateModalInfo(state); notifyQgChange(); }); padSection.append(resetPad);
 
   // Resize to a pixel budget (image and clip nodes): mirrors the core Scale
@@ -2086,7 +2093,7 @@ function buildControls(state, sidebar) {
   const actions = createElement("section", "qgtools-transform-section"); actions.append(sectionHeading("View & reset"));
   const resetViewButton = createElement("button", "", "Reset view"); resetViewButton.addEventListener("click", () => { resetView(state); draw(state); });
   const resetAll = createElement("button", "qgtools-transform-danger", "Reset transform");
-  resetAll.title = "Reset rotation, crop, padding, fill, feather and Divisible by. Keep the source, current frame, trim window, fixed length, resize and stitch settings.";
+  resetAll.title = zh("Reset rotation, crop, padding, fill, feather and Divisible by. Keep the source, current frame, trim window, fixed length, resize and stitch settings.");
   resetAll.addEventListener("click", () => { resetTransform(node); resetView(state); draw(state); updateModalInfo(state); });
   actions.append(resetViewButton, resetAll);
 
@@ -2150,12 +2157,12 @@ function buildTimeline(state) {
   const timeline = createElement("div", "qgtools-transform-timeline");
   const transport = createElement("div", "qgtools-transform-transport");
   const label = createElement("span", "qgtools-transform-badge", "0 / 0");
-  label.title = "Playhead frame / last frame";
+  label.title = zh("Playhead frame / last frame");
   const steps = createElement("div", "qgtools-transform-steps");
   const commands = [["|<", "first"], ["-100", -100], ["-50", -50], ["-25", -25], ["-1", -1], ["Play", "play"], ["+1", 1], ["+25", 25], ["+50", 50], ["+100", 100], [">|", "last"]];
   for (const [text, command] of commands) {
     const button = createElement("button", "", text); if (command === "play") state.playButton = button;
-    button.title = command === "play" ? "Play / pause (Space)" : typeof command === "number" ? `Step ${command > 0 ? "+" : ""}${command} frames (Arrow keys step 1, Shift 10)` : command === "first" ? "First frame (Home)" : "Last frame (End)";
+    button.title = command === "play" ? zh("Play / pause (Space)") : typeof command === "number" ? `Step ${command > 0 ? "+" : ""}${command} frames (Arrow keys step 1, Shift 10)` : command === "first" ? zh("First frame (Home)") : zh("Last frame (End)");
     button.addEventListener("click", () => timelineCommand(state, command)); steps.append(button);
   }
   transport.append(label, steps);

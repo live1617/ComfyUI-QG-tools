@@ -1,7 +1,7 @@
 # ComfyUI-QG-tools
 
-一个 ComfyUI 自定义节点包，目前包含六个节点：**LoRA 加载器**、**图像裁剪 + 旋转 + 补边**、
-**工作流说明卡**、**工作流开关**、**运行计时器**、**文本编辑输出**。
+一个 ComfyUI 自定义节点包，目前包含七个节点：**LoRA 加载器**、**图像裁剪 + 旋转 + 补边**、
+**工作流说明卡**、**工作流开关**、**运行计时器**、**文本编辑输出**、**加载文档**。
 
 **QG Image Crop + Rotate + Pad —— 在节点上直接把画面摆正、裁好、补出画布**
 
@@ -40,8 +40,15 @@
 - 手动敲的字，整段作为一路字符串输出，接给任何下游文本输入
 - 纯 Python 节点，零依赖、不加载模型
 
+**QG 加载文档 —— 把 Markdown 文件读成一路文本**
+
+- 下拉里选一个文档（.md / .markdown / .txt 都行），节点上直接预览内容，可以切「渲染视图 / 纯文本视图」、放大看、一键复制
+- 输出 STRING，接提示词框、CLIP Text Encode、说明卡都行
+- 纯文本模式会剥掉 `#`、`*`、表格线这些标记，读起来像一句提示词；原样模式按文件原封不动输出
+- 文件放在 ComfyUI 的 `input` 目录（或它旁边的 `md` / `prompts` 目录），也可以直接在 `custom_path` 填绝对路径
+
 - **当前版本**：v0.6.0
-- **节点**：6 个（`QG LoRA Loader` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` / `QG Workflow Switches` / `QG Run Timer` / `QG Text Edit`，分类 `QG-tools`）
+- **节点**：7 个（`QG LoRA Loader` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` / `QG Workflow Switches` / `QG Run Timer` / `QG Text Edit` / `QG 加载文档`，分类 `QG-tools`）
 - **依赖**：无额外 pip 包。只用 ComfyUI 运行期自带的模块（torch / numpy / PIL / PyAV / folder_paths / comfy.*）；
   `scipy`、`pymatting` 用到了才用，缺了有内置回退，不报错。
 - **许可证**：[GPL-3.0-or-later](LICENSE)
@@ -70,10 +77,10 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 装完**完整重启 ComfyUI**，控制台应出现：
 
 ```
-[QG-tools] v0.6.0 加载完成 | 节点数 6
+[QG-tools] v0.6.0 加载完成 | 节点数 7
 ```
 
-无需 `pip install` 任何东西。六个节点都在 `QG-tools` 分类下
+无需 `pip install` 任何东西。七个节点都在 `QG-tools` 分类下
 （图像节点在 `QG-tools/Image`，文本节点在 `QG-tools/文本`），
 搜索 `lora`、`crop`、`note`、`switch`、`timer`、`text` 等也能找到。
 

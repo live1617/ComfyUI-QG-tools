@@ -1,17 +1,17 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026101402";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026101402";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026101402";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026101403";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026101403";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026101403";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026101402";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026101402";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101402";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026101402";
+} from "../shared/settings_menu.mjs?v=2026101403";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026101403";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101403";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026101403";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -62,8 +62,8 @@ import {
   toggleAllState,
   toggleTrigger,
   upsertTemplate,
-} from "../shared/lora_stack.mjs?v=2026101402";
-import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026101402";
+} from "../shared/lora_stack.mjs?v=2026101403";
+import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026101403";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -703,6 +703,7 @@ function strengthBox(state, index, key) {
   // attributes of elements present at insert time, and applyRangeTint first
   // runs after the async range fetch - too late for a freshly-set title.
   input.title = input.dataset.baseTitle;
+  input.setAttribute("aria-label", key === "strength" ? zh("Model strength") : zh("CLIP strength"));
   input.readOnly = true;
   input.__qgRead = () => state.rows[index]?.[key].toFixed(2) ?? "1.00";
   input.__qgTint = () => state.rows[index] && applyRangeTint(input, state.rows[index], key);
@@ -810,7 +811,9 @@ function widestLabel(labels) {
 function openPicker(state, index, anchor) {
   const pop = el("div");
   const search = el("input", "qgtools-lora-search");
-  search.placeholder = "Search LoRAs...";
+  // Written after insertion, so the zh plugin DOM pass never revisits it.
+  search.placeholder = zh("Search LoRAs...");
+  search.setAttribute("aria-label", zh("Search LoRAs"));
   const list = el("div", "qgtools-lora-list");
   list.append(el("div", "qgtools-lora-empty", "Loading..."));
   pop.append(search, list);
@@ -890,7 +893,11 @@ function openPicker(state, index, anchor) {
       highlight = clampHighlight(highlight, filtered.length);
       let flatIndex = 0;
       for (const group of groups) {
-        if (group.folder) list.append(el("div", "qgtools-lora-folder", group.folder));
+        if (group.folder) {
+          const folderRow = el("div", "qgtools-lora-folder", group.folder);
+          folderRow.title = group.folder;   // long names get clipped; hover shows all
+          list.append(folderRow);
+        }
         for (const name of group.names) {
           const label = group.folder ? name.slice(group.folder.length + 1) : name;
           appendOption(name, flatIndex, label);
@@ -1022,7 +1029,7 @@ function openInfo(state, index, anchor) {
       for (const word of words) {
         const chip = el("button", "qgtools-lora-chip", word);
         chip.type = "button";
-        chip.title = "Toggle this trigger word into the row's output";
+        chip.title = zh("Toggle this trigger word into the row's output");
         const refresh = () => chip.classList.toggle(
           "active",
           state.rows[index].triggers.toLowerCase().split(",").map((part) => part.trim()).includes(word.toLowerCase())
@@ -1048,7 +1055,7 @@ function openInfo(state, index, anchor) {
         "button", "qgtools-lora-add qgtools-lora-fetch", civitaiButtonLabel(info.has_civitai)
       );
       fetchButton.type = "button";
-      fetchButton.title = "Asks civitai.com about this one file, from this browser.";
+      fetchButton.title = zh("Asks civitai.com about this one file, from this browser.");
       fetchButton.addEventListener("click", async () => {
         fetchButton.disabled = true;
         fetchButton.textContent = "Fetching...";
@@ -1107,7 +1114,7 @@ function openInfo(state, index, anchor) {
 
     const custom = el("div", "qgtools-lora-custom");
     const wordInput = el("input");
-    wordInput.placeholder = "Add your own trigger word...";
+    wordInput.placeholder = zh("Add your own trigger word...");
     wordInput.addEventListener("keydown", (event) => {
       keepKeyInField(event);
       if (event.key === "Enter" && !isAppShortcut(event)) addButton.click();
@@ -1182,7 +1189,7 @@ function openTemplates(state, anchor) {
     menu.textContent = "";
     const saveRow = el("div", "qgtools-lora-custom");
     const nameInput = el("input");
-    nameInput.placeholder = "Save current as...";
+    nameInput.placeholder = zh("Save current as...");
     nameInput.title = "Name this stack; saving over an existing name replaces it";
     const saveButton = el("button", "qgtools-lora-add", "Save");
     saveButton.type = "button";
@@ -1210,7 +1217,9 @@ function openTemplates(state, anchor) {
       const row = el("div", "qgtools-lora-template-row");
       const apply = el("button", "", template.name);
       apply.type = "button";
-      apply.title = `Replace this node's rows with "${template.name}" (${template.rows.length} LoRA${template.rows.length === 1 ? "" : "s"})`;
+      apply.title = zh("Replace this node's rows with {a} ({b})")
+        .replace("{a}", template.name)
+        .replace("{b}", template.rows.length + (template.rows.length === 1 ? " LoRA" : " LoRAs"));
       apply.addEventListener("click", () => {
         closePopup();
         commitRows(state, applyTemplate(template), { structural: true });
@@ -1218,7 +1227,7 @@ function openTemplates(state, anchor) {
       });
       const remove = el("button", "qgtools-lora-template-x", "×");
       remove.type = "button";
-      remove.title = `Delete "${template.name}"`;
+      remove.title = zh("Delete {a}").replace("{a}", template.name);
       remove.addEventListener("click", (event) => {
         event.stopPropagation();
         saveTemplates(removeTemplate(loadTemplates(), template.name));
@@ -1538,7 +1547,7 @@ function openSettings(state, anchor) {
     scope: SETTINGS_SCOPE,
     schema: menuSchema,
     anchor: anchor.getBoundingClientRect(),
-    title: "LoRA Loader settings",
+    title: zh("LoRA Loader settings"),
     // The menu reflects THIS node's live state where the two overlap.
     initial: {
       ...state.settings,
@@ -1608,17 +1617,16 @@ function renderRows(state) {
   });
   const templates = el("button", "qgtools-lora-gear", "▤");
   templates.type = "button";
-  templates.title = "LoRA templates: save this stack, or apply a saved one";
+  templates.title = zh("LoRA templates: save this stack, or apply a saved one");
   templates.addEventListener("click", () => openTemplates(state, templates));
   const recheck = el("button", "qgtools-lora-gear");
   recheck.type = "button";
-  recheck.title = "Re-check LoRA files: refresh the list and reconnect rows "
-    + "whose files moved or came back";
+  recheck.title = zh("Re-check LoRA files: refresh the list and reconnect rows whose files moved or came back");
   recheck.innerHTML = reloadIconSvg();
   recheck.addEventListener("click", () => runReconnect(state));
   const gear = el("button", "qgtools-lora-gear");
   gear.type = "button";
-  gear.title = "LoRA Loader settings";
+  gear.title = zh("LoRA Loader settings");
   gear.innerHTML = gearIconSvg();
   gear.addEventListener("click", () => openSettings(state, gear));
   const group = el("div", "qgtools-lora-bargroup");
@@ -1634,18 +1642,19 @@ function renderRows(state) {
   if (!state.rows.length) {
     const blank = el("button", "qgtools-lora-blank", "No LoRAs yet");
     blank.type = "button";
-    blank.title = "Add a LoRA";
+    blank.title = zh("Add a LoRA");
     blank.addEventListener("click", addRowAndPick);
     stack.append(blank);
   }
 
   state.rows.forEach((row, index) => {
     const rowElement = el("div", "qgtools-lora-row");
+    rowElement.setAttribute("aria-label", row.name || zh("Empty LoRA row"));
     if (!row.enabled) rowElement.classList.add("off");
 
     const grip = el("button", "qgtools-lora-grip");
     grip.type = "button";
-    grip.title = "Drag to reorder";
+    grip.title = zh("Drag to reorder");
     grip.innerHTML = gripIconSvg();
     grip.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || state.rows.length < 2) return;
@@ -1689,7 +1698,7 @@ function renderRows(state) {
 
     const toggle = el("button", `qgtools-lora-toggle${row.enabled ? " on" : ""}`);
     toggle.type = "button";
-    toggle.title = "Enable or disable this LoRA";
+    toggle.title = zh("Enable or disable this LoRA");
     toggle.addEventListener("click", () => {
       const rows = state.rows.map((entry, i) =>
         i === index ? { ...entry, enabled: !entry.enabled } : entry
@@ -1706,7 +1715,7 @@ function renderRows(state) {
     // The visible text may be shortened; a screen reader gets the whole name.
     if (row.name) name.setAttribute("aria-label", rowLabel(state, row.name));
     name.type = "button";
-    name.title = row.name || "Pick a LoRA from models/loras";
+    name.title = row.name || zh("Pick a LoRA from models/loras");
     if (!row.name) name.classList.add("empty");
     // The name is also a scrub surface - the bar behind it
     // makes it the natural drag target for model strength. The shared dead
@@ -1767,7 +1776,7 @@ function renderRows(state) {
 
     const info = el("button", "qgtools-lora-info", "i");
     info.type = "button";
-    info.title = "Preview, base model, and trigger words";
+    info.title = zh("Preview, base model, and trigger words");
     info.addEventListener("click", () => openInfo(state, index, info));
     rowElement.append(info);
 
@@ -1784,6 +1793,8 @@ function renderRows(state) {
   const actions = el("div", "qgtools-lora-actions");
   const add = el("button", "qgtools-lora-add", "+ LoRA");
   add.type = "button";
+  // Lost in the port from upstream: without this the + button has no hint.
+  add.title = zh("Pick one LoRA, or click a folder name to add all its LoRAs.");
   add.disabled = state.rows.length >= MAX_ROWS;
   add.addEventListener("click", addRowAndPick);
   actions.append(add);

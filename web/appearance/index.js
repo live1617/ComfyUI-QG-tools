@@ -10,17 +10,17 @@ import {
   shouldRecolor,
   titleInk,
   wearsLegacyScheme,
-} from "../shared/appearance.mjs?v=2026101402";
-import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026101402";
+} from "../shared/appearance.mjs?v=2026101403";
+import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026101403";
 import {
   BADGE_RADIUS,
   badgeCenter,
   helpSections,
   hitsBadge,
   showBadge,
-} from "../shared/help_badge.mjs?v=2026101402";
-import { openInfoCard } from "../shared/settings_menu.mjs?v=2026101402";
-import { zh, zhOn, zhReady } from "../shared/zh.mjs?v=2026101402";
+} from "../shared/help_badge.mjs?v=2026101403";
+import { openInfoCard } from "../shared/settings_menu.mjs?v=2026101403";
+import { zh, zhOn, zhReady } from "../shared/zh.mjs?v=2026101403";
 
 const SETTING_ID = "QG.Appearance.NodeColor";
 const CUSTOM_SETTING_ID = "QG.Appearance.CustomColor";
@@ -230,11 +230,23 @@ function openHelpCard(node, event) {
   const nodeData = node.constructor?.nodeData;
   const clientX = event?.clientX ?? window.innerWidth / 2;
   const clientY = event?.clientY ?? 80;
-  // Section headings are assembled at composition time, so they go through
-  // zh() here (help_badge.mjs stays a pure, testable module).
-  const sections = helpSections(nodeData).map((section) =>
-    section.heading ? { ...section, heading: zh(section.heading) } : section,
-  );
+  // Everything here is assembled at composition time, so it goes through zh()
+  // (help_badge.mjs stays a pure, testable module). The card hangs off <body>
+  // and its text is written once — the zh plugin's per-node DOM pass never
+  // sees it, so leaving any of it bare leaves it English.
+  const sections = helpSections(nodeData).map((section) => ({
+    ...section,
+    ...(section.heading ? { heading: zh(section.heading) } : {}),
+    ...(section.text ? { text: zh(section.text) } : {}),
+    ...(section.items
+      ? {
+          items: section.items.map((item) => ({
+            term: zh(item.term),
+            detail: item.detail ? zh(item.detail) : item.detail,
+          })),
+        }
+      : {}),
+  }));
   openInfoCard({
     anchor: { left: clientX - 150, top: clientY, bottom: clientY + 6 },
     title: node.title || zh(nodeData?.display_name) || "About this node",

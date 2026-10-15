@@ -1,6 +1,6 @@
 {
   "pack": "ComfyUI-QG-tools",
-  "pack_version": "0.6.0",
+  "pack_version": "0.7.0",
   "source": {
     "plugin": "ComfyUI-AusBoss",
     "version": "2.10.1（前三个节点） / 2.11.1（QG_ImageCropRotatePad） / 2.12.x（QG_RunTimer）",
@@ -478,6 +478,27 @@
       ],
       "notes": [
         "上游 display 为中文「文本」，按本包约定改成英文名。"
+      ]
+    },
+    {
+      "id": "QG_MDReader",
+      "class": "QGMarkdownReader",
+      "display": "QG 加载文档",
+      "category": "QG-tools/文本",
+      "source_id": "MarkdownFileReader",
+      "source_class": "MarkdownFileReader",
+      "source_ref": "ComfyUI-MD-Reader v1.0.1（作者自己的插件，MIT）",
+      "kind": "读 Markdown / txt 文档 -> STRING 输出，节点上带渲染预览、放大、复制、刷新文件列表。",
+      "files_new": [
+        "nodes/qg_md_reader.py（节点）",
+        "nodes/_qg_md_core.py（扫描 / 解析 / Markdown 转纯文本）",
+        "nodes/_qg_md_routes.py（/qg/md/* 路由）",
+        "web/md_reader/index.js（预览面板）"
+      ],
+      "notes": [
+        "display 按作者要求用中文名「QG 加载文档」（打破本包英文 display 惯例，作者本人的节点）。",
+        "搬运时改目录深度：_get_root_dir 的 dirname 层数 +1（nodes/ 子目录）。",
+        "路由 /md_reader/* -> /qg/md/*，错误统一走 safe_route_error。"
       ]
     }
   ],

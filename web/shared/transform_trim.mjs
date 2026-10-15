@@ -17,8 +17,9 @@
 // fixed_frames / frame_load_cap input, which leaves only IN to set. OUT
 // always sits on the last frame the run outputs - every nth, the snap rule
 // and the Length included - so the handle and the bright bar agree.
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101402";
-import { formatTimecode } from "./timecode.mjs?v=2026101402";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101403";
+import { zh } from "./zh.mjs?v=2026101403";
+import { formatTimecode } from "./timecode.mjs?v=2026101403";
 import {
   boundaryAtFraction,
   clampFrame,
@@ -39,7 +40,7 @@ import {
   snapStep,
   snapToValid,
   windowSeconds,
-} from "./timeline_math.mjs?v=2026101402";
+} from "./timeline_math.mjs?v=2026101403";
 
 const CSS_ID = "qgtools-transform-trim-css-v4";
 const HANDLE_HIT_PX = 9;
@@ -355,7 +356,7 @@ export function mountTransformTrim({ get, set, has = () => true, driven = () => 
     if (controls.reset) {
       const free = current.mode === "free";
       controls.reset.textContent = free ? "Full clip" : "To start";
-      controls.reset.title = free ? "Reset IN/OUT to the full source. Keeps Every nth and Frames for." : "Move IN to the start of the source; the length stays.";
+      controls.reset.title = free ? zh("Reset IN/OUT to the full source. Keeps Every nth and Frames for.") : zh("Move IN to the start of the source; the length stays.");
       controls.reset.disabled = !free && locked("start");
     }
     controls.every_nth?.set(get("every_nth", 1));
@@ -384,7 +385,7 @@ export function mountTransformTrim({ get, set, has = () => true, driven = () => 
     }
     if (unknown || current.frames == null) {
       summary.textContent = `${fps} · frame count at run time`;
-      summary.title = "IN, OUT and the playhead refer to source frames. A connected input decides the exact frame count when the workflow runs. Connect the fps output to the next video node's fps input.";
+      summary.title = zh("IN, OUT and the playhead refer to source frames. A connected input decides the exact frame count when the workflow runs. Connect the fps output to the next video node's fps input.");
       return;
     }
     const from = formatTimecode(frameTime(current.first, clip));
@@ -393,7 +394,7 @@ export function mountTransformTrim({ get, set, has = () => true, driven = () => 
       summary.textContent = current.tooLong
         ? `Fixed length needs more than the source's ${clip.duration.toFixed(3)}s`
         : `${fps} · exactly ${current.frames} frames · ${from} → ${to}`;
-      summary.title = "An older Fixed frames value: an exact count from IN. Any change here turns it into a Length.";
+      summary.title = zh("An older Fixed frames value: an exact count from IN. Any change here turns it into a Length.");
       return;
     }
     const total = current.windowLast - current.first + 1;
@@ -482,7 +483,7 @@ export function mountTransformTrim({ get, set, has = () => true, driven = () => 
       const handle = el("button", "qgtools-transform-trim-handle");
       handle.type = "button";
       handle.setAttribute("role", "slider");
-      handle.setAttribute("aria-label", edge === "start" ? "Clip IN" : "Clip OUT");
+      handle.setAttribute("aria-label", edge === "start" ? zh("Clip IN") : zh("Clip OUT"));
       handle.addEventListener("keydown", (event) => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault(); event.stopPropagation();
@@ -547,8 +548,8 @@ export function mountTransformTrim({ get, set, has = () => true, driven = () => 
     const off = el("button", "", "off");
     const on = el("button", "", "on");
     off.type = on.type = "button";
-    off.title = "OUT ends the clip: drag both handles freely.";
-    on.title = "Set the clip by a frame count from IN: OUT follows IN, and the count stays when you swap the video.";
+    off.title = zh("OUT ends the clip: drag both handles freely.");
+    on.title = zh("Set the clip by a frame count from IN: OUT follows IN, and the count stays when you swap the video.");
     off.addEventListener("click", () => setLength(false));
     on.addEventListener("click", () => setLength(true));
     pill.append(off, on);

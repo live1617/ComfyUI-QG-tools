@@ -3,7 +3,7 @@
 // splits into folder and name, and where the highlight moves. No DOM, so
 // node:test covers them.
 
-import { parseImageReference } from "./pad_canvas.mjs?v=2026101402";
+import { parseImageReference } from "./pad_canvas.mjs?v=2026101403";
 
 // "pasted/image (2).png" or "clip.mp4 [output]" -> "filename=...&subfolder=...&type=...".
 export function mediaViewQuery(value) {
@@ -21,6 +21,16 @@ export function filterMedia(values, query) {
     const text = value.toLowerCase();
     return terms.every((term) => text.includes(term));
   });
+}
+
+// The value to add to a media widget's list, or "" when the list has it. A
+// value counts as listed with or without its " [input]" tail, which is how
+// the frontend looks one up before it calls a picture missing.
+export function unlistedMedia(values, value) {
+  const text = String(value ?? "");
+  if (!text || !Array.isArray(values)) return "";
+  const bare = text.replace(/\s+\[(input|output)\]$/, "");
+  return values.includes(text) || values.includes(bare) ? "" : text;
 }
 
 // The dim folder prefix and the name the list shows for one value.

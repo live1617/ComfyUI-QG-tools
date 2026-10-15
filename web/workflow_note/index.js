@@ -11,13 +11,14 @@
 // URLs become buttons or links (the parser already filtered them).
 
 import { api } from "/scripts/api.js";
+import { zh } from "../shared/zh.mjs?v=2026101403";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026101402";
-import { collectGraphNodes } from "../shared/appearance.mjs?v=2026101402";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026101402";
-import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026101402";
-import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026101402";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026101402";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026101403";
+import { collectGraphNodes } from "../shared/appearance.mjs?v=2026101403";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026101403";
+import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026101403";
+import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026101403";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026101403";
 import {
   COMMON_FOLDERS,
   INPUT_FOLDER,
@@ -37,9 +38,9 @@ import {
   rowFromCells,
   serializeNote,
   subfolderOf,
-} from "../shared/workflow_note.mjs?v=2026101402";
-import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026101402";
-import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026101402";
+} from "../shared/workflow_note.mjs?v=2026101403";
+import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026101403";
+import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026101403";
 
 const NODE_CLASS = "QG_WorkflowNote";
 const CSS_ID = "qgtools-workflow-note-css";
@@ -487,7 +488,7 @@ function render(state) {
   if (note.author) head.append(el("p", "qgtools-note-author", `by ${note.author}`));
   const edit = el("button", "qgtools-note-edit", "✎");
   edit.type = "button";
-  edit.title = "Edit this note";
+  edit.title = zh("Edit this note");
   edit.addEventListener("pointerdown", (event) => event.stopPropagation());
   edit.addEventListener("click", () => openEditor(state));
   head.append(edit);
@@ -519,7 +520,7 @@ function render(state) {
     const heading = sectionHeading("Models");
     const recheck = el("button", "qgtools-note-mini", "↻ check files");
     recheck.type = "button";
-    recheck.title = "Look for each file again (after moving files in, or pressing R)";
+    recheck.title = zh("Look for each file again (after moving files in, or pressing R)");
     recheck.addEventListener("pointerdown", (event) => event.stopPropagation());
     recheck.addEventListener("click", () => checkModels(state, true));
     heading.append(recheck);
@@ -767,7 +768,7 @@ function table(kind, columns, rows, makeRow) {
     for (const control of controls) line.append(control);
     const remove = el("button", "qgtools-note-x", "✕");
     remove.type = "button";
-    remove.title = "Remove this row";
+    remove.title = zh("Remove this row");
     const entry = { line, controls };
     remove.addEventListener("click", () => {
       line.remove();
@@ -795,7 +796,7 @@ async function openEditor(state) {
   head.append(el("span", "", "Workflow Note"), el("span", "spacer"));
   const jsonToggle = el("button", "qgtools-note-btn", "JSON");
   jsonToggle.type = "button";
-  jsonToggle.title = "Edit the raw card JSON instead of the form";
+  jsonToggle.title = zh("Edit the raw card JSON instead of the form");
   head.append(jsonToggle);
   const body = el("div", "qgtools-note-dbody");
   const foot = el("div", "qgtools-note-dfoot");
@@ -870,7 +871,7 @@ async function openEditor(state) {
   addPack.addEventListener("click", () => packs.add({}));
   const detect = el("button", "qgtools-note-btn", "Detect from this workflow");
   detect.type = "button";
-  detect.title = "List every custom node pack the open graph uses";
+  detect.title = zh("List every custom node pack the open graph uses");
   detect.addEventListener("click", async () => {
     const types = collectGraphNodes(app.rootGraph ?? app.graph).map((node) => node.type);
     const have = new Set(packs.entries.map((entry) => entry.controls[0].value.trim()));

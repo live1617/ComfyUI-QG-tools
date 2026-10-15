@@ -10,6 +10,8 @@ from ._qg_lora_helpers import (
     parse_lora_stack,
     register_lora_routes,
     stack_fingerprint,
+    unreadable_lora_message,
+    unreadable_lora_rows,
 )
 
 
@@ -120,6 +122,11 @@ class QGLoraLoader:
             rows = parse_lora_stack(loras)
         except ValueError as exc:
             return f"QG LoRA Loader: {exc}"
+        # A file that is plainly not a LoRA stops the run in both modes: it
+        # would fail at load either way, after the models were loaded.
+        unreadable = unreadable_lora_rows(rows)
+        if unreadable:
+            return " ".join(unreadable_lora_message(name, reason) for name, reason in unreadable)
         if on_missing != "skip":
             missing = missing_lora_rows(rows)
             if missing:
