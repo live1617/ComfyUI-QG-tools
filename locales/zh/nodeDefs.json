@@ -224,5 +224,65 @@
         "tooltip": "文档的文本，可以接任意 STRING 输入。"
       }
     }
+  },
+  "QG_GoogleTranslateText": {
+    "display_name": "QG Google 翻译",
+    "description": "用 Google 翻译把一段提示词译成另一种语言。免费、无需 API key（Google 可能对服务端 IP 限流）；设置环境变量 GOOGLE_TRANSLATION_API_KEY 即可改用官方、不限量的 API。手动翻译按钮会把文本就地改写。",
+    "inputs": {
+      "from_translate": {
+        "name": "源语言",
+        "tooltip": "源语言。选 auto 让 Google 自动识别。"
+      },
+      "to_translate": {
+        "name": "目标语言",
+        "tooltip": "译文的目标语言。"
+      },
+      "manual_translate": {
+        "name": "手动翻译",
+        "tooltip": "开启时，节点直接把文本透传，由「手动翻译」按钮就地翻译。"
+      },
+      "text": {
+        "name": "文本",
+        "tooltip": "要翻译的文本。"
+      }
+    },
+    "outputs": {
+      "text": {
+        "name": "文本",
+        "tooltip": "翻译后的文本。"
+      }
+    }
+  },
+  "QG_AnySwitch": {
+    "display_name": "QG 任意切换",
+    "description": "把多个同类型的输入并成一路，输出第一个非空、已连接的那个——常用于接「兜底」：有高清模型就走它，没有就走普通版。所有输入必须是同一类型；类型混用或全空会报错。"
+  },
+  "QG_DisplayAny": {
+    "display_name": "QG 展示任意",
+    "description": "展示并原样透传任意输入：文本、图像、遮罩、音频、视频都能预览。有下游连接时按需执行，没有下游连接时也会主动执行以刷新预览。支持批量预览、画册模式、文本字号颜色设置与右键复制/保存。"
+  },
+  "QG_IfElse": {
+    "display_name": "QG 是否判断",
+    "description": "布尔分支：条件为真透传「真时」输入，为假透传「假时」输入。没走的那一支是懒执行、不会被求值，适合接昂贵或有风险的子图（比如循环体里会报错的分支）。",
+    "inputs": {
+      "boolean": {
+        "name": "是否为真",
+        "tooltip": "条件。为真透传「真时」，为假透传「假时」。"
+      },
+      "on_true": {
+        "name": "真时",
+        "tooltip": "条件为真时透传的值；否则不求值。"
+      },
+      "on_false": {
+        "name": "假时",
+        "tooltip": "条件为假时透传的值；否则不求值。"
+      }
+    },
+    "outputs": {
+      "any": {
+        "name": "输出",
+        "tooltip": "被选中那一路的值，类型与输入一致。"
+      }
+    }
   }
 }

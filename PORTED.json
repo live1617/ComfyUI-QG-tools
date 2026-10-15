@@ -1,6 +1,6 @@
 {
   "pack": "ComfyUI-QG-tools",
-  "pack_version": "0.7.0",
+  "pack_version": "0.8.0",
   "source": {
     "plugin": "ComfyUI-AusBoss",
     "version": "2.10.1（前三个节点） / 2.11.1（QG_ImageCropRotatePad） / 2.12.x（QG_RunTimer）",
@@ -499,6 +499,96 @@
         "display 按作者要求用中文名「QG 加载文档」（打破本包英文 display 惯例，作者本人的节点）。",
         "搬运时改目录深度：_get_root_dir 的 dirname 层数 +1（nodes/ 子目录）。",
         "路由 /md_reader/* -> /qg/md/*，错误统一走 safe_route_error。"
+      ]
+    },
+    {
+      "id": "QG_GoogleTranslateText",
+      "class": "QGGoogleTranslateText",
+      "display": "QG Google 翻译",
+      "category": "QG-tools/文本",
+      "source_id": "GoogleTranslateTextNode",
+      "source_class": "GoogleTranslateTextNode",
+      "source_ref": "AlekPet/ComfyUI_Custom_Nodes_AlekPet (GoogleTranslateNode)，MIT",
+      "kind": "文本翻译节点：STRING 进 STRING 出；免费通道用 requests 直连 Google 非官方接口，设 GOOGLE_TRANSLATION_API_KEY 则走官方 Cloud Translation API。节点带「手动翻译」按钮就地改写文本。",
+      "files_new": [
+        "nodes/qg_google_translate.py（节点 + /qg/translate/manual 路由 + 免费/官方双通道）",
+        "web/google_translate/index.js（手动翻译按钮）"
+      ],
+      "notes": [
+        "🔴 零第三方依赖：用户说「要依赖就先等等」，所以没搬上游的 googletrans。改用 requests（ComfyUI 核心自带）直连 Google 同一端点（translate.googleapis.com/translate_a/single）。",
+        "语言表 LANGUAGES（107 条）从本机 googletrans 抓取后内嵌进模块，运行期不再 import googletrans。",
+        "路由 /alekpet/translate_manual → /qg/translate/manual；扩展名 QG.GoogleTranslate；widget 内部名保持 from_translate/to_translate/manual_translate/text（前端 findWidget 靠 name）。",
+        "失败回退原文（不静默吞掉、打印告警），避免翻译异常把提示词流水线打断。",
+        "仅搬 Text 节点，未搬 GoogleTranslateCLIPTextEncodeNode 变体（用户只要文本翻译）。",
+        "免费通道有 HTTP 429 限流风险（沙盒 IP 实测 429），桌面 IP 可能更稳；限流时回退原文。"
+      ]
+    },
+    {
+      "id": "QG_AnySwitch",
+      "class": "QGAnySwitch",
+      "display": "QG 任意切换",
+      "category": "QG-tools/逻辑",
+      "source_id": "GoohaiAnySwitch",
+      "source_class": "GoohaiAnySwitch",
+      "source_ref": "Goohaitools-comfyui（任意切换 GH），GPL-3.0",
+      "source_author": "孤海 (Goohaitools)",
+      "kind": "动态多输入开关：把多个同类型输入并成一路，输出第一个非空、已连接的那个；常用于接「兜底」。",
+      "files_new": [
+        "nodes/qg_any_switch.py（节点 + 空值/类型判断）",
+        "web/any_switch/index.js（槽位动态增删、类型特化、复制/恢复生命周期处理）"
+      ],
+      "notes": [
+        "🔴 GPL-3.0 与 QG 的 GPL-3.0-or-later 同许可证兼容，可搬（保留孤海出处）。",
+        "后端沿用 Goohai 的健壮逻辑：空判覆盖 ExecutionBlocker/空 latent 张量/空张量/空容器/空串；类型一致性检查（混接 IMAGE 与 LATENT 报人话错误）；全空时响亮报错而非静默传 None。",
+        "前端纯 vanilla JS（只 import app），自包含：2–16 槽动态增删、中间空槽保位（后端优先级稳定）、复制/恢复节点的陈旧槽位硬上限、中文类型标签、按连接类型特化槽类型、宽度保留高度自适应、rAF 幂等同步。",
+        "去掉了上游那个没被前端使用的隐藏 gh_input_type 字符串槽（纯冗余）。",
+        "只依赖 torch（ComfyUI 核心），零新增依赖。",
+        "与 rgthree 的 Any Switch 功能重叠；用户装着两个，搬完建议把原 Goohaitools 改名 .disabled 避免菜单重复。"
+      ]
+    },
+    {
+      "id": "QG_DisplayAny",
+      "class": "QGDisplayAny",
+      "display": "QG 展示任意",
+      "category": "QG-tools/展示",
+      "source_id": "GoohaiDisplayAny",
+      "source_class": "GoohaiDisplayAny",
+      "source_ref": "Goohaitools-comfyui（展示任意 GH），GPL-3.0",
+      "source_author": "孤海 (Goohaitools)",
+      "kind": "展示并原样透传任意输入：文本/图像/遮罩/音频/视频富预览，支持批量、画册、文本样式设置与右键复制/保存。",
+      "files_new": [
+        "nodes/qg_display_any.py（节点 + 预览生成 + partial_execution_targets 调度）",
+        "web/display_any/index.js（DOM 预览面板，由 goohai_display_any.js 改名移植）",
+        "web/shared/dom_native_interaction.mjs（DOM widget → 原生画布的指针/键盘桥接，共享模块）"
+      ],
+      "notes": [
+        "🔴 GPL-3.0 与 QG 同许可证兼容，保留孤海出处。",
+        "改名走「命中计数断言」脚本（TEMP/port_display_any.py）：24 项替换逐项断言计数，残留正则零命中（gh- 前缀→qgtools-、_ghDisplay→_qgDisplay、properties gh_display_preview→qg_display_preview 等）。",
+        "🔴 去掉了上游的隐藏 qg_input_type 输入（原 gh_input_type，socketless STRING widget）——它会出现在 ComfyUI 帮助卡的输入列表里。类型改走 properties.qg_display_preview.type（前端 syncPorts 实时写入、随工作流序列化），排队时经 extra_pnginfo 传给后端；后端解析顺序：直连上游 RETURN_TYPES > 节点属性 > ANY。前端保留 addInput 守卫 + onConfigure 清理，防旧工作流残留。",
+        "OUTPUT_NODE + add_on_prompt_handler(select_display_targets)：被下游引用时按依赖执行，未被引用时主动提升为执行目标，预览始终能刷新。",
+        "预览媒体写 ComfyUI temp 目录（qg_display_*.png/wav/mp4），预览失败只告警不阻断数据流。",
+        "视频预览用 comfy_api.latest 的 Input/Types（ComfyUI 核心）；本机 LCM-Python 环境可导入（上游同机已验证）。",
+        "指针桥接提为 web/shared 共享模块（未来其他 DOM widget 节点可复用）；前端 UI 文案本身是中文，无需 zh() 通道。"
+      ]
+    },
+    {
+      "id": "QG_IfElse",
+      "class": "QGIfElse",
+      "display": "QG 是否判断",
+      "category": "QG-tools/逻辑",
+      "source_id": "easy ifElse",
+      "source_class": "IfElse",
+      "source_ref": "ComfyUI-Easy-Use（easy ifElse / 是否判断），GPL-3.0",
+      "source_author": "yolain (Easy-Use)",
+      "kind": "布尔懒分支：为真透传 on_true、为假透传 on_false；未选中的分支不求值。",
+      "files_new": [
+        "nodes/qg_if_else.py（节点 + check_lazy_status 懒执行）"
+      ],
+      "notes": [
+        "🔴 GPL-3.0 与 QG 同许可证兼容，保留 Easy-Use 出处。",
+        "上游是 V3 API（io.ComfyNode/define_schema），QG 版改写为 V1 经典写法：输入加 {\"lazy\": True} + check_lazy_status 类方法，懒执行语义与上游一致（未选中分支完全不求值）。",
+        "纯后端节点，零前端 JS、零新增依赖；输入名 boolean/on_true/on_false 保持英文 key，界面名（是否为真/真时/假时）走 nodeDefs + 汉化字典。",
+        "输出 RETURN_NAMES=any，nodeDefs 映射为「输出」。"
       ]
     }
   ],
