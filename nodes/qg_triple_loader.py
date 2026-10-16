@@ -13,8 +13,11 @@ Chinese ("QG 模型加载器") like the other nodes this pack's author wrote, so
 node is findable by the name it is known by.
 
 How it stays version-proof: the three stock loader instances are reused, so
-every dropdown list (unet / clip / vae files, weight dtype, clip type, device)
-is read off the installed ComfyUI at import time instead of being hardcoded.
+every dropdown is read off the installed ComfyUI instead of being hardcoded.
+The three file lists are read again on every INPUT_TYPES() call - a newly
+downloaded model then shows up on a plain refresh, no restart needed; the
+static options (weight dtype, clip type, device) are baked into the loaders'
+code, so those are read once at import.
 The picks are plain file paths, so backend validation passes untouched; the
 prettifying to short file names happens entirely in the front end
 (web/triple_loader/index.js) and never rewrites a stored value.
@@ -44,18 +47,32 @@ _unet_loader = UNETLoader()
 _clip_loader = CLIPLoader()
 _vae_loader = VAELoader()
 
-_unet_required = _unet_loader.INPUT_TYPES()["required"]
-_clip_all = _clip_loader.INPUT_TYPES()
-_clip_required = _clip_all["required"]
-_clip_optional = _clip_all.get("optional", {})
+# The three file lists are read FRESH on every call - never cached at import.
+#
+# ComfyUI calls INPUT_TYPES() on every /object_info request (page load, the
+# Refresh command / R key, adding a node), and the stock loaders enumerate the
+# models folders right then. Reading the lists once at import froze them until
+# ComfyUI restarted: a newly downloaded model only showed up after a restart,
+# while the stock UNETLoader showed it on a plain refresh.
+# (folder_paths.get_filename_list re-walks a folder only when its mtime
+# changed, so re-reading is cheap.)
+def _unet_files():
+    return _unet_loader.INPUT_TYPES()["required"]["unet_name"][0]
 
-_unet_files = lambda: _unet_required["unet_name"][0]  # noqa: E731
-_clip_files = lambda: _clip_required["clip_name"][0]  # noqa: E731
-_vae_files = lambda: _vae_loader.INPUT_TYPES()["required"]["vae_name"][0]  # noqa: E731
 
-_unet_dtypes = _unet_required.get("weight_dtype", (["default"],))[0]
-_clip_types = _clip_required["type"][0]
-_clip_devices = _clip_optional.get("device", (["default", "cpu"],))[0]
+def _clip_files():
+    return _clip_loader.INPUT_TYPES()["required"]["clip_name"][0]
+
+
+def _vae_files():
+    return _vae_loader.INPUT_TYPES()["required"]["vae_name"][0]
+
+
+# weight_dtype / clip type / device are static options baked into the loader
+# code, not filesystem reads, so reading them once at import stays correct.
+_unet_dtypes = _unet_loader.INPUT_TYPES()["required"].get("weight_dtype", (["default"],))[0]
+_clip_types = _clip_loader.INPUT_TYPES()["required"]["type"][0]
+_clip_devices = _clip_loader.INPUT_TYPES().get("optional", {}).get("device", (["default", "cpu"],))[0]
 
 
 def _default_clip_type() -> str:

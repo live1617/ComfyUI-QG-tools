@@ -100,6 +100,21 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "QG 我的节点"}
   URL 加 `&skip_update=true` + 删掉页面加载预热，只在打开卡片编辑器 / 点 Detect 时懒加载）。
   实测：带 `skip_update=true` 后 22.9 s → 2.6 s，返回的 `node_packs`/`reference`/`files` 照旧，
   队列不再被写。验证脚本：工作区 `tools/verify_no_queue_on_load.py`（含阳性对照）。
+- 🔴 **`INPUT_TYPES()` 里返回文件列表的，必须每次现取，绝不能在 import 时缓存。**
+  ComfyUI 每次请求 `/object_info`（页面加载、按 **R** 刷新、加节点）都会重新调用
+  `INPUT_TYPES()`；官方加载器（`UNETLoader` 等）内部每次现扫 `folder_paths`，所以官方节点刷新正常。
+  把 `INPUT_TYPES()` 的结果存进模块级变量 = 把列表冻结到下次进程重启。
+  v0.8.2 的 `QG_TripleLoader` 正是如此：`_unet_files` / `_clip_files` 两个 lambda 返回的是
+  import 时捕获的旧列表（VAE 那个反而是每次重读，属于实现不一致导致的局部冻结），
+  结果新下载的模型**只有重启 ComfyUI 才出现在下拉里**。现在三个 getter 统一每次重读。
+  - 反之，`weight_dtype` / `clip_type` / `device` 这类**写死在加载器代码里的静态选项**
+    不依赖文件系统，import 时读一次即可（代码里已注明，别再"顺手改成每次读"）。
+  - 开销可忽略：`INPUT_TYPES()` 只在 `/object_info` 被调用，不在执行热路径；
+    且 `folder_paths.get_filename_list` 有 mtime 缓存，目录没变时只是一次 `os.path.getmtime` 比对。
+  - 新增带文件下拉的节点（LoRA、ControlNet、upscale 模型…）同样适用：
+    直接调 `folder_paths.get_filename_list(...)` 或复用对应官方 loader 的 `INPUT_TYPES()`，别提前快照。
+  - 回归测试：工作区 `tools/test_triple_fresh.py`（桩件，对旧代码会失败，可作阳性对照）；
+    真机 `tools/run_8199_triple_refresh.py`（与官方节点逐槽对条数 + 丢临时模型文件看是否跟上）。
 - 节点 ID 若与已有插件冲突，`__init__.py` 会保留先加载的并在控制台点名，不会静默覆盖。
 - 验证 ComfyUI 前**先确认端口上的进程是谁**（用户可能正开着 8188），验证用 `--port 8199` 起独立实例。
 

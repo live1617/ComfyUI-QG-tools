@@ -66,7 +66,7 @@
 - 常用于接「兜底」：有高清模型就走它，没有就走普通版；节点上接几个、槽位自动增减
 - 所有输入必须是同一类型（混接 IMAGE 和 LATENT 会报人话错误），全空时也会报错而不是把 `None` 传给下游
 
-- **当前版本**：v0.8.2
+- **当前版本**：v0.8.3
 - **节点**：12 个（`QG LoRA Loader` / `QG 模型加载器` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` /
   `QG Workflow Switches` / `QG Run Timer` / `QG Text Edit` / `QG 加载文档` / `QG Google 翻译` /
   `QG 任意切换` / `QG 展示任意` / `QG 是否判断`）
@@ -99,7 +99,7 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 装完**完整重启 ComfyUI**，控制台应出现：
 
 ```
-[QG-tools] v0.8.2 加载完成 | 节点数 12
+[QG-tools] v0.8.3 加载完成 | 节点数 12
 ```
 
 无需 `pip install` 任何东西。十二个节点都在 `QG-tools` 分类下

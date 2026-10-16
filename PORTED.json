@@ -612,7 +612,8 @@
         "🔴 兼容导入刻意保留：先试 comfy_extras.nodes_model_loading，ImportError 再回退 from nodes import —— 本机 Leopard-cat-meow fork 走的是后者，别删。",
         "零新增依赖：只用 ComfyUI 内置加载器 + 标准库。下拉列表在 import 时从内置节点读取，自动适配 ComfyUI 版本。",
         "保留后端 _resolve_file 的兜底匹配（按 basename / 去扩展名），让存过短名的旧工作流仍能解析。",
-        "⚠️ 原样保留 setInterval(2000) 的兜底轮询（补打补丁 + Vue DOM 重建后重挂 observer）。在千节点工作流下这是持续开销；若用户反馈卡顿，可改成 loadedGraphNode 钩子。"
+        "⚠️ 原样保留 setInterval(2000) 的兜底轮询（补打补丁 + Vue DOM 重建后重挂 observer）。在千节点工作流下这是持续开销；若用户反馈卡顿，可改成 loadedGraphNode 钩子。",
+        "2026-10-17 修：三个文件 getter 从「import 时快照」改为每次现读。原因＝ComfyUI 每次 /object_info（页面加载 / 按 R / 加节点）都会重调 INPUT_TYPES()，官方加载器内部每次现扫 folder_paths，而本节点把列表冻在了 import 那一刻：新下载的模型只有重启 ComfyUI 才出现（实测官方 41 条 vs 本节点 40 条）。静态选项 weight_dtype / clip_type / device 不依赖文件系统，仍 import 时读一次（已注释防误改）。"
       ]
     }
   ],
