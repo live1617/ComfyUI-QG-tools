@@ -22,7 +22,7 @@
       "id": "QG_LoraLoader",
       "class": "QGLoraLoader",
       "display": "QG LoRA Loader",
-      "category": "QG-tools",
+      "category": "QG-tools/加载器",
       "source_id": "AUSBOSS_NODES_LoraLoader",
       "source_class": "AusBossLoraLoader",
       "source_display": "LoRA Loader 🆎",
@@ -122,7 +122,7 @@
         },
         "category": {
           "old": "🆎 AusBoss/Loaders",
-          "new": "QG-tools"
+          "new": "QG-tools/加载器"
         },
         "python_class": {
           "old": "AusBossLoraLoader",
@@ -208,7 +208,7 @@
       "id": "QG_WorkflowNote",
       "class": "QGWorkflowNote",
       "display": "QG Workflow Note",
-      "category": "QG-tools",
+      "category": "QG-tools/工作流",
       "source_id": "AUSBOSS_NODES_WorkflowNote",
       "source_class": "AusBossWorkflowNote",
       "source_display": "Workflow Note 🆎",
@@ -311,7 +311,7 @@
       "id": "QG_WorkflowSwitches",
       "class": "QGWorkflowSwitches",
       "display": "QG Workflow Switches",
-      "category": "QG-tools",
+      "category": "QG-tools/工作流",
       "source_id": "AUSBOSS_NODES_WorkflowSwitches",
       "source_class": "AusBossWorkflowSwitches",
       "source_display": "Workflow Switches 🆎",
@@ -448,7 +448,7 @@
       "id": "QG_RunTimer",
       "class": "QGRunTimer",
       "display": "QG Run Timer",
-      "category": "QG-tools",
+      "category": "QG-tools/展示",
       "source_id": "AUSBOSS_NODES_RunTimer",
       "source_class": "AusBossRunTimer",
       "source_ref": "ComfyUI-AusBoss #31（node_run_timer.py）",
@@ -589,6 +589,30 @@
         "上游是 V3 API（io.ComfyNode/define_schema），QG 版改写为 V1 经典写法：输入加 {\"lazy\": True} + check_lazy_status 类方法，懒执行语义与上游一致（未选中分支完全不求值）。",
         "纯后端节点，零前端 JS、零新增依赖；输入名 boolean/on_true/on_false 保持英文 key，界面名（是否为真/真时/假时）走 nodeDefs + 汉化字典。",
         "输出 RETURN_NAMES=any，nodeDefs 映射为「输出」。"
+      ]
+    },
+    {
+      "id": "QG_TripleLoader",
+      "class": "QGTripleLoader",
+      "display": "QG 模型加载器",
+      "category": "QG-tools/加载器",
+      "source_id": "TripleLoader",
+      "source_class": "TripleLoader",
+      "source_ref": "ComfyUI-TripleLoader（本包作者自己的插件；来源包见桌面 ComfyUI-TripleLoader.zip）",
+      "source_license": "GPL-3.0-only → 并入本包的 GPL-3.0-or-later（作者本人代码，可自行再许可）",
+      "kind": "三合一模型加载器：复用内置 UNETLoader / CLIPLoader / VAELoader，一个面板选 unet / clip / vae，输出标准 MODEL / CLIP / VAE。",
+      "files_new": [
+        "nodes/qg_triple_loader.py（节点）",
+        "web/triple_loader/index.js（下拉显示美化：列表显示完整路径，节点上收起显示短文件名）"
+      ],
+      "notes": [
+        "改名走 tools/port_triple_loader.py：6 条规则全部带「命中计数断言」，逐条命中，品牌串残留扫描归零。",
+        "display 按作者惯例保留中文「QG 模型加载器」，与 QG_MDReader / QG_GoogleTranslateText 一致。",
+        "前端改名清单：import 改绝对路径 /scripts/app.js（与其它 QG 前端一致）；TARGET_CLASS → NODE_CLASS，值 QG_TripleLoader（用 NODE_CLASS 这个名字是为了让 verify_port.py 第 4 项自动覆盖它）；注册名 QG.TripleLoader；widget 标记 _triplePrettyPatched → _qgTriplePrettyPatched；日志前缀 [QG-tools]。",
+        "🔴 兼容导入刻意保留：先试 comfy_extras.nodes_model_loading，ImportError 再回退 from nodes import —— 本机 Leopard-cat-meow fork 走的是后者，别删。",
+        "零新增依赖：只用 ComfyUI 内置加载器 + 标准库。下拉列表在 import 时从内置节点读取，自动适配 ComfyUI 版本。",
+        "保留后端 _resolve_file 的兜底匹配（按 basename / 去扩展名），让存过短名的旧工作流仍能解析。",
+        "⚠️ 原样保留 setInterval(2000) 的兜底轮询（补打补丁 + Vue DOM 重建后重挂 observer）。在千节点工作流下这是持续开销；若用户反馈卡顿，可改成 loadedGraphNode 钩子。"
       ]
     }
   ],

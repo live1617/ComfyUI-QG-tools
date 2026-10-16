@@ -30,20 +30,20 @@
 // Pure decisions (which rows show, how tall the card is, how a number
 // scrubs, where a socket sits) live in widget_card_math.mjs for node:test;
 // this file is the DOM.
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026101601";
-import { zh } from "./zh.mjs?v=2026101601";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101601";
-import { createMediaPicker } from "./media_picker.mjs?v=2026101601";
-import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026101601";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101601";
-import { hideWidget } from "./widget_visibility.mjs?v=2026101601";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026101603";
+import { zh } from "./zh.mjs?v=2026101603";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101603";
+import { createMediaPicker } from "./media_picker.mjs?v=2026101603";
+import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026101603";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101603";
+import { hideWidget } from "./widget_visibility.mjs?v=2026101603";
 import {
   CARD_PADDING, GROUP_HEIGHT, ROW_GAP, ROW_HEIGHT, SECTION_HEIGHT, SLOT_OFFSET, UNIT_SLOT_WIDTH,
   cardHeight, commitWidgetValue, comboValues, rowHeight, rowKind, rowMuted, rowTops, scrubSteps, socketWidgetY, visibleRows,
   widgetTooltip,
-} from "./widget_card_math.mjs?v=2026101601";
+} from "./widget_card_math.mjs?v=2026101603";
 
-export * from "./widget_card_math.mjs?v=2026101601";
+export * from "./widget_card_math.mjs?v=2026101603";
 
 const CSS_ID = "qgtools-widget-card-css";
 export const CARD_WIDGET = "qg_widget_card";

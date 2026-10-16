@@ -905,3 +905,41 @@ export function rowsSignature(rows, settings, keyOf = (row) => row.title) {
     ]),
   ]);
 }
+
+// Whether two stack row names are the same LoRA: the same name, or the same
+// file in another folder (see fileKey).
+function sameFile(a, b) {
+  return a === b || (Boolean(a) && Boolean(b) && fileKey(a) === fileKey(b));
+}
+
+// The made switches that move one row of a LoRA stack: every switch, on any
+// of the given Workflow Switches nodes, whose settings change that row of
+// that control on that node. `boards` is [{ node, settings }], one per
+// Workflow Switches node; the answer is [{ node, id, title }].
+export function stackRowOwners(boards, nodeId, widget, rowName) {
+  const owners = [];
+  if (!rowName) return owners;
+  for (const { node, settings } of boards ?? []) {
+    for (const entry of normalizeSettings(settings).switches) {
+      const moves = valuePairs(entry).some(
+        (pair) => pair.row !== undefined && String(pair.node) === String(nodeId) && pair.widget === widget && sameFile(pair.row, rowName),
+      );
+      if (moves) owners.push({ node, id: entry.id, title: entry.title });
+    }
+  }
+  return owners;
+}
+
+// Take one row of a LoRA stack away from a switch: both of its saved sides
+// forget that row, so the switch leaves it alone and no longer reads
+// "changed" because of it. The rest of what the switch does stays.
+export function releaseStackRow(settings, id, nodeId, widget, rowName) {
+  const forget = (side) => {
+    const values = side?.[String(nodeId)];
+    const rows = stackRows(values?.[widget]);
+    const row = rows && findRow(rows, rowName);
+    if (!row) return side;
+    return { ...side, [String(nodeId)]: { ...values, [widget]: JSON.stringify(rows.filter((other) => other !== row)) } };
+  };
+  return changeSwitch(settings, id, (entry) => ({ on: forget(entry.on), off: forget(entry.off) }));
+}

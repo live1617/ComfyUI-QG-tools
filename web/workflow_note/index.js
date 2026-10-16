@@ -11,14 +11,14 @@
 // URLs become buttons or links (the parser already filtered them).
 
 import { api } from "/scripts/api.js";
-import { zh } from "../shared/zh.mjs?v=2026101601";
+import { zh } from "../shared/zh.mjs?v=2026101603";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026101601";
-import { collectGraphNodes } from "../shared/appearance.mjs?v=2026101601";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026101601";
-import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026101601";
-import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026101601";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026101601";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026101603";
+import { collectGraphNodes } from "../shared/appearance.mjs?v=2026101603";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026101603";
+import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026101603";
+import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026101603";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026101603";
 import {
   COMMON_FOLDERS,
   INPUT_FOLDER,
@@ -38,9 +38,9 @@ import {
   rowFromCells,
   serializeNote,
   subfolderOf,
-} from "../shared/workflow_note.mjs?v=2026101601";
-import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026101601";
-import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026101601";
+} from "../shared/workflow_note.mjs?v=2026101603";
+import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026101603";
+import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026101603";
 
 const NODE_CLASS = "QG_WorkflowNote";
 const CSS_ID = "qgtools-workflow-note-css";
@@ -1094,7 +1094,9 @@ app.registerExtension({
     chainCallback(nodeType.prototype, "getExtraMenuOptions", function (_canvas, options) {
       const state = this.__qgNote;
       if (!state || !Array.isArray(options)) return;
-      options.unshift({ content: "✎ Edit Workflow Note", callback: () => openEditor(state) }, null);
+      // Built at click time on the canvas, so the translation plugin's DOM
+      // watcher never sees this label: it has to go through zh() itself.
+      options.unshift({ content: zh("✎ Edit Workflow Note"), callback: () => openEditor(state) }, null);
     });
     chainCallback(nodeType.prototype, "refreshComboInNode", function () {
       const state = this.__qgNote;

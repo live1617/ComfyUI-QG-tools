@@ -1,8 +1,8 @@
 # ComfyUI-QG-tools
 
-一个 ComfyUI 自定义节点包，目前包含十一个节点：**LoRA 加载器**、**图像裁剪 + 旋转 + 补边**、
-**工作流说明卡**、**工作流开关**、**运行计时器**、**文本编辑输出**、**加载文档**、**Google 翻译**、
-**任意切换**、**展示任意**、**是否判断**。
+一个 ComfyUI 自定义节点包，目前包含十二个节点：**LoRA 加载器**、**模型加载器（三合一）**、
+**图像裁剪 + 旋转 + 补边**、**工作流说明卡**、**工作流开关**、**运行计时器**、**文本编辑输出**、
+**加载文档**、**Google 翻译**、**任意切换**、**展示任意**、**是否判断**。
 
 **QG Image Crop + Rotate + Pad —— 在节点上直接把画面摆正、裁好、补出画布**
 
@@ -17,6 +17,11 @@
 - **触发词自动汇总** —— 所有启用行的触发词去重后拼成一路字符串输出，直接接进提示词
 - **整摞存成模板** —— 常用的 LoRA 组合存下来，在任何同类节点上一键套用
 - **吸收模型链上的 LoRA** —— 把串在模型链上下游的其它 LoRA 加载器全部并进来，原节点自动旁通，**出图结果不变**
+
+**QG 模型加载器 —— 三合一：扩散模型 + CLIP + VAE 一次选完**
+
+- 一个节点顶掉「UNET Loader + Load CLIP + Load VAE」三个节点，输出标准 `MODEL` / `CLIP` / `VAE`
+- 下拉列表从本机现读，不绑模型家族；节点上只显示短文件名，不会把画布撑宽
 
 **QG Workflow Note —— 让别人打开你的工作流就知道怎么用**
 
@@ -61,8 +66,11 @@
 - 常用于接「兜底」：有高清模型就走它，没有就走普通版；节点上接几个、槽位自动增减
 - 所有输入必须是同一类型（混接 IMAGE 和 LATENT 会报人话错误），全空时也会报错而不是把 `None` 传给下游
 
-- **当前版本**：v0.8.0
-- **节点**：11 个（`QG LoRA Loader` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` / `QG Workflow Switches` / `QG Run Timer` / `QG Text Edit` / `QG 加载文档` / `QG Google 翻译` / `QG 任意切换` / `QG 展示任意` / `QG 是否判断`，分类 `QG-tools`）
+- **当前版本**：v0.8.2
+- **节点**：12 个（`QG LoRA Loader` / `QG 模型加载器` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` /
+  `QG Workflow Switches` / `QG Run Timer` / `QG Text Edit` / `QG 加载文档` / `QG Google 翻译` /
+  `QG 任意切换` / `QG 展示任意` / `QG 是否判断`）
+- **分类**：全部在 `QG-tools` 下（细分子分类 `加载器` / `文本` / `逻辑` / `展示` / `工作流` / `Image`）
 - **依赖**：无额外 pip 包。只用 ComfyUI 运行期自带的模块（torch / numpy / PIL / PyAV / folder_paths / comfy.*）；
   `scipy`、`pymatting` 用到了才用，缺了有内置回退，不报错。
 - **许可证**：[GPL-3.0-or-later](LICENSE)
@@ -91,12 +99,12 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 装完**完整重启 ComfyUI**，控制台应出现：
 
 ```
-[QG-tools] v0.8.0 加载完成 | 节点数 8
+[QG-tools] v0.8.2 加载完成 | 节点数 12
 ```
 
-无需 `pip install` 任何东西。八个节点都在 `QG-tools` 分类下
-（图像节点在 `QG-tools/Image`，文本节点在 `QG-tools/文本`），
-搜索 `lora`、`crop`、`note`、`switch`、`timer`、`text` 等也能找到。
+无需 `pip install` 任何东西。十二个节点都在 `QG-tools` 分类下
+（细分：加载器 / 文本 / 逻辑 / 展示 / 工作流 / Image），
+搜索 `lora`、`crop`、`note`、`switch`、`timer`、`text`、`load` 等也能找到。
 
 ---
 
@@ -240,6 +248,36 @@ Scale Image to Total Pixels 同语义）。
 | Long names | end | 名字太长时怎么省略；`middle` 会保留结尾的数字 |
 | Scrub strength on the name | 开 | 在名字上左右拖动改强度（单击仍然是打开选择器） |
 | Preview thumbnails | 开 | 悬停选择器时显示预览图 |
+
+## QG 模型加载器（三合一加载器）
+
+把 **扩散模型 + 文本编码器 + VAE** 三个加载器并成一个节点：三样各选一次，
+输出标准 `MODEL` / `CLIP` / `VAE` 三路，接到采样器上即可。原本要摆三个节点、来回改三处下拉，
+现在一块面板说完。
+
+- **不绑模型家族** —— 底下跑的就是 ComfyUI 三个原生加载器，下拉里的文件列表、权重类型、
+  CLIP 类型、加载设备全部在启动时从本机现读，所以 Qwen-Image / Flux / SD 系列都照常能用；
+  ComfyUI 升级后选项自动跟着变，不用等插件更新
+- **下拉看全路径，节点上看短名** —— 下拉列表里显示完整路径便于区分同名文件；
+  选中之后节点上只留文件名，不会把节点撑宽（存的值仍是真实路径，不会被改写）
+- **旧工作流不会断** —— 万一某行存的是裸文件名、或路径分隔符不一样，
+  运行时会按文件名在 `models/` 下自动找回；真找不到才报错，并点名是哪个文件
+
+### 输入 / 输出
+
+| 方向 | 名称 | 说明 |
+|---|---|---|
+| 输入（必填） | `unet_name` | UNET / 扩散模型 |
+| 输入（必填） | `weight_dtype` | 权重精度，显存紧张可选 `fp8_e4m3fn` |
+| 输入（必填） | `clip_name` | CLIP / 文本编码器 |
+| 输入（必填） | `clip_type` | 文本编码器类型（Qwen-Image 选 `qwen_image`） |
+| 输入（必填） | `device` | 文本编码器加载设备，选 `cpu` 可省显存（速度变慢） |
+| 输入（必填） | `vae_name` | VAE |
+| 输出 | `MODEL` / `CLIP` / `VAE` | 三路标准输出，直连采样器 |
+
+> 本节点为作者自有节点（ComfyUI-TripleLoader），非第三方搬运。
+
+---
 
 ## QG Workflow Note（工作流说明卡）
 
@@ -442,7 +480,8 @@ Scale Image to Total Pixels 同语义）。
 1. 首次安装要**完整重启 ComfyUI**（不是刷新页面）。
 2. 之后前端有更新时，浏览器要 `Ctrl+Shift+R` 强刷 —— ComfyUI 只在页面加载时读一次扩展列表。
    （本插件的前端子模块都带版本串，正常情况下普通 F5 也能拿到新代码。）
-3. 后端共 11 条路由（LoRA 6 条 + 图像面板的视频预览 4 条 + 版本探针 1 条），可用这条命令快速自检：
+3. 后端共 15 条路由（LoRA 6 条 + 文档 3 条 + Google 翻译 1 条 + 图像面板的视频预览 4 条 + 版本探针 1 条），
+   可用这条命令快速自检：
 
    ```bash
    curl http://127.0.0.1:8188/qg/pack_version
@@ -453,11 +492,18 @@ Scale Image to Total Pixels 同语义）。
 
 本项目以 **GPL-3.0-or-later** 发布，全文见 [`LICENSE`](LICENSE)。
 
-其中的五个节点（LoRA 加载器、图像裁剪 + 旋转 + 补边、工作流说明卡、工作流开关、运行计时器）
-抽取并改写自 [ComfyUI-AusBoss](https://github.com/ausboss/ComfyUI-AusBoss)（MIT）；
-文本编辑输出抽取并改写自
-[ComfyUI-Muye-nodes](https://github.com/muyexiuluo/ComfyUI-Muye-nodes)（MIT）。
-按 MIT 的要求，两份原许可证全文分别保留在
-[`licenses/ComfyUI-AusBoss-LICENSE.txt`](licenses/ComfyUI-AusBoss-LICENSE.txt) 与
-[`licenses/ComfyUI-Muye-nodes-LICENSE.txt`](licenses/ComfyUI-Muye-nodes-LICENSE.txt)；
-被改写部分的原始版权仍归原作者所有。MIT 与 GPLv3 兼容，因此整体以 GPLv3 分发是合规的。
+节点抽取来源：
+
+| 来源 | 许可证 | 贡献的节点 |
+|---|---|---|
+| [ComfyUI-AusBoss](https://github.com/ausboss/ComfyUI-AusBoss) | MIT | LoRA 加载器、图像裁剪 + 旋转 + 补边、工作流说明卡、工作流开关、运行计时器 |
+| [ComfyUI-Muye-nodes](https://github.com/muyexiuluo/ComfyUI-Muye-nodes) | MIT | 文本编辑输出 |
+| [ComfyUI_Custom_Nodes_AlekPet](https://github.com/AlekPet/ComfyUI_Custom_Nodes_AlekPet) | MIT | Google 翻译 |
+| 孤海工具箱（Goohaitools-comfyui） | GPL-3.0 | 展示任意 |
+| [ComfyUI-Easy-Use](https://github.com/yolain/ComfyUI-Easy-Use) | GPL-3.0 | 是否判断 |
+
+MIT 来源的原许可证全文保留在 [`licenses/`](licenses/)；GPL-3.0 来源与本项目同许可证，
+按 GPL 要求在各节点章节末尾保留出处标注。被改写部分的原始版权仍归原作者所有。
+MIT 与 GPLv3 兼容，因此整体以 GPLv3 分发是合规的。
+
+作者自己写的部分（三合一模型加载器、加载文档等）版权归作者，同样以 GPL-3.0-or-later 发布。

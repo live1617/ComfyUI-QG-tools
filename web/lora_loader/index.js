@@ -1,17 +1,19 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026101601";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026101601";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026101601";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026101603";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026101603";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026101603";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026101601";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026101601";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101601";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026101601";
+} from "../shared/settings_menu.mjs?v=2026101603";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026101603";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101603";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026101603";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026101603";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026101603";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -67,8 +69,8 @@ import {
   loraFolders,
   loraPickerEntries,
   loraStackKeyAction,
-} from "../shared/lora_stack.mjs?v=2026101601";
-import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026101601";
+} from "../shared/lora_stack.mjs?v=2026101603";
+import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026101603";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -88,6 +90,10 @@ const PANEL_PADDING = 10;
 // band's bottom edge. 52 puts the 36px bar at y 24..60, clear of the title
 // and flush with the band.
 const BAND_RECLAIM = 52;
+// The one line that says where an inner loader's rows are set (see
+// rowsSource), and the Workflow Switches node that can own a row.
+const NOTE_HEIGHT = 16;
+const SWITCHES_CLASS = "QG_WorkflowSwitches";
 
 // Per-node-type preferences behind the gear button; persisted in
 // localStorage so they follow the user across workflows.
@@ -221,6 +227,17 @@ function installStyles() {
     touch-action: none; }
   .qgtools-lora-grip:hover { color: #9ba2aa; }
   .qgtools-lora-row.dragging .qgtools-lora-grip { cursor: grabbing; }
+  /* A row a Workflow Switches switch sets: a lock in the grip's place, and a
+     thin line down its left edge. Clicking the lock takes the row over. */
+  .qgtools-lora-grip.locked { color: #8fdcd4; cursor: pointer; }
+  .qgtools-lora-grip.locked:hover { color: #c4f1ec; }
+  .qgtools-lora-row.owned { box-shadow: inset 2px 0 0 ${BRAND}; }
+  /* Where an inner loader's rows are set when its box holds them. */
+  .qgtools-lora-onbox { flex: none; height: ${NOTE_HEIGHT}px; line-height: ${NOTE_HEIGHT}px;
+    text-align: center; color: #8fb9b4; font: 11px system-ui; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; pointer-events: auto; }
+  .qgtools-lora-panel.readonly .qgtools-lora-bargroup,
+  .qgtools-lora-panel.readonly .qgtools-lora-stack { pointer-events: none; opacity: .55; }
   .qgtools-lora-toggle { width: 30px; height: 16px; border-radius: 8px; border: none;
     background: #3a4047; cursor: pointer; position: relative; flex: none; padding: 0; }
   .qgtools-lora-toggle::after { content: ""; position: absolute; top: 2px; left: 2px;
@@ -454,6 +471,14 @@ function gripIconSvg() {
   return `<svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor" aria-hidden="true">${dots.join("")}</svg>`;
 }
 
+// The grip of a row a switch sets.
+function lockIconSvg() {
+  return '<svg width="11" height="13" viewBox="0 0 11 13" fill="none" stroke="currentColor" '
+    + 'stroke-width="1.5" stroke-linecap="round" aria-hidden="true">'
+    + '<rect x="1.2" y="5.6" width="8.6" height="6.4" rx="1.6" fill="currentColor" fill-opacity=".16"/>'
+    + '<path d="M3.1 5.6V3.9a2.4 2.4 0 0 1 4.8 0v1.7"/></svg>';
+}
+
 // Stepper chevrons, hand-drawn for the same reason.
 function chevronIconSvg(up) {
   const points = up ? "1.5,4 4.5,1 7.5,4" : "1.5,1 4.5,4 7.5,1";
@@ -467,6 +492,37 @@ function hideWidget(widget) {
   collapseWidget(widget);
   if (widget.element) widget.element.style.display = "none";
   if (widget.inputEl) widget.inputEl.style.display = "none";
+}
+
+// A slot that a widget sits on borrows its y from that widget: on every
+// layout the frontend writes `slot.pos = [10, widget.y + 10]`, and it skips
+// hidden widgets when it hands out y, so QG's hidden widgets keep y 0 and the
+// slot keeps [10, 10] - the node's first slot row. A link into the rows then
+// draws on top of the model dot (the "rows" input looked like it had moved to
+// model). The frontend rewrites `slot.pos` from the widget on every layout,
+// so the widget's y is what has to move: give each hidden widget the y its
+// slot would have if it were a plain input, one slot row each, and the
+// frontend recomputes the slot into its own place.
+const SLOT_HEIGHT = 20;
+function placeWidgetSlots(node) {
+  const inputs = node?.inputs;
+  if (!inputs?.length) return false;
+  const start = Number(node.constructor?.slot_start_y) || 0;
+  let row = 0;
+  let moved = false;
+  for (const slot of inputs) {
+    const widget = slot._widget
+      ?? (slot.widget ? node.widgets?.find((item) => item.name === slot.widget.name) : null);
+    // +4: a widget's own y sits half a slot row above the dot it carries
+    // (`slot.pos.y = widget.y + NODE_SLOT_HEIGHT / 2`).
+    const y = start + row * SLOT_HEIGHT + 4;
+    if (widget && widget.y !== y) {
+      widget.y = y;
+      moved = true;
+    }
+    row += 1;
+  }
+  return moved;
 }
 
 async function fetchLoraList() {
@@ -584,6 +640,11 @@ function retranslate(element) {
 // Every commit is a user gesture and enters undo history; a drag passes
 // record: false for its intermediate values and records once on release.
 function commitRows(state, rows, { structural = false, record = true } = {}) {
+  // A card that only shows rows kept elsewhere changes nothing.
+  if (state.readOnly) {
+    renderRows(state);
+    return;
+  }
   state.rows = rows;
   state.widget.value = serializeRows(rows);
   state.renderedValue = state.widget.value;
@@ -594,7 +655,7 @@ function commitRows(state, rows, { structural = false, record = true } = {}) {
 }
 
 function linked(state) {
-  return state.node.properties?.qgLoraLinked !== false;
+  return (state.box?.loader ?? state.node).properties?.qgLoraLinked !== false;
 }
 
 // Picker options honor only hide-extension: their folder context is the
@@ -662,7 +723,8 @@ function panelHeight(state) {
     ? state.rows.length * (ROW_HEIGHT + ROW_GAP) - ROW_GAP
     : BLANK_HEIGHT;
   const stack = inner + ROW_GAP + ACTIONS_HEIGHT + STACK_PADDING * 2 + 2; // +2 border
-  return PANEL_PADDING * 2 + GROUP_HEIGHT + ROW_GAP + stack;
+  const note = state.note ? NOTE_HEIGHT + ROW_GAP : 0;
+  return PANEL_PADDING * 2 + GROUP_HEIGHT + ROW_GAP + note + stack;
 }
 
 function panelMinWidth(state) {
@@ -1524,6 +1586,66 @@ function openRowMenu(state, index, event) {
   openPopup(menu, { left: event.clientX, top: event.clientY, bottom: event.clientY, width: 0 });
 }
 
+// ---------- rows a switch sets ----------
+
+// Every Workflow Switches node on a graph, with its settings.
+function switchBoards(graph) {
+  return (graph?.nodes ?? graph?._nodes ?? [])
+    .filter((node) => node?.type === SWITCHES_CLASS)
+    .map((node) => ({ node, settings: node.properties?.[SETTINGS_PROPERTY] }));
+}
+
+// The switches that set one row. A switch addresses the node that keeps the
+// rows (state.owner): the loader itself, or the box that holds them.
+function rowOwners(state, row) {
+  const owner = state.owner;
+  if (!owner?.node?.graph || !row?.name) return [];
+  return stackRowOwners(switchBoards(owner.node.graph), owner.node.id, owner.name, row.name);
+}
+
+function ownerNames(owners) {
+  return [...new Set(owners.map((owner) => `"${owner.title}"`))].join(", ");
+}
+
+// Put a lock in the grip's place on every row a switch sets. Cheap to call
+// often: the rows are only touched when who sets them changed.
+function refreshLocks(state) {
+  const owners = state.rows.map((row) => rowOwners(state, row));
+  const signature = owners.map(ownerNames).join("|");
+  if (signature === state.lockSignature) return;
+  state.lockSignature = signature;
+  const rows = state.panel.querySelectorAll(".qgtools-lora-row");
+  rows.forEach((rowElement, index) => {
+    const grip = rowElement.querySelector(".qgtools-lora-grip");
+    if (!grip) return;
+    const names = ownerNames(owners[index] ?? []);
+    rowElement.classList.toggle("owned", Boolean(names));
+    grip.classList.toggle("locked", Boolean(names));
+    grip.innerHTML = names ? lockIconSvg() : gripIconSvg();
+    grip.title = names
+      ? zh(`Set by ${names}. Click the lock to take this row over: the switch then leaves it alone. Drag to reorder.`)
+      : zh("Drag to reorder");
+  });
+}
+
+// Take a row back from the switches that set it: they forget it, keep the
+// rest of what they do, and stop reading "changed" because of it.
+function takeRowOver(state, index) {
+  const row = state.rows[index];
+  const owners = rowOwners(state, row);
+  if (!owners.length) return;
+  for (const owner of owners) {
+    owner.node.properties ??= {};
+    owner.node.properties[SETTINGS_PROPERTY] = releaseStackRow(
+      owner.node.properties[SETTINGS_PROPERTY], owner.id, state.owner.node.id, state.owner.name, row.name,
+    );
+  }
+  refreshLocks(state);
+  app.canvas?.setDirty?.(true, true);
+  notifyQgChange();
+  loraToast(zh(`${rowLabel(state, row.name)} is yours now: ${ownerNames(owners)} no longer sets it.`));
+}
+
 // ---------- rendering ----------
 
 // Per-row decoration. The strength bar behind each name (inline styles,
@@ -1764,6 +1886,29 @@ function openSettings(state, anchor) {
       },
     },
   ];
+  // Inside a subgraph the rows can show on the box's face instead; first in
+  // the menu there, since it is what a loader in a box is usually set up for.
+  if (state.node.graph?.isRootGraph === false) {
+    const onBox = Boolean(rowsInputName(state.node));
+    menuSchema.unshift({
+      key: "_box_rows",
+      label: zh("Rows on the box"),
+      type: "action",
+      button: onBox ? zh("Take back") : zh("Show"),
+      hint: onBox
+        ? zh("The rows show on the box this subgraph sits in. Take back puts them "
+          + "inside this loader again, as the box you came in through holds them; "
+          + "every copy of the box then runs those rows.")
+        : zh("Show these rows on the face of the box this subgraph sits in, where "
+          + "they can be switched on and off and set by Workflow Switches. Each "
+          + "copy of the box keeps its own rows."),
+      onAction: () => {
+        closeSettingsMenu();
+        if (onBox) rowsBackInside(state);
+        else showRowsOnBox(state);
+      },
+    });
+  }
   openSettingsMenu({
     scope: SETTINGS_SCOPE,
     schema: menuSchema,
@@ -1858,9 +2003,18 @@ function renderRows(state) {
   const sumWord = el("span", "qgtools-lora-sumword", "enabled");
   summary.append(sumWord);
   sumWord.hidden = !state.rows.some((row) => row.name);
-  group.append(templates, master, summary, recheck, gear);
+  // On a box only the rows themselves: templates and the settings stay on
+  // the loader inside.
+  if (state.box) group.append(master, summary, recheck);
+  else group.append(templates, master, summary, recheck, gear);
   bar.append(group);
   body.append(bar);
+  panel.classList.toggle("readonly", Boolean(state.readOnly));
+  if (state.note) {
+    const note = el("div", "qgtools-lora-onbox", state.note);
+    note.title = state.note;
+    body.append(note);
+  }
 
   const stack = el("div", "qgtools-lora-stack");
   if (!state.rows.length) {
@@ -1911,6 +2065,7 @@ function renderRows(state) {
         abort.abort();
         rowElement.classList.remove("dragging");
         if (current === index) return;
+        grip.dataset.qgDragged = "1";
         if (commit) commitRows(state, reorderRows(state.rows, index, current), { structural: true });
         else renderRows(state);
       };
@@ -1923,6 +2078,15 @@ function renderRows(state) {
       window.addEventListener("pointermove", onMove, { capture: true, signal: abort.signal });
       window.addEventListener("pointerup", () => finish(true), { capture: true, signal: abort.signal });
       window.addEventListener("pointercancel", () => finish(false), { capture: true, signal: abort.signal });
+    });
+    // A click on the lock of a row a switch sets takes the row over (a drag
+    // that moved the row is no click).
+    grip.addEventListener("click", () => {
+      if (grip.dataset.qgDragged) {
+        delete grip.dataset.qgDragged;
+        return;
+      }
+      takeRowOver(state, index);
     });
 
     const toggle = el("button", `qgtools-lora-toggle${row.enabled ? " on" : ""}`);
@@ -2037,6 +2201,8 @@ function renderRows(state) {
     focusStackRow(state, index >= 0 ? index : Math.min(focusedIndex, state.rows.length));
   } else if (wasAddFocused) focusStackRow(state, state.rows.length);
   decorateRows(state);
+  state.lockSignature = null;
+  refreshLocks(state);
   // Names refit whenever the stack's box changes - the node was resized,
   // or the panel was laid out for the first time. The first observation
   // arrives before the next paint, so an unfitted name never shows.
@@ -2062,35 +2228,363 @@ function fitRowNames(state) {
   }
 }
 
+// ---------- rows on a box ----------
+
+// The box the user last came in through, per subgraph. An inner loader
+// whose rows are set on the box follows that box's copy of them.
+const enteredBoxes = new WeakMap();
+function watchEnteredBoxes() {
+  const canvas = app.canvas?.canvas;
+  if (!canvas || canvas.__qgLoraEntered) return;
+  canvas.__qgLoraEntered = true;
+  canvas.addEventListener("subgraph-opened", (event) => {
+    const { subgraph, fromNode } = event.detail ?? {};
+    if (subgraph && fromNode) enteredBoxes.set(subgraph, fromNode);
+  });
+}
+
+function rootGraph() {
+  return app.rootGraph ?? app.graph;
+}
+
+function isLoader(node) {
+  return node?.type === NODE_CLASS || node?.comfyClass === NODE_CLASS;
+}
+
+function boxTitle(box) {
+  return String(box?.title || "the box").replace(/\s*🆎\s*$/u, "");
+}
+
+// Where a card's rows are kept, and so what it shows and edits:
+// - a box card: the box's own copy of the rows of its loader inside;
+// - a loader whose rows come in from its box: that box's copy, when it is
+//   known which box (the one the user came in through, or the only one),
+//   else its own rows, read only, since each box sets its own;
+// - any other loader: its own rows.
+// `owner` is the node and control a Workflow Switches switch addresses.
+function rowsSource(state) {
+  const node = state.node;
+  if (state.box) {
+    return { widget: boxRowsWidget(node, state.box.inputName), owner: { node, name: state.box.inputName } };
+  }
+  const own = node.widgets?.find((item) => item.name === "loras") ?? null;
+  const fed = rowsInputName(node);
+  if (!fed) return { widget: own, owner: { node, name: "loras" } };
+  const box = hostBox(node.graph, boxesOf(node.graph, workflowNodes(rootGraph())), enteredBoxes.get(node.graph));
+  const widget = box && boxRowsWidget(box, fed);
+  if (!widget) {
+    return {
+      widget: own, owner: { node, name: "loras" }, readOnly: true,
+      note: zh("Each box that holds this subgraph sets these rows on its face."),
+    };
+  }
+  // Single quotes on purpose: the box title sits between the two halves, so
+  // the two halves are separate dictionary keys, and keeping each literal
+  // verbatim (no \" escapes) is what lets verify_i18n.py match them.
+  return { widget, owner: { node: box, name: fed }, note: zh('These rows are set on the box "') + boxTitle(box) + zh('".') };
+}
+
+// Follow the rows to wherever they are kept now. Returns true when the card
+// was drawn again.
+function syncRows(state) {
+  // The rows slot must keep a place of its own on the node face (see
+  // placeWidgetSlots); the frontend can re-lay-out the node at any time, so
+  // this rides the same sync that already follows the card.
+  if (placeWidgetSlots(state.node)) state.node.setDirtyCanvas?.(true, true);
+  const source = rowsSource(state);
+  const widget = source.widget;
+  if (!widget) return false;
+  // The box's raw copy hides under its card; the frontend may hand the box
+  // a new copy object at any time (a reload, an undo).
+  if (state.box) hideWidget(widget);
+  const moved = widget !== state.widget || source.note !== state.note
+    || Boolean(source.readOnly) !== Boolean(state.readOnly)
+    || source.owner.node !== state.owner?.node || source.owner.name !== state.owner?.name;
+  state.widget = widget;
+  state.owner = source.owner;
+  state.readOnly = Boolean(source.readOnly);
+  state.note = source.note;
+  if (!moved && widget.value === state.renderedValue) return false;
+  state.rows = parseRows(widget.value);
+  state.renderedValue = widget.value;
+  state.toggleSnapshot = snapshotEnabled(state.rows);
+  renderRows(state);
+  fitNode(state);
+  return true;
+}
+
+// Every card on the page, so one redraw hook can keep them current in both
+// renderers (Nodes 2.0 does not draw a node on the canvas), and every box
+// that is watched for rows coming up to it.
+const liveCards = new Set();
+const watchedBoxes = new Set();
+let redrawTimer = null;
+let hookedCanvas = null;
+function ensureRedrawHook() {
+  const canvas = app.canvas;
+  if (!canvas || canvas === hookedCanvas) return;
+  hookedCanvas = canvas;
+  chainCallback(canvas, "onDrawForeground", () => {
+    if (redrawTimer !== null) return;
+    redrawTimer = setTimeout(() => {
+      redrawTimer = null;
+      const shown = app.canvas?.getCurrentGraph?.() ?? app.canvas?.graph;
+      for (const box of watchedBoxes) if (box.graph === shown) syncBoxCards(box);
+      for (const state of liveCards) {
+        if (state.node.graph !== shown) continue;
+        syncRows(state);
+        refreshLocks(state);
+      }
+    }, 250);
+  });
+}
+
+// Bring a loader's rows up to its box: the frontend's own way of showing a
+// setting on a box, a subgraph input linked to the rows. Every box of this
+// subgraph then keeps its own copy, starting from these rows.
+function showRowsOnBox(state) {
+  const node = state.node;
+  const subgraph = node.graph;
+  const slot = node.inputs?.find((input) => input.name === "loras");
+  const inputNode = subgraph?.inputNode;
+  if (!slot || typeof inputNode?.connectByType !== "function" || typeof subgraph.removeInput !== "function") {
+    loraToast(zh("This ComfyUI version cannot show the rows on the box."));
+    return;
+  }
+  const before = new Set(subgraph.inputs ?? []);
+  // -1 makes a new subgraph input for the first input of this type, which
+  // on this node is the rows (the inputs only ever grow at the end).
+  inputNode.connectByType(-1, node, slot.type || "STRING");
+  const added = (subgraph.inputs ?? []).find((input) => !before.has(input));
+  if (!added || rowsInputName(node) !== added.name) {
+    if (added) subgraph.removeInput(added);
+    loraToast(zh("The rows could not be shown on the box."));
+    return;
+  }
+  for (const box of boxesOf(subgraph, workflowNodes(rootGraph()))) syncBoxCards(box);
+  syncRows(state);
+  app.canvas?.setDirty?.(true, true);
+  notifyQgChange();
+  loraToast(zh("The rows now show on the box. Each copy of the box keeps its own rows."));
+}
+
+// Put the rows back inside the loader. It keeps the rows of the box the
+// user came in through; every copy of the box runs those from then on.
+function rowsBackInside(state) {
+  const node = state.node;
+  const subgraph = node.graph;
+  const name = rowsInputName(node);
+  const input = (subgraph?.inputs ?? []).find((item) => item.name === name);
+  if (!input) return;
+  const own = node.widgets?.find((item) => item.name === "loras");
+  const shown = rowsSource(state).widget;
+  const keep = shown && shown !== own ? shown.value : null;
+  // A box whose input is wired from outside keeps its input; only the link
+  // inside goes, as the frontend does it.
+  const wired = boxesOf(subgraph, workflowNodes(rootGraph())).some((box) => {
+    const index = (box.inputs ?? []).findIndex((item) => item.name === name);
+    return index >= 0 && box.isInputConnected?.(index);
+  });
+  if (wired) input.disconnect();
+  else subgraph.removeInput(input);
+  if (own && typeof keep === "string") own.value = keep;
+  syncRows(state);
+  app.canvas?.setDirty?.(true, true);
+  notifyQgChange();
+  loraToast(zh("The rows are back inside the loader."));
+}
+
+// A box shows one card for each loader inside whose rows came up to it.
+function syncBoxCards(box) {
+  if (!box?.isSubgraphNode?.() || !box.graph) return;
+  box.__qgLoraCards ??= new Map();
+  const cards = box.__qgLoraCards;
+  const wanted = new Set();
+  for (const { name, loader } of boxRowInputs(box, isLoader)) {
+    if (!boxRowsWidget(box, name)) continue;
+    wanted.add(name);
+    const card = cards.get(name);
+    if (card) card.box.loader = loader;
+    else {
+      const state = mountCard(box, { box: { inputName: name, loader } });
+      if (state) cards.set(name, state);
+    }
+  }
+  for (const [name, state] of cards) {
+    if (wanted.has(name)) continue;
+    cards.delete(name);
+    unmountCard(state);
+  }
+}
+
+function watchBox(box) {
+  if (!box?.isSubgraphNode?.() || box.__qgLoraWatch) return;
+  const abort = new AbortController();
+  box.__qgLoraWatch = abort;
+  watchedBoxes.add(box);
+  const later = () => requestAnimationFrame(() => syncBoxCards(box));
+  for (const type of ["widget-promoted", "widget-demoted", "input-added", "removing-input"]) {
+    box.subgraph?.events?.addEventListener?.(type, later, { signal: abort.signal });
+  }
+  chainCallback(box, "onConfigure", later);
+  chainCallback(box, "onRemoved", () => {
+    abort.abort();
+    watchedBoxes.delete(box);
+    for (const state of box.__qgLoraCards?.values() ?? []) unmountCard(state, { resize: false });
+    box.__qgLoraCards?.clear();
+  });
+  later();
+}
+
+function unmountCard(state, { resize = true } = {}) {
+  liveCards.delete(state);
+  state.disposed = true;
+  state.nameObserver?.disconnect();
+  closePopup();
+  try {
+    state.node.removeWidget?.(state.domWidget);
+  } catch {
+    state.domWidget?.onRemove?.();
+  }
+  if (resize) {
+    state.node.setSize?.([state.node.size[0], state.node.computeSize?.()[1] ?? state.node.size[1]]);
+    state.node.setDirtyCanvas?.(true, true);
+  }
+}
+
 // ---------- node install ----------
 
-function installLoraNode(node) {
+// The row card, on a LoRA Loader or on a box that holds one (`box`:
+// { inputName, loader }). Returns its state.
+function mountCard(node, { box = null, separatorWidget = null, onMissingWidget = null } = {}) {
   installStyles();
-  const widget = node.widgets?.find((item) => item.name === "loras");
-  if (!widget) return;
-  hideWidget(widget);
-
   const settings = loadSettings(SETTINGS_SCOPE, SETTINGS_SCHEMA);
   // Unified strengths are the hard default: separate_strengths is per-node
   // (persist:false in the schema), so any stored value is legacy noise from
   // before it stopped persisting - never a reason to split a fresh node.
   settings.separate_strengths = false;
   const panel = el("div", "qgtools-lora-panel");
-  const state = { node, widget, panel, rows: parseRows(widget.value), settings, renderedValue: widget.value };
+  // A box card sits under the box's own slots: a box's slots are whatever
+  // its subgraph has, so there is no empty band to climb into.
+  const reclaim = box ? 0 : BAND_RECLAIM;
+  const state = { node, box, widget: null, owner: null, panel, rows: [], settings, renderedValue: null, reclaim,
+    lockSignature: null, separatorWidget: null, onMissingWidget: null, domWidget: null, disposed: false };
+  const source = rowsSource(state);
+  if (!source.widget) return null;
+  state.widget = source.widget;
+  state.owner = source.owner;
+  state.note = source.note;
+  state.readOnly = Boolean(source.readOnly);
+  if (box) hideWidget(source.widget);
+  state.rows = parseRows(state.widget.value);
+  state.renderedValue = state.widget.value;
   state.toggleSnapshot = snapshotEnabled(state.rows);
-  node.__qgLoraState = state;
   installStackKeyboard(state);
+  if (!box && node.properties && node.properties.qgLoraLinked === undefined) {
+    node.properties.qgLoraLinked = true;
+  }
+  state.separatorWidget = separatorWidget;
+  // A missing file reads the way its loader is set to treat it.
+  state.onMissingWidget = box ? box.loader?.widgets?.find((item) => item.name === "on_missing") : onMissingWidget;
+  if (box && state.onMissingWidget) hideWidget(state.onMissingWidget);
+
+  const domWidget = node.addDOMWidget(box ? `qg_lora_rows:${box.inputName}` : "qg_lora_rows", "qg_lora_rows", panel, {
+    serialize: false,
+    hideOnZoom: false,
+    getMinHeight: () => panelHeight(state) + WIDGET_FRAME - reclaim,
+  });
+  keepDomWidgetWidthAuto(domWidget);
+  // Not saved with the workflow either: options.serialize only keeps it out
+  // of the prompt, and saved values come back by position.
+  domWidget.serialize = false;
+  state.domWidget = domWidget;
+  // fillNodeHeight, not a pinned computeSize: the panel joins the layout's
+  // free-space split, follows the node when it is dragged taller (the add
+  // button stays on the bottom edge), and a floor that carries WIDGET_FRAME
+  // guarantees the element box never comes up short of the rows. The width
+  // minimum rides the same call so the node cannot shrink to where the row's
+  // fixed-width controls would hang past its right edge. The floor sheds
+  // the reclaimed pixels because they come out of the slot band, not out of
+  // the space below it. exactMinWidth: the floor is the node's own width,
+  // without the frontend's padding on top (panel_layout.mjs), so a compact
+  // stack really goes down to it.
+  fillNodeHeight(domWidget, {
+    minWidth: () => panelMinWidth(state),
+    minHeight: () => panelHeight(state) + WIDGET_FRAME - reclaim,
+    minNodeSize: [PANEL_MIN_WIDTH, 160],
+    exactMinWidth: true,
+  });
+  if (reclaim) {
+    // Climb the panel up into the slot band. The layout
+    // assigns this widget a y below the last output slot and a height from
+    // the free-space split; these getters show the element BAND_RECLAIM
+    // higher and taller than assigned, in canvas units, so the offset scales
+    // with zoom and the panel's bottom edge stays exactly where the layout
+    // put it. Writes keep landing in the backing values, so the layout's own
+    // accounting never sees the shift.
+    let assignedY = Number(domWidget.y) || 0;
+    Object.defineProperty(domWidget, "y", {
+      configurable: true,
+      get: () => Math.max(14, assignedY - reclaim),
+      set: (value) => { assignedY = Number(value) || 0; },
+    });
+    // The wrapper's height still comes from the layout (its computedHeight
+    // feeds node sizing, so it cannot be inflated without a feedback loop);
+    // the y pin moves the whole box up, leaving it reclaim short at the
+    // bottom. The panel stretches past its wrapper by exactly that much -
+    // inner CSS pixels are pre-transform canvas units, so this stays correct
+    // at every zoom.
+    panel.style.height = `calc(100% + ${reclaim}px)`;
+  }
+
+  renderRows(state);
+  refreshAvailable(state);
+  placeWidgetSlots(node);
+  node.setSize?.([Math.max(336, node.size?.[0] || 336), node.computeSize?.()[1] || 220]);
+  liveCards.add(state);
+  ensureRedrawHook();
+
+  // Workflow restore and undo may commit values after onConfigure. Reconcile
+  // from the widget after that commit and before the next visible frame.
+  const sync = () => { if (!state.disposed) syncRows(state); };
+  chainCallback(node, "onConfigure", function () {
+    queueMicrotask(() => { sync(); if (!state.disposed) refreshAvailable(state); });
+    requestAnimationFrame(() => { sync(); if (!state.disposed) fitNode(state); });
+  });
+  chainCallback(node, "onDrawForeground", sync);
+  // Another node may rewrite the rows (the Workflow Note's Use it, a
+  // Workflow Switches switch). Nodes 2.0 does not draw this node on the
+  // canvas, so follow the change itself.
+  chainCallback(node, "onWidgetChanged", function (name) {
+    if (name === state.widget?.name || name === "loras") sync();
+  });
+  chainCallback(node, "onRemoved", () => {
+    liveCards.delete(state);
+    closePopup();
+    state.nameObserver?.disconnect();
+  });
+  // ComfyUI's R refresh re-reads node definitions; ride it so files that
+  // moved or came back reconnect without touching the node by hand.
+  chainCallback(node, "refreshComboInNode", function () {
+    if (!state.disposed) runReconnect(state, { quiet: true });
+  });
+  return state;
+}
+
+function installLoraNode(node) {
+  const widget = node.widgets?.find((item) => item.name === "loras");
+  if (!widget) return;
+  hideWidget(widget);
   if (node.properties && node.properties.qgLoraLinked === undefined) {
     node.properties.qgLoraLinked = true;
   }
-
+  const settings = loadSettings(SETTINGS_SCOPE, SETTINGS_SCHEMA);
   // The separator rides a hidden standard widget so save/load and the API
   // format see it; a workflow restore overwrites this seed right after.
   const separatorWidget = node.widgets?.find((item) => item.name === "trigger_separator");
   if (separatorWidget) {
     hideWidget(separatorWidget);
     separatorWidget.value = settings.separator;
-    state.separatorWidget = separatorWidget;
   }
   // Same arrangement for the missing-file policy: a hidden standard combo
   // carries "skip" | "error" through save/load and the API format.
@@ -2098,98 +2592,17 @@ function installLoraNode(node) {
   if (onMissingWidget) {
     hideWidget(onMissingWidget);
     onMissingWidget.value = settings.strict_missing ? "error" : "skip";
-    state.onMissingWidget = onMissingWidget;
   }
-
-  const domWidget = node.addDOMWidget("qg_lora_rows", "qg_lora_rows", panel, {
-    serialize: false,
-    hideOnZoom: false,
-    getMinHeight: () => panelHeight(state) + WIDGET_FRAME - BAND_RECLAIM,
-  });
-  keepDomWidgetWidthAuto(domWidget);
-  // Not saved with the workflow either: options.serialize only keeps it out
-  // of the prompt, and saved values come back by position.
-  domWidget.serialize = false;
-  // fillNodeHeight, not a pinned computeSize: the panel joins the layout's
-  // free-space split, follows the node when it is dragged taller (the add
-  // button stays on the bottom edge), and a floor that carries WIDGET_FRAME
-  // guarantees the element box never comes up short of the rows. The width
-  // minimum rides the same call so the node cannot shrink to where the row's
-  // fixed-width controls would hang past its right edge. The floor sheds
-  // BAND_RECLAIM because that many pixels come out of the slot band, not
-  // out of the space below it. exactMinWidth: the floor is the node's own
-  // width, without the frontend's padding on top (panel_layout.mjs), so a
-  // compact stack really goes down to it.
-  fillNodeHeight(domWidget, {
-    minWidth: () => panelMinWidth(state),
-    minHeight: () => panelHeight(state) + WIDGET_FRAME - BAND_RECLAIM,
-    minNodeSize: [PANEL_MIN_WIDTH, 160],
-    exactMinWidth: true,
-  });
-  // Climb the panel up into the slot band. The layout
-  // assigns this widget a y below the last output slot and a height from
-  // the free-space split; these getters show the element BAND_RECLAIM
-  // higher and taller than assigned, in canvas units, so the offset scales
-  // with zoom and the panel's bottom edge stays exactly where the layout
-  // put it. Writes keep landing in the backing values, so the layout's own
-  // accounting never sees the shift.
-  {
-    let assignedY = Number(domWidget.y) || 0;
-    Object.defineProperty(domWidget, "y", {
-      configurable: true,
-      get: () => Math.max(14, assignedY - BAND_RECLAIM),
-      set: (value) => { assignedY = Number(value) || 0; },
-    });
-  }
-  // The wrapper's height still comes from the layout (its computedHeight
-  // feeds node sizing, so it cannot be inflated without a feedback loop);
-  // the y pin moves the whole box up, leaving it BAND_RECLAIM short at the
-  // bottom. The panel stretches past its wrapper by exactly that much -
-  // inner CSS pixels are pre-transform canvas units, so this stays correct
-  // at every zoom.
-  panel.style.height = `calc(100% + ${BAND_RECLAIM}px)`;
-
-  renderRows(state);
-  refreshAvailable(state);
-  node.setSize?.([Math.max(336, node.size?.[0] || 336), node.computeSize?.()[1] || 220]);
-
-  // Workflow restore and undo may commit values after onConfigure. Reconcile
-  // from the widget after that commit and before the next visible frame.
-  const syncRestoredRows = () => {
-    const current = node.widgets?.find((item) => item.name === "loras");
-    if (!current || current.value === state.renderedValue) return;
-    state.widget = current;
-    state.rows = parseRows(current.value);
-    state.renderedValue = current.value;
-    state.toggleSnapshot = snapshotEnabled(state.rows);
-    renderRows(state);
-    fitNode(state);
-  };
-  chainCallback(node, "onConfigure", function () {
-    queueMicrotask(() => { syncRestoredRows(); refreshAvailable(state); });
-    requestAnimationFrame(() => { syncRestoredRows(); fitNode(state); });
-  });
-  chainCallback(node, "onDrawForeground", function () {
-    syncRestoredRows();
-  });
-  // Another node may rewrite the rows (the Workflow Note's Use it). Nodes
-  // 2.0 does not draw this node on the canvas, so follow the change itself.
-  chainCallback(node, "onWidgetChanged", function (name) {
-    if (name === "loras") syncRestoredRows();
-  });
-  chainCallback(node, "onRemoved", () => {
-    closePopup();
-    state.nameObserver?.disconnect();
-  });
-  // ComfyUI's R refresh re-reads node definitions; ride it so files that
-  // moved or came back reconnect without touching the node by hand.
-  chainCallback(node, "refreshComboInNode", function () {
-    runReconnect(state, { quiet: true });
-  });
+  const state = mountCard(node, { separatorWidget, onMissingWidget });
+  if (state) node.__qgLoraState = state;
 }
 
 app.registerExtension({
   name: "QG.LoraLoader",
+  setup() {
+    watchEnteredBoxes();
+    ensureRedrawHook();
+  },
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData?.name !== NODE_CLASS) return;
     hideInputsInDef(nodeData, ["loras", "trigger_separator", "on_missing"]);
@@ -2199,5 +2612,13 @@ app.registerExtension({
     chainCallback(nodeType.prototype, "onConfigure", function () {
       resetUnknownValues(this.widgets, RESET_UNKNOWN);
     });
+  },
+  // A box (subgraph node) shows the rows of a loader inside once they come
+  // up to it, from the loader's gear or the frontend's own widget list.
+  nodeCreated(node) {
+    if (node?.isSubgraphNode?.()) watchBox(node);
+  },
+  loadedGraphNode(node) {
+    if (node?.isSubgraphNode?.()) watchBox(node);
   },
 });

@@ -10,17 +10,17 @@ import {
   shouldRecolor,
   titleInk,
   wearsLegacyScheme,
-} from "../shared/appearance.mjs?v=2026101601";
-import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026101601";
+} from "../shared/appearance.mjs?v=2026101603";
+import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026101603";
 import {
   BADGE_RADIUS,
   badgeCenter,
   helpSections,
   hitsBadge,
   showBadge,
-} from "../shared/help_badge.mjs?v=2026101601";
-import { openInfoCard } from "../shared/settings_menu.mjs?v=2026101601";
-import { zh, zhOn, zhReady } from "../shared/zh.mjs?v=2026101601";
+} from "../shared/help_badge.mjs?v=2026101603";
+import { openInfoCard } from "../shared/settings_menu.mjs?v=2026101603";
+import { zh, zhOn, zhReady } from "../shared/zh.mjs?v=2026101603";
 
 const SETTING_ID = "QG.Appearance.NodeColor";
 const CUSTOM_SETTING_ID = "QG.Appearance.CustomColor";

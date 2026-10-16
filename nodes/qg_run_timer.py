@@ -17,7 +17,7 @@ from __future__ import annotations
 
 
 class QGRunTimer:
-    CATEGORY = "QG-tools"
+    CATEGORY = "QG-tools/展示"
     DESCRIPTION = (
         "A stopwatch for the whole run. It starts when a queued prompt "
         "begins executing, ticks on the node while it runs, and holds the "

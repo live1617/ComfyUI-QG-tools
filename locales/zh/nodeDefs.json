@@ -284,5 +284,49 @@
         "tooltip": "被选中那一路的值，类型与输入一致。"
       }
     }
+  },
+  "QG_TripleLoader": {
+    "display_name": "QG 模型加载器",
+    "description": "一个节点同时加载扩散模型、文本编码器和 VAE。把官方的 UNET加载器 / 加载CLIP / 加载VAE 三个节点合并成一块面板，输出标准的 MODEL / CLIP / VAE，可以直接替换那三个节点接到采样器上。不绑定任何模型家族——Qwen-Image、Flux、SD 都能用。所有下拉列表（模型文件 / 权重精度 / 文本编码器类型 / 加载设备）在导入时从本机已安装的 ComfyUI 内置节点动态读取，换版本不用改。文件下拉里显示完整路径，节点上收起只显示短文件名。",
+    "inputs": {
+      "unet_name": {
+        "name": "UNET / 扩散模型",
+        "tooltip": "UNET / 扩散模型（列表显示完整路径，节点上显示短文件名）"
+      },
+      "weight_dtype": {
+        "name": "权重精度",
+        "tooltip": "UNET 权重数据类型，显存紧张可选 fp8_e4m3fn"
+      },
+      "clip_name": {
+        "name": "CLIP / 文本编码器",
+        "tooltip": "CLIP / 文本编码器（列表显示完整路径，节点上显示短文件名）"
+      },
+      "clip_type": {
+        "name": "文本编码器类型",
+        "tooltip": "文本编码器类型，按模型选择（Qwen-Image 选 qwen_image）"
+      },
+      "device": {
+        "name": "加载设备",
+        "tooltip": "文本编码器加载设备，选 cpu 可省显存（速度变慢）"
+      },
+      "vae_name": {
+        "name": "VAE",
+        "tooltip": "VAE（列表显示完整路径，节点上显示短文件名）"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "MODEL",
+        "tooltip": "已加载的扩散模型。"
+      },
+      "1": {
+        "name": "CLIP",
+        "tooltip": "已加载的文本编码器。"
+      },
+      "2": {
+        "name": "VAE",
+        "tooltip": "已加载的 VAE。"
+      }
+    }
   }
 }

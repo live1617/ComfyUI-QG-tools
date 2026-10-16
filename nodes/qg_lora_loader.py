@@ -16,7 +16,7 @@ from ._qg_lora_helpers import (
 
 
 class QGLoraLoader:
-    CATEGORY = "QG-tools"
+    CATEGORY = "QG-tools/加载器"
     DESCRIPTION = (
         "Applies a stack of LoRAs to a model and CLIP from one compact node. "
         "Each row has an enable toggle, a searchable LoRA picker, "

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 
 class QGWorkflowSwitches:
-    CATEGORY = "QG-tools"
+    CATEGORY = "QG-tools/工作流"
     DESCRIPTION = (
         "Switch parts of a workflow off and on from one small card. Select "
         "the nodes that make up a part, such as a box and its Save, and "

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 
 class QGWorkflowNote:
-    CATEGORY = "QG-tools"
+    CATEGORY = "QG-tools/工作流"
     DESCRIPTION = (
         "A workflow card for sharing: a big title, a Markdown how-to, the "
         "models the workflow needs with download buttons and the folder "

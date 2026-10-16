@@ -17,7 +17,7 @@ import os
 import sys
 import traceback
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 _NODES_DIR = os.path.join(_PKG_DIR, "nodes")
