@@ -1,8 +1,9 @@
 # ComfyUI-QG-tools
 
-一个 ComfyUI 自定义节点包，目前包含十二个节点：**LoRA 加载器**、**模型加载器（三合一）**、
+一个 ComfyUI 自定义节点包，目前包含十五个节点：**LoRA 加载器**、**模型加载器（三合一）**、
 **图像裁剪 + 旋转 + 补边**、**工作流说明卡**、**工作流开关**、**运行计时器**、**文本编辑输出**、
-**加载文档**、**Google 翻译**、**任意切换**、**展示任意**、**是否判断**。
+**加载文档**、**Google 翻译**、**任意切换**、**展示任意**、**是否判断**、**图像缩放**、
+**图像或 Latent 尺寸**、**种子**。
 
 **QG Image Crop + Rotate + Pad —— 在节点上直接把画面摆正、裁好、补出画布**
 
@@ -66,10 +67,27 @@
 - 常用于接「兜底」：有高清模型就走它，没有就走普通版；节点上接几个、槽位自动增减
 - 所有输入必须是同一类型（混接 IMAGE 和 LATENT 会报人话错误），全空时也会报错而不是把 `None` 传给下游
 
-- **当前版本**：v0.8.3
-- **节点**：12 个（`QG LoRA Loader` / `QG 模型加载器` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` /
+**QG 图像缩放 —— 像素或百分比缩放，顺手裁切 / 补边**
+
+- 度量可选「像素」或「百分比」，适配方式三选一：`crop` 铺满后居中裁、`pad` 放下后居中补、`contain` 只缩不裁
+- 宽或高填 0 就按另一边等比推算（此时按 `contain` 处理）
+- 除了图像，还把结果的**实际宽高**当整数输出，可直接喂给下游的尺寸运算
+
+**QG 图像或 Latent 尺寸 —— 接什么都告诉你宽高**
+
+- 输入是通配类型，IMAGE / MASK / LATENT 都能接；Latent 内部尺寸是除以 8 存的，这里自动乘回 8
+- 输出 WIDTH / HEIGHT 两个整数，用来驱动按尺寸分流的节点
+
+**QG 种子 —— 随机 / 递增 / 递减三合一的种子控件**
+
+- `0` 或正数是固定种子；`-1` 每次入队随机、`-2` 每次递增、`-3` 每次递减
+- 随机值在**前端按队列生成**，每次入队的 prompt 都不同，不会被执行缓存复用旧结果
+- 三个按钮：🎲 每次随机（设回 -1）、🎲 重新生成（掷一个固定种子）、♻️ 用上次入队的种子（回填，按钮上还显示那个值）
+
+- **当前版本**：v0.8.4
+- **节点**：15 个（`QG LoRA Loader` / `QG 模型加载器` / `QG Image Crop + Rotate + Pad` / `QG Workflow Note` /
   `QG Workflow Switches` / `QG Run Timer` / `QG Text Edit` / `QG 加载文档` / `QG Google 翻译` /
-  `QG 任意切换` / `QG 展示任意` / `QG 是否判断`）
+  `QG 任意切换` / `QG 展示任意` / `QG 是否判断` / `QG 图像缩放` / `QG 图像或 Latent 尺寸` / `QG 种子`）
 - **分类**：全部在 `QG-tools` 下（细分子分类 `加载器` / `文本` / `逻辑` / `展示` / `工作流` / `Image`）
 - **依赖**：无额外 pip 包。只用 ComfyUI 运行期自带的模块（torch / numpy / PIL / PyAV / folder_paths / comfy.*）；
   `scipy`、`pymatting` 用到了才用，缺了有内置回退，不报错。
@@ -99,10 +117,10 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 装完**完整重启 ComfyUI**，控制台应出现：
 
 ```
-[QG-tools] v0.8.3 加载完成 | 节点数 12
+[QG-tools] v0.8.4 加载完成 | 节点数 15
 ```
 
-无需 `pip install` 任何东西。十二个节点都在 `QG-tools` 分类下
+无需 `pip install` 任何东西。十五个节点都在 `QG-tools` 分类下
 （细分：加载器 / 文本 / 逻辑 / 展示 / 工作流 / Image），
 搜索 `lora`、`crop`、`note`、`switch`、`timer`、`text`、`load` 等也能找到。
 
@@ -501,6 +519,7 @@ Scale Image to Total Pixels 同语义）。
 | [ComfyUI_Custom_Nodes_AlekPet](https://github.com/AlekPet/ComfyUI_Custom_Nodes_AlekPet) | MIT | Google 翻译 |
 | 孤海工具箱（Goohaitools-comfyui） | GPL-3.0 | 展示任意 |
 | [ComfyUI-Easy-Use](https://github.com/yolain/ComfyUI-Easy-Use) | GPL-3.0 | 是否判断 |
+| [rgthree-comfy](https://github.com/rgthree/rgthree-comfy) | MIT | 图像缩放、图像或 Latent 尺寸、种子 |
 
 MIT 来源的原许可证全文保留在 [`licenses/`](licenses/)；GPL-3.0 来源与本项目同许可证，
 按 GPL 要求在各节点章节末尾保留出处标注。被改写部分的原始版权仍归原作者所有。

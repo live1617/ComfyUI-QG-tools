@@ -15,6 +15,9 @@ const LABELS = {
     CLIP: "CLIP", VAE: "VAE", STRING: "字符串", TEXT: "文本", CONDITIONING: "条件",
     LATENT: "Latent", INT: "整数", FLOAT: "浮点", BOOLEAN: "布尔", ANY: "Any",
 };
+// 复制按钮只用图标（不占文字宽度、常显）；复制成功的反馈换成对勾图标。
+const COPY_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+const CHECK_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 9.5 18 20 6.5"/></svg>';
 
 function addStyles() {
     if (document.getElementById("qgtools-display-any-style")) return;
@@ -24,9 +27,10 @@ function addStyles() {
         .qgtools-display-any{position:relative;box-sizing:border-box;width:100%;height:100%;min-height:140px;display:flex;flex-direction:column;overflow:hidden;background:rgba(0,0,0,.12);border-radius:6px;font-family:var(--font-inter,Inter),"DengXian",Arial,"Microsoft YaHei",sans-serif;}
         .qgtools-display-toolbar{position:absolute;top:0;right:6px;z-index:2;pointer-events:none;}
         .qgtools-display-any [hidden]{display:none!important;}
-        .qgtools-display-copy{opacity:0;pointer-events:none;border:1px solid #ffffff12;border-radius:4px;padding:2px 7px;background:#14141499;color:#bbb;cursor:pointer;font:12px/18px sans-serif;transition:opacity .25s ease;}
+        .qgtools-display-copy{opacity:0;pointer-events:none;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:1px solid #ffffff12;border-radius:4px;background:#14141499;color:#c8c8c8;cursor:pointer;transition:opacity .15s ease,color .15s ease,background .15s ease;}
         .qgtools-display-any:hover .qgtools-display-copy,.qgtools-display-any.qgtools-hover .qgtools-display-copy,.lg-node:hover .qgtools-display-copy{opacity:.45;pointer-events:auto;}
-        .qgtools-display-any .qgtools-display-copy:hover,.qgtools-display-copy:focus-visible{opacity:.85;pointer-events:auto;}
+        .qgtools-display-any .qgtools-display-copy:hover,.qgtools-display-copy:focus-visible{opacity:.9;color:#fff;background:#1d1d1dcc;pointer-events:auto;}
+        .qgtools-display-copy svg{display:block;width:14px;height:14px;pointer-events:none;}
         .qgtools-display-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:6px 8px 8px;}
         .qgtools-display-any.qgtools-has-media{background:transparent;border:0;border-radius:0;box-shadow:none;}
         .dom-widget>.qgtools-display-any.qgtools-has-media{width:calc(100% + 20px);margin:-0 -10px;}
@@ -337,15 +341,15 @@ async function copyText(state) {
             field.remove();
             if (!copied) throw new Error("复制未成功");
         }
-        state.copy.textContent = "✓";
+        state.copy.innerHTML = CHECK_ICON_SVG;
         state.copy.classList.add("qgtools-copy-done");
         clearTimeout(state.copyTimer);
         state.copyTimer = setTimeout(() => {
             state.copy.classList.remove("qgtools-copy-done");
-            state.copy.textContent = "复制";
+            state.copy.innerHTML = COPY_ICON_SVG;
         }, 3000);
     } catch (error) {
-        state.copy.textContent = "复制";
+        state.copy.innerHTML = COPY_ICON_SVG;
         console.warn("[QG-tools] 复制文本失败", error);
     }
 }
@@ -684,8 +688,9 @@ function createPreview(node) {
     const copy = document.createElement("button");
     copy.type = "button";
     copy.className = "qgtools-display-copy";
-    copy.textContent = "复制";
-    copy.title = "";
+    copy.innerHTML = COPY_ICON_SVG;
+    copy.title = "复制数值";
+    copy.setAttribute("aria-label", "复制数值");
     toolbar.append(copy);
     const body = document.createElement("div");
     body.className = "qgtools-display-body";
@@ -751,7 +756,7 @@ function createPreview(node) {
     copy.addEventListener("pointerenter", () => {
         clearTimeout(state.copyTimer);
         copy.classList.remove("qgtools-copy-done");
-        copy.textContent = "复制";
+        copy.innerHTML = COPY_ICON_SVG;
     });
     copy.addEventListener("pointerdown", (event) => {
         const selection = window.getSelection?.();

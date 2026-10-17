@@ -75,12 +75,6 @@ _clip_types = _clip_loader.INPUT_TYPES()["required"]["type"][0]
 _clip_devices = _clip_loader.INPUT_TYPES().get("optional", {}).get("device", (["default", "cpu"],))[0]
 
 
-def _default_clip_type() -> str:
-    if "qwen_image" in _clip_types:
-        return "qwen_image"
-    return _clip_types[0]
-
-
 def _resolve_file(value: str, getter) -> str:
     """Turn a stored dropdown value back into a real file name.
 
@@ -136,8 +130,8 @@ class QGTripleLoader:
                 "clip_type": (
                     _clip_types,
                     {
-                        "tooltip": "文本编码器类型，按模型选择（Qwen-Image 选 qwen_image）",
-                        "default": _default_clip_type(),
+                        "tooltip": "文本编码器类型，按模型选择（默认与 ComfyUI 原生 CLIPLoader 一致，取列表第一项）",
+                        "default": _clip_types[0],
                     },
                 ),
                 "device": (

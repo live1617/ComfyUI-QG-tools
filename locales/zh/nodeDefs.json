@@ -328,5 +328,85 @@
         "tooltip": "已加载的 VAE。"
       }
     }
+  },
+  "QG_ImageResize": {
+    "display_name": "QG 图像缩放",
+    "description": "按像素或百分比缩放图像，支持裁切 / 补边 / 包含三种适配方式，并输出缩放后的宽和高。",
+    "inputs": {
+      "image": {
+        "name": "图像",
+        "tooltip": "要缩放的输入图像。"
+      },
+      "measurement": {
+        "name": "度量方式",
+        "tooltip": "像素 = 直接给宽高；百分比 = 按原图尺寸的百分比。"
+      },
+      "width": {
+        "name": "宽",
+        "tooltip": "目标宽度：度量选「像素」时为像素值，选「百分比」时为相对原图的缩放百分比；填 0 表示由高度按比例推算。"
+      },
+      "height": {
+        "name": "高",
+        "tooltip": "目标高度：度量选「像素」时为像素值，选「百分比」时为相对原图的缩放百分比；填 0 表示由宽度按比例推算。"
+      },
+      "fit": {
+        "name": "适配方式",
+        "tooltip": "crop：放大铺满目标框后居中裁掉多余部分，输出恰为目标尺寸。\npad：缩放到完全放进目标框后居中补齐空缺，输出恰为目标尺寸。\ncontain：缩放到完全放进目标框即返回，某一侧可能小于目标尺寸。\n\n宽或高任一为 0 时，实际按 contain 处理。"
+      },
+      "method": {
+        "name": "缩放算法",
+        "tooltip": "放大/缩小的重采样算法。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "图像",
+        "tooltip": "缩放后的图像。"
+      },
+      "1": {
+        "name": "宽",
+        "tooltip": "输出图像的实际宽度。"
+      },
+      "2": {
+        "name": "高",
+        "tooltip": "输出图像的实际高度。"
+      }
+    }
+  },
+  "QG_ImageOrLatentSize": {
+    "display_name": "QG 图像或 Latent 尺寸",
+    "description": "读取一张图像 / 遮罩 / Latent 的宽和高并作为整数输出（Latent 自动按 8 倍还原）。",
+    "inputs": {
+      "input": {
+        "name": "输入",
+        "tooltip": "接入图像（IMAGE）、遮罩（MASK）或 Latent，节点输出其宽度和高度。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "宽",
+        "tooltip": "接入内容的宽度（Latent 已自动 ×8）。"
+      },
+      "1": {
+        "name": "高",
+        "tooltip": "接入内容的高度（Latent 已自动 ×8）。"
+      }
+    }
+  },
+  "QG_Seed": {
+    "display_name": "QG 种子",
+    "description": "种子控制。0 或正数即固定种子；-1 每次入队随机、-2 每次递增、-3 每次递减。随机种子在前端按队列生成，避免重复执行被缓存复用。",
+    "inputs": {
+      "seed": {
+        "name": "种子",
+        "tooltip": "0 或正数 = 固定种子；-1 = 每次入队随机；-2 = 每次入队递增；-3 = 每次入队递减。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "种子",
+        "tooltip": "实际使用的种子值。"
+      }
+    }
   }
 }

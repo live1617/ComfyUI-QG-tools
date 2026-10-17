@@ -615,6 +615,52 @@
         "⚠️ 原样保留 setInterval(2000) 的兜底轮询（补打补丁 + Vue DOM 重建后重挂 observer）。在千节点工作流下这是持续开销；若用户反馈卡顿，可改成 loadedGraphNode 钩子。",
         "2026-10-17 修：三个文件 getter 从「import 时快照」改为每次现读。原因＝ComfyUI 每次 /object_info（页面加载 / 按 R / 加节点）都会重调 INPUT_TYPES()，官方加载器内部每次现扫 folder_paths，而本节点把列表冻在了 import 那一刻：新下载的模型只有重启 ComfyUI 才出现（实测官方 41 条 vs 本节点 40 条）。静态选项 weight_dtype / clip_type / device 不依赖文件系统，仍 import 时读一次（已注释防误改）。"
       ]
+    },
+    {
+      "id": "QG_ImageResize",
+      "class": "QGImageResize",
+      "display": "QG 图像缩放",
+      "category": "QG-tools/Image",
+      "source_id": "rgthree-comfy",
+      "source_class": "RgthreeImageResize",
+      "source_ref": "rgthree-comfy (py/image_resize.py)，MIT，作者 rgthree",
+      "source_license": "MIT",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_image_resize.py"
+      ],
+      "notes": "搬运：缩放支持 像素/百分比 × 裁切/补边/包含，复用 comfy.utils.common_upscale；输出 图+宽+高。"
+    },
+    {
+      "id": "QG_ImageOrLatentSize",
+      "class": "QGImageOrLatentSize",
+      "display": "QG 图像或 Latent 尺寸",
+      "category": "QG-tools/Image",
+      "source_id": "rgthree-comfy",
+      "source_class": "RgthreeImageOrLatentSize",
+      "source_ref": "rgthree-comfy (py/image_or_latent_size.py)，MIT，作者 rgthree",
+      "source_license": "MIT",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_image_or_latent_size.py"
+      ],
+      "notes": "通配输入 *（图像/遮罩/Latent 皆可接）；Latent 自动 ×8；mask(B,1,H,W) 与 image(B,H,W,C) 形状差异已处理。"
+    },
+    {
+      "id": "QG_Seed",
+      "class": "QGSeed",
+      "display": "QG 种子",
+      "category": "QG-tools/逻辑",
+      "source_id": "rgthree-comfy",
+      "source_class": "RgthreeSeed",
+      "source_ref": "rgthree-comfy (py/seed.py)，MIT，作者 rgthree",
+      "source_license": "MIT",
+      "kind": "backend+frontend",
+      "files_new": [
+        "nodes/qg_seed.py",
+        "web/seed/index.js"
+      ],
+      "notes": "种子控制：-1 随机 / -2 递增 / -3 递减；随机值在前端按队列生成（包装 app.queuePrompt，序列化后还原哨兵），避免重复执行被缓存复用。已省略 rgthree 的 metadata 回填逻辑。"
     }
   ],
   "kept_on_purpose": [
