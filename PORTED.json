@@ -466,7 +466,7 @@
     {
       "id": "QG_TextEditOutput",
       "class": "QGTextEditOutput",
-      "display": "QG Text Edit",
+      "display": "QG Text",
       "category": "QG-tools/文本",
       "source_id": "MuyeTextEditOutput",
       "source_class": "MuyeTextEditOutput",
@@ -651,16 +651,137 @@
       "class": "QGSeed",
       "display": "QG 种子",
       "category": "QG-tools/逻辑",
-      "source_id": "rgthree-comfy",
+      "source_id": "rgthree-comfy + ComfyUI-AusBoss",
       "source_class": "RgthreeSeed",
-      "source_ref": "rgthree-comfy (py/seed.py)，MIT，作者 rgthree",
+      "source_ref": "语义取自 rgthree-comfy (py/seed.py, MIT, rgthree)；v0.8.5 起界面与交互换成 ComfyUI-AusBoss 的种子卡（nodes/node_seed.py + js/seed/index.js, MIT）",
       "source_license": "MIT",
       "kind": "backend+frontend",
       "files_new": [
         "nodes/qg_seed.py",
-        "web/seed/index.js"
+        "web/seed/index.js",
+        "web/shared/seed_history.mjs"
       ],
-      "notes": "种子控制：-1 随机 / -2 递增 / -3 递减；随机值在前端按队列生成（包装 app.queuePrompt，序列化后还原哨兵），避免重复执行被缓存复用。已省略 rgthree 的 metadata 回填逻辑。"
+      "notes": "种子控制。v0.8.5 起改成 AusBoss 的卡片模型：seed 是非负 INT，模式由 ComfyUI 自动附加的 control_after_generate 承载（前端藏起来，由「随机值 / 固定 / Step」驱动），后端通过 ui.seed 回传本次真正用的种子，前端据此记 8 条历史、「用上次」与底部「上次运行」。老工作流的 -1/-2/-3 哨兵在 onConfigure 里翻译成「随机值 / Step +1 / Step -1」；v0.8.4 之前包装 app.queuePrompt 改写哨兵的那套代码已删除。跨标签页的运行隔离（AusBoss 的 prompt_scope）未移植：多标签页同时跑时历史可能记到别的标签页的种子。"
+    },
+    {
+      "id": "QG_ImageWatermark",
+      "class": "QGImageWatermark",
+      "display": "QG 图像水印",
+      "category": "QG-tools/Image",
+      "source_id": "AddImageWatermark",
+      "source_class": "WatermarkMaster",
+      "source_ref": "ComfyUI_Muye 1.0.17（image/add_image_watermark.py）",
+      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_image_watermark.py"
+      ],
+      "notes": "修上游两个 bug：① common_upscale 引用了本模块未定义的 bislerp/lanczos，改调 comfy.utils.common_upscale；② squeeze() 把批次压成单帧，改为保持 B 维。另修透明度失效：无水印遮罩时必须 paste(base, wm, wm) 带 alpha 贴，否则 PIL 按 RGB 不透明贴，opacity 与旋转边角都会失效。"
+    },
+    {
+      "id": "QG_TextOverlayImage",
+      "class": "QGTextOverlayImage",
+      "display": "QG 文字叠加图像",
+      "category": "QG-tools/文本",
+      "source_id": "TextOverlayImage",
+      "source_class": "TextOverlayImage",
+      "source_ref": "ComfyUI_Muye 1.0.17（text/text_overlay_image.py）",
+      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_text_overlay_image.py"
+      ],
+      "notes": "修上游三处：① 默认字体取了 font_choices[0][0]（拿到的是首字符）→ 显式取字体名；② 只画第一帧 → 改为逐帧绘制，批次每帧一致；③ IS_CHANGED 恒 True 会让节点每次重跑且破坏缓存 → 删除。新增文字形状 MASK 输出。"
+    },
+    {
+      "id": "QG_ImageGrid",
+      "class": "QGImageGrid",
+      "display": "QG 宫格图像拼接",
+      "category": "QG-tools/Image",
+      "source_id": "MuyeGridImageConcat",
+      "source_class": "宫格图像拼接",
+      "source_ref": "ComfyUI_Muye 1.0.17（image/image_grid_concat.py）",
+      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_image_grid.py"
+      ],
+      "notes": "上游是输出节点（带 UI 预览），保留 OUTPUT_NODE 并返回 {\"ui\": ..., \"result\": ...}。上游无条件剔除全黑帧（上游批次节点给未接输入补黑图占位），改为 drop_black 开关可关。配套的 MuyeImageList（图像列表）不搬：QG 侧用批次张量或任意列表即可替代。"
+    },
+    {
+      "id": "QG_MaskColorize",
+      "class": "QGMaskColorize",
+      "display": "QG 遮罩上色",
+      "category": "QG-tools/遮罩",
+      "source_id": "MaskColorize",
+      "source_class": "MaskColorize",
+      "source_ref": "ComfyUI_Muye 1.0.17（mask/mask_colorize.py）",
+      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_mask_colorize.py"
+      ],
+      "notes": "上游只取遮罩第一片，改为一帧一遮罩（单张遮罩则广播到整批）；遮罩统一按 0.5 阈值硬切。本节点引入新分类 QG-tools/遮罩。"
+    },
+    {
+      "id": "QG_MaskConcat",
+      "class": "QGMaskConcat",
+      "display": "QG 遮罩拼接",
+      "category": "QG-tools/遮罩",
+      "source_id": "MaskConcatenate",
+      "source_class": "MaskConcatenate",
+      "source_ref": "ComfyUI_Muye 1.0.17（mask/mask_concatenate.py）",
+      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_mask_concat.py"
+      ],
+      "notes": "输出从上游的裸 (H, W) 改成标准 (1, H, W)，避免下游按 MASK 取第 0 维时错位。"
+    },
+    {
+      "id": "QG_TextReplace",
+      "class": "QGTextReplace",
+      "display": "QG 批量文本替换",
+      "category": "QG-tools/文本",
+      "source_id": "BatchTextReplace",
+      "source_class": "BatchTextReplace",
+      "source_ref": "ComfyUI_Muye 1.0.17（text/batch_text_replace.py）",
+      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_text_replace.py"
+      ],
+      "notes": "上游把所有输入都设成必填连线，单独放一个节点都点不动；改为全部可选：接 texts 走批量，否则用文本框单段文本。查找串先尝试编译正则，失败退化字面量替换。"
+    },
+    {
+      "id": "QG_TextSplit",
+      "class": "QGTextSplit",
+      "display": "QG 文本按分隔符分割",
+      "category": "QG-tools/文本",
+      "source_id": "TextSplitByDelimiterEnhanced",
+      "source_class": "TextSplitByDelimiterEnhanced",
+      "source_ref": "ComfyUI_Muye 1.0.17（text/text_split_delimiter.py）",
+      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_text_split.py"
+      ],
+      "notes": "输出重排为 ALL / LIST / SEGMENT 三路（各自带索引参数），默认分隔符 <think> 用于切掉模型思考块；支持正则分隔。"
+    },
+    {
+      "id": "QG_SizeSelector",
+      "class": "QGSizeSelector",
+      "display": "QG 尺寸选择器",
+      "category": "QG-tools/Image",
+      "source_id": "MuyeSizeSelector",
+      "source_class": "MuyeSizeSelector",
+      "source_ref": "ComfyUI_Muye 1.0.17（tool/size_selector.py）",
+      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "kind": "backend",
+      "files_new": [
+        "nodes/qg_size_selector.py"
+      ],
+      "notes": "修上游两个 bug：① 潜在通道数写死 16，SD1.5 / SDXL 会直接错，改为 latent_channels 下拉（4 / 16）；② ratio 填「无」时长边同时套到宽高，2:3 预设被压成正方形，改为按原比例换算。"
     }
   ],
   "kept_on_purpose": [

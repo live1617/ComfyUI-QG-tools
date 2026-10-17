@@ -47,6 +47,6 @@ class QGTextEditOutput:
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextEditOutput": QGTextEditOutput}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextEditOutput": "QG Text Edit"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextEditOutput": "QG Text"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

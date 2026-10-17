@@ -8,17 +8,18 @@ import { app } from "/scripts/app.js";
 
 const MAX_INPUTS = 16;
 const MIN_INPUTS = 2;
-// LiteGraph uses a 20px slot row. Keep the title and bottom spacing explicit so
-// the bottom blank area stays fixed at 10px as inputs are added or removed.
+// 🔴 node.size 只算「节点主体」，标题栏是画在主体上方的另外 30px，不含在里面。
+// 之前把 NODE_HEADER_HEIGHT 加进高度，等于给主体白送一整条标题的高度，
+// 两个槽位的节点底下就多出一大块空白。这里直接对齐 LiteGraph 自己的
+// computeSize()：主体高 = 槽位数 * 20 + 6（原生节点就是这个数）。
 const INPUT_ROW_HEIGHT = 20;
-const NODE_HEADER_HEIGHT = 30;
-const BOTTOM_PADDING = 10;
-const INITIAL_HEIGHT = NODE_HEADER_HEIGHT + MIN_INPUTS * INPUT_ROW_HEIGHT + BOTTOM_PADDING;
+const BOTTOM_PADDING = 6;
+const INITIAL_HEIGHT = MIN_INPUTS * INPUT_ROW_HEIGHT + BOTTOM_PADDING;
 const INITIAL_SIZE = [240, INITIAL_HEIGHT];
 const slotName = (index) => `any_${String(index + 1).padStart(2, "0")}`;
 const slotNumber = (index) => String(index + 1).padStart(2, "0");
 const heightForInputCount = (count) =>
-  NODE_HEADER_HEIGHT + Math.max(0, Number(count) || 0) * INPUT_ROW_HEIGHT + BOTTOM_PADDING;
+  Math.max(MIN_INPUTS, Number(count) || 0) * INPUT_ROW_HEIGHT + BOTTOM_PADDING;
 const validSize = (size) => {
   const width = Array.isArray(size) || ArrayBuffer.isView(size) ? size[0] : size?.width;
   const height = Array.isArray(size) || ArrayBuffer.isView(size) ? size[1] : size?.height;
@@ -148,9 +149,8 @@ app.registerExtension({
         output.type = slotType;
       }
 
-      // Keep the manually selected width, while deriving the height from
-      // the current input count. The compact base height includes the
-      // fixed title and bottom spacing; each additional input adds one row.
+      // 手动选的宽度保留，高度按当前槽位数重算（主体高 = 槽位数 * 20 + 6，
+      // 与原生 computeSize() 一致；标题栏不占 size，见文件顶部说明）。
       const currentWidth =
         Number(this._qgAnySwitchRestoreWidth) ||
         Number(this.size?.[0]) ||

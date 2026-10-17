@@ -129,6 +129,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "QG 我的节点"}
 | ComfyUI-AusBoss v2.10.1（MIT） | LoRA Loader | `QG_LoraLoader` | 见下方「LoRA Loader 搬家记录」 |
 | ComfyUI-AusBoss v2.10.1（MIT） | Workflow Note | `QG_WorkflowNote` | 见「说明卡 / 开关 搬家记录」 |
 | ComfyUI-AusBoss v2.10.1（MIT） | Workflow Switches | `QG_WorkflowSwitches` | 同上 |
+| ComfyUI_Muye 1.0.17（MIT） | Text Edit Output | `QG_TextEditOutput` | v0.6.0，见「Text Edit Output 搬家记录」 |
+| ComfyUI_Muye 1.0.17（MIT） | 图像水印 / 文字叠加图像 / 宫格图像拼接 / 遮罩上色 / 遮罩拼接 / 批量文本替换 / 文本按分隔符分割 / 尺寸选择器 | `QG_ImageWatermark` / `QG_TextOverlayImage` / `QG_ImageGrid` / `QG_MaskColorize` / `QG_MaskConcat` / `QG_TextReplace` / `QG_TextSplit` / `QG_SizeSelector` | v0.8.5，见「Muye 8 节点搬家记录」 |
 
 搬运与改名用的是一批开发期脚本（`port_node.py` 抽节点、`rename_to_qg.py` 统一命名、
 `rename_css_prefix.py` 改 CSS 前缀），**不随本仓库分发** —— 它们是按当时那个版本的
@@ -503,11 +505,95 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
   + `OUTPUT_NODE = True`，`process_text` 返回 `([text],)` —— **整段作为一个元素传出，
   绝不按换行切分**（上游语义如此；切了就变成多路输出，接下游会炸）。
 - **改名**：`MuyeTextEditOutput` → `QG_TextEditOutput` / `QGTextEditOutput`；
-  display 从中文「文本」改成 `QG Text Edit`；CATEGORY 走 `QG-tools/文本`。
+  display 从中文「文本」改成 `QG Text`（中文标题「QG 文本」；v0.8.5 期按用户要求去掉「编辑」二字）；CATEGORY 走 `QG-tools/文本`。
 - **许可证**：上游 `ComfyUI-Muye-nodes` 是 MIT（copyright 2025 muye_xiuluo），
   全文已落到 `licenses/ComfyUI-Muye-nodes-LICENSE.txt`；README 的许可证段一并列了出处。
 - **i18n**：`locales/zh/nodeDefs.json` 的 `QG_TextEditOutput` 四条（display_name /
   description / inputs.text / outputs）；汉化插件字典同步补同一份。
+
+## Muye 8 节点搬家记录（含遮罩分类，v0.8.5）
+
+用户从 `ComfyUI_Muye 1.0.17` 勾了 8 个节点要搬：图像水印、文字叠加图像、宫格拼接、
+遮罩上色、遮罩拼接、批量文本替换、文本按分隔符分割、尺寸选择器。
+**全部纯 Python、零前端、零新增 pip 依赖**，所以这一批的坑全在「上游 bug + 汉化」上。
+
+### 上游 bug（不是改名，是修逻辑）
+
+| 节点 | 上游问题 | 处理 |
+|---|---|---|
+| 图像水印 | `common_upscale` 引用了本模块没定义的 `bislerp`/`lanczos` → 一旦缩放就 NameError | 改用 `comfy.utils.common_upscale` |
+| 图像水印 | `squeeze()` 把批次压成单帧 | 保留 B 维，逐帧贴 |
+| 图像水印 | 无水印遮罩时 `paste(img, loc)` 不带 alpha → **透明度与旋转边角全失效** | 永远 `paste(img, loc, img)` |
+| 文字叠加 | 默认字体取 `font_choices[0][0]`（拿到首字符） | 显式取字体名，优先 NotoSansSC-VF |
+| 文字叠加 | 只画第一帧 | 逐帧绘制 |
+| 文字叠加 | `IS_CHANGED` 恒 True → 每次重跑且破坏缓存 | 删掉 |
+| 宫格拼接 | 无条件剔除全黑帧 | 改成 `drop_black` 开关（默认开） |
+| 遮罩上色 | 只取遮罩第一片 | 单张遮罩广播到整批 |
+| 遮罩拼接 | 返回裸 `(H, W)` | 改成标准 `(1, H, W)` |
+| 文本替换 | 所有输入强制必填连线，单放一个节点点不动 | 全部可选：接 texts 走批量，否则用文本框 |
+| 尺寸选择器 | 潜在通道数写死 16（SD1.5/SDXL 直接错） | 新增 `latent_channels` 下拉 4 / 16 |
+| 尺寸选择器 | `ratio="无"` 时长边同时套到宽高 → 2:3 被压成正方形 | 按原比例换算另一边 |
+
+宫格拼接上游是**输出节点**（`OUTPUT_NODE = True`），保留并改造成
+`return {"ui": {...}, "result": (grid,)}`，节点上照旧直接预览。
+配套的 `MuyeImageList`（图像列表）**不搬**：QG 侧用批次张量或任意列表即可替代。
+
+### 分类
+
+新增子分类 **`QG-tools/遮罩`**（`QG_MaskColorize` / `QG_MaskConcat`）。
+`verify_categories.py` 只断言「以 `QG-tools/` 开头 + 无顶层残留」，不需要改白名单。
+
+### 汉化（这批的重点）
+
+按硬规矩「搬完必须彻底汉化」：**tooltip 全部写在源码里、就是中文**，
+两套字典只补 `name/title/description` 与枚举译名。tooltip 逐字来源是后端的
+`INPUT_TYPES()` / `OUTPUT_TOOLTIPS`，所以用脚本生成而不是手抄：
+
+```
+python tools/gen_muye_i18n.py           # 干跑：列出每个节点几条输入/输出
+python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
+```
+
+脚本自带三道断言：输入键集合必须与 `INPUT_TYPES()` 完全对齐（多一个少一个都停）、
+每个参数的 tooltip 必须存在且含中文、每个输出 tooltip 数必须等于输出数。
+顺带补了 `QG_ImageResize` 的下拉枚举译名（`pixels/percentage`、`crop/pad/contain`、
+`nearest-exact/bilinear/area/bicubic/lanczos`）——之前只靠 tooltip 解释，值还是英文。
+
+> ⚠️ 新增节点后别忘了 `tools/sync_translation_pack.py` 的 `NODE_ORDER` 也要补 ID，
+> 否则导出汉化包时会报「字典里还有本脚本没列出的键」。
+
+### 校验
+
+- `tools/test_muye_nodes.py`：整包真加载 + 8 节点功能实测，**48 项全过**
+  （水印透明度/旋转、逐帧文字、宫格、遮罩广播、正则替换、三路切分、尺寸换算）。
+  开头必须先建 `server.PromptServer(asyncio.new_event_loop(), default_asset_manager())`，
+  否则 google_translate / md_reader / display_any 的在 import 期注册路由会失败，
+  节点数从 23 掉到 20。
+- `tools/verify_085_live.py`：8199 实例 `/object_info` 逐字比对两套字典（见验收报告）。
+
+## QG 种子 换脸记录（AusBoss 种子卡，v0.8.5）
+
+节点 ID 不变（`QG_Seed`），只把 rgthree 那套「seed 控件 + 三个按钮 + 前端包装
+`queuePrompt` 改写哨兵」换成 AusBoss 的卡片模型：
+
+- **后端**：`seed` 变成非负 INT（0 … 2^64-1），`INPUT_TYPES` 里声明
+  `control_after_generate: True` —— ComfyUI 会自动附加那个「生成后控制」控件；
+  前端把它藏起来，改由卡片上的「随机值 / 固定 / Step」写它。`emit()` 返回
+  `{"ui": {"seed": [seed]}, "result": (seed,)}`，`ui.seed` 就是前端的「上次运行」。
+  旧的 `IS_CHANGED` 随机兜底随之删除（哨兵没了，缓存靠种子本身变化来区分）。
+- **前端**：`web/seed/index.js` 整份重写；新增 `web/shared/seed_history.mjs`
+  （AusBoss 同源，纯逻辑：`seedFromExecuted` / `pushSeed` / `formatSeed`）。
+  复制按钮用 SVG 图标（与 `QG 展示任意` 一致），卡片配色走 `BRAND`。
+- **老存档迁移**：`-1 / -2 / -3` 在 `onConfigure` 里翻译成「随机值 / Step +1 / Step -1」
+  并当场抽一枚种子；只存了一个种子、没有模式的存档（v0.8.4 那版把控件摘掉了）
+  一律按「固定」处理，否则会被默认的「随机值」抽走。
+- **新节点默认值**：`control_after_generate` 默认就是 `randomize`，而 ComfyUI 的
+  生成后控制是「排队之后」才改值 → 新节点第一次排队会跑 0 号种子。所以
+  `onNodeCreated` 里当场抽一枚（加载工作流时 `onConfigure` 会用存档值覆盖）。
+- **没搬**：AusBoss 的跨标签页运行隔离（`js/prompt_scope` + `shared/prompt_scope.mjs`，
+  92 行 + api 接线）。多标签页同时跑时，历史可能记到别的标签页的种子。
+- **校验**：`tools/probe_seed_card.py`（CDP，27 项）+ `tools/gen_seed_i18n.py`
+  （两套字典由后端定义生成，tooltip 逐字一致）。
 
 ## appearance 全局扩展（AusBoss 全局前端层，v0.6.0）
 
