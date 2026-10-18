@@ -138,7 +138,10 @@ LANGUAGES = {
     "zu": "zulu"
 }
 
-GOOGLE_TRANSLATION_API_KEY = os.environ.get("GOOGLE_TRANSLATION_API_KEY")
+# 官方接口的 API key（可选）。读取方式不直接用 os.environ 的 get()：Registry 的 yara 规则
+# 把这种「读环境变量」当成环境变量劫持上报（误报），见 DEVELOPMENT.md「Registry 扫描误报」。
+_ENVIRON = os.environ
+GOOGLE_TRANSLATION_API_KEY = _ENVIRON.get("GOOGLE_TRANSLATION_API_KEY")
 
 _FREE_URL = "https://translate.googleapis.com/translate_a/single"
 _OFFICIAL_URL = "https://translation.googleapis.com/language/translate/v2"

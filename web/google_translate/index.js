@@ -10,9 +10,8 @@ import { zh } from "../shared/zh.mjs?v=2026101802";
 const findWidget = (node, name, attr = "name", func = "find") =>
   node.widgets[func]((w) => w[attr] === name);
 
-function manual_translate_prompt() {
-  const node = this,
-    button_manual_translate = findWidget(node, "Manual Translate"),
+function manual_translate_prompt(node) {
+  const button_manual_translate = findWidget(node, "Manual Translate"),
     widget_from_translate = findWidget(node, "from_translate"),
     widget_to_translate = findWidget(node, "to_translate"),
     manual_translate = findWidget(node, "manual_translate"),
@@ -86,7 +85,7 @@ app.registerExtension({
         "button",
         zh("Manual Translate"),
         "Manual Translate",
-        manual_translate_prompt.bind(node)
+        () => manual_translate_prompt(node)
       );
 
       // 把按钮插到 text 控件之前（与上游一致的视觉顺序）

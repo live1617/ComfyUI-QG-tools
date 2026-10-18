@@ -130,7 +130,7 @@
 - 指针离开后自动停在「结果」那张图上——哪一路是结果按连线判断（B 通常是从 A 改出来的那张）
 - A 原样从输出送出，所以这个节点可以夹在流程中间，不影响下游
 
-- **当前版本**：v0.9.0
+- **当前版本**：v0.9.1
 - **节点**：24 个（`LoRA Loader` / `模型加载器` / `Image Crop + Rotate + Pad` / `Workflow Note` /
   `Workflow Switches` / `Run Timer` / `Text` / `加载文档` / `Google 翻译` /
   `任意切换` / `展示任意` / `是否判断` / `图像缩放` / `图像或 Latent 尺寸` / `种子` /
@@ -165,7 +165,7 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 装完**完整重启 ComfyUI**，控制台应出现：
 
 ```
-[QG-tools] v0.9.0 加载完成 | 节点数 24
+[QG-tools] v0.9.1 加载完成 | 节点数 24
 ```
 
 无需 `pip install` 任何东西。二十四个节点都在 `QG-tools` 分类下

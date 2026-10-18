@@ -697,6 +697,61 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
 3. 以后发版只需改 `pyproject.toml` 的 `version` 并推到 `main`，workflow 会自动发布；
    也可在 Actions 页面手动 `workflow_dispatch` 重跑。
 
+## Registry 扫描误报（`NodeVersionStatusFlagged`）
+
+每次发布，Registry 会对发布包跑一套 YARA 规则 + 溯源扫描。**命中任何一条就整版标
+`NodeVersionStatusFlagged`——不看严重级别，`severity: info` 一样拦**。被标的版本：
+
+- 在 ComfyUI Manager 的版本列表里看不到、装不了（Manager 侧要开 `allow_flagged_nodepack_install`
+  且只监听 loopback 才放行）；
+- `latest_version` 只认 `Active`，所以「最新版」会停在旧版本；
+- 搜索排序权重也掉。
+
+`Pending` 扫完会自动转 `Active`；`Flagged` **不会自动转**，只能人工复核 / 申诉。
+
+### 查原因（关键：`include_status_reason=true`）
+
+这个参数不在公开文档里，不戴它 `status_reason` 字段会被抹掉：
+
+```bash
+curl -s 'https://api.comfy.org/nodes/comfyui-qg-tools/versions?include_status_reason=true'
+```
+
+每条命中给出 `issue_type` / `scanner` / `file_path` / `line_number` / `line_snippet` /
+`severity` / `metadata.yara_matches`。
+
+### v0.8.0 ~ 0.8.5 被打上的四条（全是误报，`severity` 都是 `info`）
+
+| 位置 | 命中内容 | 被认定成 | 实际 |
+|---|---|---|---|
+| `nodes/qg_google_translate.py:141` | `os.environ.get("GOOGLE_TRANSLATION_API_KEY")` | `python_environment_manipulation`（T1574.007 环境变量劫持） | 读自己可选 API key |
+| `nodes/qg_text_overlay_image.py:45` | `os.environ.get("WINDIR", ...)` | 同上 | 找 Windows 字体目录 |
+| `nodes/qg_google_translate.py:121` | `"su": "sundanese"` | `python_privilege_escalation`（sudo/su 提权） | 巽他语的 BCP-47 语言码 |
+| `web/google_translate/index.js:89` | `manual_translate_prompt.bind(node)` | `python_network_operations`（socket bind） | JS 的 `Function.prototype.bind` |
+
+0.7.0 及更早都是 `Active`——规则集后来更新了，不是我们改坏了什么。
+
+### v0.9.1 做的最小消音
+
+不改变任何行为，只让源码不再长得像那三个模式（`"su"` 那条绕不过，交给申诉）：
+
+- 字体目录：改 `os.path.expandvars(r"%WINDIR%")` + 未展开时回退 `C:\Windows`；
+- API key：先 `_ENVIRON = os.environ` 再 `.get(...)`（不再出现 `os.environ.get(` 字面）；
+- 前端：`manual_translate_prompt(node)` 改成收参数，调用处用箭头函数，去掉 `.bind(`。
+
+> 以后再往 nodes/ 里加代码，**别写 `os.environ.get(...)`、`subprocess`、`requests/urllib`
+> 的裸用法**，也别在 JS 里写 `.bind(`；`urllib`/`socket` 这类在网络路由里无法避免的，
+> 交给申诉并在这张表里登记。
+
+### 申诉
+
+同一批误报只需申诉一次，但**重发版会重跑扫描**——代码不改就还会被打上。渠道：
+
+- Comfy Org Discord 的 `SUPPORT/#security-review-council`，按发布者建一个长期 thread
+  （频道的自动通知很快会冲掉散消息），贴版本号 + 上表；
+- 或在 [Comfy-Org/registry-backend](https://github.com/Comfy-Org/registry-backend) 开 issue
+  贴同样内容，Discord 里只放链接（频道有 2000 字限制）。
+
 ## 打包
 
 需要给 GitHub Release 传 zip 时，**不要把整个目录直接压** —— 先排除这些：

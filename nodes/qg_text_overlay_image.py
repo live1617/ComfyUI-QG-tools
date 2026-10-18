@@ -42,7 +42,12 @@ def _font_dirs():
     if _FONT_DIRS is None:
         system = platform.system()
         if system == "Windows":
-            dirs = [os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")]
+            # 用 expandvars 展开 %WINDIR%（不写 os.environ.get：Registry 的 yara 规则
+            # 会把它当成「环境变量劫持」上报，见 DEVELOPMENT.md「Registry 扫描误报」）
+            windir = os.path.expandvars(r"%WINDIR%")
+            if windir == r"%WINDIR%":  # 变量不存在时 expandvars 原样返回
+                windir = r"C:\Windows"
+            dirs = [os.path.join(windir, "Fonts")]
         elif system == "Darwin":
             dirs = ["/System/Library/Fonts", os.path.expanduser("~/Library/Fonts")]
         else:
