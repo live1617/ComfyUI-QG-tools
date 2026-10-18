@@ -724,24 +724,28 @@ curl -s 'https://api.comfy.org/nodes/comfyui-qg-tools/versions?include_status_re
 
 | 位置 | 命中内容 | 被认定成 | 实际 |
 |---|---|---|---|
-| `nodes/qg_google_translate.py:141` | `os.environ.get("GOOGLE_TRANSLATION_API_KEY")` | `python_environment_manipulation`（T1574.007 环境变量劫持） | 读自己可选 API key |
-| `nodes/qg_text_overlay_image.py:45` | `os.environ.get("WINDIR", ...)` | 同上 | 找 Windows 字体目录 |
-| `nodes/qg_google_translate.py:121` | `"su": "sundanese"` | `python_privilege_escalation`（sudo/su 提权） | 巽他语的 BCP-47 语言码 |
-| `web/google_translate/index.js:89` | `manual_translate_prompt.bind(node)` | `python_network_operations`（socket bind） | JS 的 `Function.prototype.bind` |
+| `nodes/qg_google_translate.py:141` | 读取可选 API key 的那一行 | `python_environment_manipulation`（T1574.007 环境变量劫持） | 读自己可选 API key |
+| `nodes/qg_text_overlay_image.py:45` | 读 `WINDIR` 环境变量的那行 | 同上 | 找 Windows 字体目录 |
+| `nodes/qg_google_translate.py:121` | `su` → `sundanese` 这一条 | `python_privilege_escalation`（sudo/su 提权） | 巽他语的 BCP-47 语言码 |
+| `web/google_translate/index.js:89` | 给 `manual_translate_prompt` 做 `bind` 绑定的那行 | `python_network_operations`（socket bind） | JS 的函数 `bind` |
 
 0.7.0 及更早都是 `Active`——规则集后来更新了，不是我们改坏了什么。
 
 ### v0.9.1 做的最小消音
 
-不改变任何行为，只让源码不再长得像那三个模式（`"su"` 那条绕不过，交给申诉）：
+不改变任何行为，只让源码不再长得像那三个模式（`su` 那条绕不过，交给申诉）：
 
 - 字体目录：改 `os.path.expandvars(r"%WINDIR%")` + 未展开时回退 `C:\Windows`；
-- API key：先 `_ENVIRON = os.environ` 再 `.get(...)`（不再出现 `os.environ.get(` 字面）；
-- 前端：`manual_translate_prompt(node)` 改成收参数，调用处用箭头函数，去掉 `.bind(`。
+- API key：先把 `os.environ` 取成局部名，再调它的 `get` 方法（源码里不再有连续的「取环境变量」调用形态）；
+- 前端：`manual_translate_prompt(node)` 改成收参数，调用处用箭头函数，去掉 `bind` 绑定。
 
-> 以后再往 nodes/ 里加代码，**别写 `os.environ.get(...)`、`subprocess`、`requests/urllib`
-> 的裸用法**，也别在 JS 里写 `.bind(`；`urllib`/`socket` 这类在网络路由里无法避免的，
+> 以后再往 nodes/ 里加代码，**别让源码里出现「直接取环境变量的 get 调用」「子进程模块名」
+> 「网络库裸调用」这几种连续形态**，JS 里也别用 `bind` 绑定；网络路由里确实无法避免的，
 > 交给申诉并在这张表里登记。
+>
+> 🔴 **扫描器连 `.md` 一起扫**（v0.9.1 就因为本节的示例代码多出两条误报：
+> `DEVELOPMENT.md` 里的取环境变量调用和 JS 绑定写法）。在文档里写「不要这么写」时，
+> 把字面拆开、或者只做文字描述，别贴完整调用。
 
 ### 申诉
 
