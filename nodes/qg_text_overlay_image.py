@@ -218,6 +218,6 @@ class QGTextOverlayImage:
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextOverlayImage": QGTextOverlayImage}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextOverlayImage": "QG 文字叠加图像"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextOverlayImage": "文字叠加图像"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

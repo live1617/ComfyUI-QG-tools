@@ -20,12 +20,12 @@ import {
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026101603";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101603";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026101603";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026101603";
-import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026101603";
-import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026101603";
+} from "../shared/index.mjs?v=2026101802";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101802";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026101802";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026101802";
+import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026101802";
+import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026101802";
 
 const NODE_CLASS = "QG_Seed";
 const CSS_ID = "qgtools-seed-css";

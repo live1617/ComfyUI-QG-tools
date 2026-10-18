@@ -24,8 +24,8 @@
 // at 1 goes 8, 16, 24 instead of 9, 17, 25, and back down to its minimum.
 // Shift's fine step and typed values are never snapped.
 
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101603";
-import { zh } from "./zh.mjs?v=2026101603";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101802";
+import { zh } from "./zh.mjs?v=2026101802";
 
 // Keep in sync with BRAND in shared/index.mjs - importing it would pull
 // /scripts/app.js into node:test, and this module's math must stay testable.
@@ -273,9 +273,45 @@ export function makeScrubInput(options = {}) {
   } else {
     box.append(input, steppers);
   }
+  // 让别的元素也能拖动这个数值：旁边那个名字，或者盒子本身（单位所在处）。
+  // 在上面横着拖，和拖数字一样改值。点一下不做事，打字仍然只在数字上点。
+  const handle = (element) => {
+    let grip = null;
+    element.style.cursor = "ew-resize";
+    element.style.touchAction = "none";
+    element.addEventListener("pointerdown", (event) => {
+      // 只认落在元素自己身上的按下：盒子里的数字和箭头各有各的手势。
+      if (event.button !== 0 || event.target !== element || !input.readOnly) return;
+      grip = { x: event.clientX, y: event.clientY, start: base(), scrubbed: false, fine: event.shiftKey };
+      element.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    element.addEventListener("pointermove", (event) => {
+      if (!grip) return;
+      const dx = event.clientX - grip.x;
+      if (!grip.scrubbed && isScrubGesture(dx, event.clientY - grip.y)) { grip.scrubbed = true; grip.fine = event.shiftKey; }
+      if (!grip.scrubbed) return;
+      if (event.shiftKey !== grip.fine) {
+        grip.start = base(); grip.x = event.clientX - Math.sign(dx || 1) * (SCRUB_DEAD_ZONE + 1); grip.fine = event.shiftKey;
+      }
+      commit(scrubbedValue(grip.start, event.clientX - grip.x, event.shiftKey, opts));
+    });
+    const release = (event) => {
+      if (!grip) return;
+      try { element.releasePointerCapture(event.pointerId); } catch { /* 老浏览器 */ }
+      const scrubbed = grip.scrubbed;
+      grip = null;
+      if (scrubbed) settle();
+    };
+    element.addEventListener("pointerup", release);
+    element.addEventListener("pointercancel", release);
+    return element;
+  };
+
   return {
     root: box,
     input,
+    handle,
     get: () => current,
     set: (value) => {
       current = isEmpty(value) ? null : quantizeScrubValue(value, opts);

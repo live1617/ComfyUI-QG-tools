@@ -64,4 +64,4 @@ class QGImageOrLatentSize:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageOrLatentSize": QGImageOrLatentSize}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageOrLatentSize": "QG 图像或 Latent 尺寸"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageOrLatentSize": "图像或 Latent 尺寸"}

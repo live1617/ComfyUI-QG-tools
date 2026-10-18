@@ -42,6 +42,6 @@ class QGRunTimer:
 
 
 NODE_CLASS_MAPPINGS = {"QG_RunTimer": QGRunTimer}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_RunTimer": "QG Run Timer"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_RunTimer": "Run Timer"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

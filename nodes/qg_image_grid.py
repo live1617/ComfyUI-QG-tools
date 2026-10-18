@@ -217,6 +217,6 @@ class QGImageGrid:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageGrid": QGImageGrid}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageGrid": "QG 宫格图像拼接"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageGrid": "宫格图像拼接"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

@@ -3,7 +3,7 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { zh } from "../shared/zh.mjs?v=2026101603";
+import { zh } from "../shared/zh.mjs?v=2026101802";
 
 const NODE_NAME = "QG_MDReader";
 const NO_FILE = "<no document>";

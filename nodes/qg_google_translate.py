@@ -269,5 +269,5 @@ NODE_CLASS_MAPPINGS = {
     "QG_GoogleTranslateText": QGGoogleTranslateText,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "QG_GoogleTranslateText": "QG Google Translate",
+    "QG_GoogleTranslateText": "Google Translate",
 }

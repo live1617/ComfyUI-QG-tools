@@ -70,6 +70,6 @@ class QGWorkflowNote:
 
 
 NODE_CLASS_MAPPINGS = {"QG_WorkflowNote": QGWorkflowNote}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_WorkflowNote": "QG Workflow Note"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_WorkflowNote": "Workflow Note"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

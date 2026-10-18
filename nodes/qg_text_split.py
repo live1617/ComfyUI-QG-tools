@@ -163,6 +163,6 @@ class QGTextSplit:
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextSplit": QGTextSplit}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextSplit": "QG 文本按分隔符分割"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextSplit": "文本按分隔符分割"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

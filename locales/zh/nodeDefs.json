@@ -1,6 +1,6 @@
 {
   "QG_LoraLoader": {
-    "display_name": "QG LoRA 加载器",
+    "display_name": "LoRA 加载器",
     "description": "用一个紧凑的节点，把一摞 LoRA 施加到模型和 CLIP 上。每一行都有启用开关、可搜索的 LoRA 选择器、可拖拽调节的模型/CLIP 强度，名称背后还有以零为中心刻度的强度条；所有已启用行的触发词会合并成一个字符串输出。强度条上的 ▤ 按钮可以保存并套用整摞 LoRA 的命名模板；齿轮菜单里的一项操作能把接入模型链的上下游所有 LoRA 加载器一并吸收进这一摞，并把原来那些节点旁通掉。路径变动的 LoRA 文件会在运行时按文件名重新定位；确实找不到的文件会在采样前就校验失败，并在报错中指名该文件——把齿轮菜单里的「LoRA 缺失时停止」关掉，即可改为警告并跳过。",
     "inputs": {
       "model": {
@@ -44,7 +44,7 @@
     }
   },
   "QG_WorkflowNote": {
-    "display_name": "QG 工作流说明卡",
+    "display_name": "工作流说明卡",
     "description": "用于分享的工作流卡片：大标题、Markdown 使用说明、工作流需要的模型（带下载按钮和各自的存放文件夹）、依赖的节点包，以及你的链接。每个模型和插件行都会和本机安装对照，标出已安装或缺什么，打开工作流的人一眼就知道还差什么。点铅笔编辑；切换到横幅布局可变成纯标题标签。不参与运行——没有输出。",
     "inputs": {
       "note": {
@@ -55,13 +55,13 @@
     "outputs": {}
   },
   "QG_WorkflowSwitches": {
-    "display_name": "QG 工作流开关",
+    "display_name": "工作流开关",
     "description": "一张小卡片集中开关工作流的各个部分。选中构成一个部分的节点（比如一个框和它的保存节点），按「+ Switch」：它们就得到一个由你命名的 关|开 开关。每个分组也可以有自己的开关。关闭时旁通这些节点，画面照常传到下一步（也可改成静音——见设置）；打开时恢复运行。开关还可以只改参数不关节点：分别为开和关保存这些节点当前的设置，一键就能把 Steps 设成 8 并打开某个 LoRA 行。按 Done 后卡片收起，只剩标签和开关。它永不运行，也没有连线。",
     "inputs": {},
     "outputs": {}
   },
   "QG_ImageCropRotatePad": {
-    "display_name": "QG 图像裁剪 + 旋转 + 补边",
+    "display_name": "图像裁剪 + 旋转 + 补边",
     "description": "载入一张图片，在节点上做一次看得见的旋转、裁剪和补边。遮罩标出「该画哪里」：新补的边、旋转留下的空角，以及画面里透明（实心度不足 90%）的部分——除非 painted_area 选择保留画面，否则这些地方会像补边一样被填平。可选再把结果缩放到百万像素预算（与核心 Scale Image to Total Pixels 同语义：保持长宽比，尺寸按 resolution_steps 取整）。",
     "inputs": {
       "image": {
@@ -181,13 +181,13 @@
     }
   },
   "QG_RunTimer": {
-    "display_name": "QG 运行计时器",
+    "display_name": "运行计时器",
     "description": "整次运行的秒表。排队的任务开始执行时它开始计时，运行期间在节点上跳动，结束时保留总用时。右键可以看到之前几次的用时，这样改了设置就能和上一次对比。用时会随工作流一起保存，所以分享出去的图也会带上作者的耗时作为参考。没有输入也没有输出——它监听队列，而不是接在连线上。",
     "inputs": {},
     "outputs": {}
   },
   "QG_TextEditOutput": {
-    "display_name": "QG 文本",
+    "display_name": "文本",
     "description": "一个手动文本框，把输入的内容作为一个单元素字符串列表输出。在画布上随手写一段提示词或备注，再接到下游任意文本输入。不加载模型、无额外依赖。",
     "inputs": {
       "text": {
@@ -202,7 +202,7 @@
     }
   },
   "QG_MDReader": {
-    "display_name": "QG 加载文档",
+    "display_name": "加载文档",
     "description": "读取一个 Markdown 文件并输出它的文本。输出是 STRING，可以接任意文本输入——提示词框、CLIP Text Encode、说明卡。纯文本模式会剥掉 Markdown 标记（#、*、-、[]()），原样模式按文件原样输出。节点上会直接预览文档内容。",
     "inputs": {
       "md_file": {
@@ -226,7 +226,7 @@
     }
   },
   "QG_GoogleTranslateText": {
-    "display_name": "QG Google 翻译",
+    "display_name": "Google 翻译",
     "description": "用 Google 翻译把一段提示词译成另一种语言。免费、无需 API key（Google 可能对服务端 IP 限流）；设置环境变量 GOOGLE_TRANSLATION_API_KEY 即可改用官方、不限量的 API。手动翻译按钮会把文本就地改写。",
     "inputs": {
       "from_translate": {
@@ -254,15 +254,15 @@
     }
   },
   "QG_AnySwitch": {
-    "display_name": "QG 任意切换",
+    "display_name": "任意切换",
     "description": "把多个同类型的输入并成一路，输出第一个非空、已连接的那个——常用于接「兜底」：有高清模型就走它，没有就走普通版。所有输入必须是同一类型；类型混用或全空会报错。"
   },
   "QG_DisplayAny": {
-    "display_name": "QG 展示任意",
+    "display_name": "展示任意",
     "description": "展示并原样透传任意输入：文本、图像、遮罩、音频、视频都能预览。有下游连接时按需执行，没有下游连接时也会主动执行以刷新预览。支持批量预览、画册模式、文本字号颜色设置与右键复制/保存。"
   },
   "QG_IfElse": {
-    "display_name": "QG 是否判断",
+    "display_name": "是否判断",
     "description": "布尔分支：条件为真透传「真时」输入，为假透传「假时」输入。没走的那一支是懒执行、不会被求值，适合接昂贵或有风险的子图（比如循环体里会报错的分支）。",
     "inputs": {
       "boolean": {
@@ -286,7 +286,7 @@
     }
   },
   "QG_TripleLoader": {
-    "display_name": "QG 模型加载器",
+    "display_name": "模型加载器",
     "description": "一个节点同时加载扩散模型、文本编码器和 VAE。把官方的 UNET加载器 / 加载CLIP / 加载VAE 三个节点合并成一块面板，输出标准的 MODEL / CLIP / VAE，可以直接替换那三个节点接到采样器上。不绑定任何模型家族——Qwen-Image、Flux、SD 都能用。所有下拉列表（模型文件 / 权重精度 / 文本编码器类型 / 加载设备）在导入时从本机已安装的 ComfyUI 内置节点动态读取，换版本不用改。文件下拉里显示完整路径，节点上收起只显示短文件名。",
     "inputs": {
       "unet_name": {
@@ -330,7 +330,7 @@
     }
   },
   "QG_ImageResize": {
-    "display_name": "QG 图像缩放",
+    "display_name": "图像缩放",
     "description": "按像素或百分比缩放图像，支持裁切 / 补边 / 包含三种适配方式，并输出缩放后的宽和高。",
     "inputs": {
       "image": {
@@ -391,7 +391,7 @@
     }
   },
   "QG_ImageOrLatentSize": {
-    "display_name": "QG 图像或 Latent 尺寸",
+    "display_name": "图像或 Latent 尺寸",
     "description": "读取一张图像 / 遮罩 / Latent 的宽和高并作为整数输出（Latent 自动按 8 倍还原）。",
     "inputs": {
       "input": {
@@ -411,7 +411,7 @@
     }
   },
   "QG_Seed": {
-    "display_name": "QG 种子",
+    "display_name": "种子",
     "description": "种子控制。给下游一根 INT 线，多个采样器共用同一个数。卡片上：空格子直接输种子，「随机值 / 固定 / Step」决定每次排队之后种子怎么变；「新种子」抽一枚并固定，「用上次」把上次真正跑过的种子填回来，▾ 里是这个节点最近跑过的几枚。",
     "inputs": {
       "seed": {
@@ -427,7 +427,7 @@
     }
   },
   "QG_ImageWatermark": {
-    "display_name": "QG 图像水印",
+    "display_name": "图像水印",
     "description": "给图像贴一张水印图：可缩放（不缩放 / 等比适配 / 按倍数 / 按指定宽高）、可定位（九宫格锚点加像素偏移）、可旋转、可调透明程度，还能接遮罩限定不透出区域。底图是批次时逐帧贴同一位置。",
     "inputs": {
       "base_image": {
@@ -498,7 +498,7 @@
     }
   },
   "QG_TextOverlayImage": {
-    "display_name": "QG 文字叠加图像",
+    "display_name": "文字叠加图像",
     "description": "在图像上画文字：可选系统字体、字号、颜色（内置六色或自定义 RGB）、横排 / 竖排，按中心点坐标定位；除了画好的图像，还输出文字形状的遮罩，方便后续做区域限定。批次时每一帧都画同样的字。",
     "inputs": {
       "image": {
@@ -550,7 +550,7 @@
     }
   },
   "QG_ImageGrid": {
-    "display_name": "QG 宫格图像拼接",
+    "display_name": "宫格图像拼接",
     "description": "把多张图拼成宫格（最多 16 张）：默认把所有格子统一成第一张的尺寸并在格内等比居中、不裁剪；可设格间像素间隙与背景色，还能丢掉上游批次节点给未接输入补的全黑占位帧。拼好的结果直接在节点上预览。",
     "inputs": {
       "images": {
@@ -582,7 +582,7 @@
     }
   },
   "QG_MaskColorize": {
-    "display_name": "QG 遮罩上色",
+    "display_name": "遮罩上色",
     "description": "把遮罩区域涂成纯色：内置六种颜色，或接一个 [R, G, B] 三元组自定义；遮罩按 0.5 阈值硬切，接单张遮罩时会应用到批次的每一帧。适合肉眼检查遮罩，或在局部重绘前先把一块区域烧成纯色。",
     "inputs": {
       "image": {
@@ -610,7 +610,7 @@
     }
   },
   "QG_MaskConcat": {
-    "display_name": "QG 遮罩拼接",
+    "display_name": "遮罩拼接",
     "description": "把两张遮罩沿横向或纵向拼成一张，输出标准的 (1, H, W)。打开「统一尺寸」会把较小的遮罩拉伸到较大遮罩的尺寸。",
     "inputs": {
       "mask1": {
@@ -638,7 +638,7 @@
     }
   },
   "QG_TextReplace": {
-    "display_name": "QG 批量文本替换",
+    "display_name": "批量文本替换",
     "description": "按最多三组「查找 → 替换」规则批量改文本：接了文本列表就逐条处理，也可以不用连线、直接用文本框里的单段文本；查找串能编译成正则时按正则处理（替换串里可用 \\1 反向引用），编不成正则就退化成普通字面量替换。",
     "inputs": {
       "texts": {
@@ -682,7 +682,7 @@
     }
   },
   "QG_TextSplit": {
-    "display_name": "QG 文本按分隔符分割",
+    "display_name": "文本按分隔符分割",
     "description": "按分隔符（可为正则）把文本切成若干段，三个输出分别给出：全部文本的段落合集、选定那条输入的完整切分、以及指定的某一段。默认分隔符 <think> 正好用来切掉模型的思考块。",
     "inputs": {
       "input_source": {
@@ -734,7 +734,7 @@
     }
   },
   "QG_SizeSelector": {
-    "display_name": "QG 尺寸选择器",
+    "display_name": "尺寸选择器",
     "description": "按预设或自定义比例算出一组宽高，并直接生成对应的空 Latent：可选长边缩放、比例覆盖（如 16:9）、帧数（大于 0 即视频模型）、宽高对齐倍数，以及 4 / 16 两种潜在通道数。",
     "inputs": {
       "preset": {
@@ -790,6 +790,30 @@
       "3": {
         "name": "帧数",
         "tooltip": "实际使用的帧数（0 = 图像模型）。"
+      }
+    }
+  },
+  "QG_ImageCompare": {
+    "display_name": "图像对比",
+    "description": "一块面板同时看 A 和 B：在画面上滑动，「滑动」模式下竖线跟着指针走，左边 A、右边 B；下面切到 A 或 B 就只看那一张。指针离开后停在结果那张图上，哪一路是「结果」按连线判断（B 默认是改完的图，若 B 反过来喂给做 A 的节点则取 A）。「擦除」用画笔把上面那张擦掉一块、露出底下那张，还能把混合图存成 PNG（可选带图层 PSD 和遮罩）。A 原样从输出送出，所以这个节点可以夹在流程中间，不影响下游。",
+    "inputs": {
+      "image_a": {
+        "name": "图像 A",
+        "tooltip": "基准批次。取第一帧作为预览 A，整批原样从输出送出。"
+      },
+      "image_b": {
+        "name": "图像 B",
+        "tooltip": "对比批次。取第一帧作为预览 B，在面板上滑过、切到 B，或用橡皮擦擦开时露出。"
+      },
+      "filename": {
+        "name": "文件名",
+        "tooltip": "可选。橡皮擦保存时的文件名，比如源图的文件名；目录和扩展名会被去掉。不接的话用节点上打的名字。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "图像",
+        "tooltip": "输入 A 的一批图，原样送出，方便接在流程中间。"
       }
     }
   }

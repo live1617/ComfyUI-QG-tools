@@ -103,6 +103,6 @@ class QGMaskConcat:
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskConcat": QGMaskConcat}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_MaskConcat": "QG 遮罩拼接"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_MaskConcat": "遮罩拼接"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

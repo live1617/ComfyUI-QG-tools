@@ -239,6 +239,6 @@ class QGDisplayAny:
 
 
 NODE_CLASS_MAPPINGS = {NODE_TYPE: QGDisplayAny}
-NODE_DISPLAY_NAME_MAPPINGS = {NODE_TYPE: "QG 展示任意"}
+NODE_DISPLAY_NAME_MAPPINGS = {NODE_TYPE: "展示任意"}
 
 PromptServer.instance.add_on_prompt_handler(select_display_targets)

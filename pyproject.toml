@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-qg-tools"
-description = "A ComfyUI custom node pack by QG. Twenty-three nodes under the QG-tools category: a full-featured LoRA Loader (searchable rows, drag-to-set strengths, trigger-word merging, named templates, model-chain absorption), a three-in-one Checkpoint/UNET + CLIP + VAE loader, a canvas-based Image Crop + Rotate + Pad editor with video timeline support, a Workflow Note card, a Workflow Switches panel, a Run Timer stopwatch, image helpers (Image Resize, Image-or-Latent Size), a Seed card (random / fixed / step control with an 8-entry history), plus text and flow helpers (Text, Markdown Reader, Google Translate, Any Switch, Display Any, If/Else), and image/mask/text utilities (Image Watermark, Text Overlay Image, Image Grid, Mask Colorize, Mask Concat, Batch Text Replace, Text Split by Delimiter, Size Selector)."
-version = "0.8.5"
+description = "A ComfyUI custom node pack by QG. Twenty-four nodes under the QG-tools category: a full-featured LoRA Loader (searchable rows, drag-to-set strengths, trigger-word merging, named templates), a three-in-one Checkpoint/UNET + CLIP + VAE loader, a canvas-based Image Crop + Rotate + Pad editor with video timeline, an Image Compare panel (slide / A / B / erase, save PNG with optional layered PSD), a Workflow Note card, a Workflow Switches panel, a Run Timer, image helpers (Resize, Size), a Seed card with 8-entry history, flow helpers (Text, Markdown Reader, Translate, Any Switch, Display Any, If/Else), and image/mask/text utilities (Watermark, Text Overlay, Grid, Mask Colorize, Mask Concat, Batch Replace, Text Split, Size Selector). Every node also answers to English search aliases."
+version = "0.9.0"
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.9"

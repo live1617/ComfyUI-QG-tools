@@ -84,6 +84,6 @@ class QGMarkdownReader:
 
 
 NODE_CLASS_MAPPINGS = {"QG_MDReader": QGMarkdownReader}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_MDReader": "QG 加载文档"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_MDReader": "加载文档"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

@@ -72,4 +72,4 @@ class QGIfElse:
 
 
 NODE_CLASS_MAPPINGS = {"QG_IfElse": QGIfElse}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_IfElse": "QG 是否判断"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_IfElse": "是否判断"}

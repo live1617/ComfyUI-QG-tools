@@ -107,4 +107,4 @@ class QGAnySwitch:
 
 
 NODE_CLASS_MAPPINGS = {"QG_AnySwitch": QGAnySwitch}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_AnySwitch": "QG 任意切换"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_AnySwitch": "任意切换"}

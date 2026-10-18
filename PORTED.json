@@ -21,7 +21,7 @@
     {
       "id": "QG_LoraLoader",
       "class": "QGLoraLoader",
-      "display": "QG LoRA Loader",
+      "display": "LoRA Loader",
       "category": "QG-tools/加载器",
       "source_id": "AUSBOSS_NODES_LoraLoader",
       "source_class": "AusBossLoraLoader",
@@ -207,7 +207,7 @@
     {
       "id": "QG_WorkflowNote",
       "class": "QGWorkflowNote",
-      "display": "QG Workflow Note",
+      "display": "Workflow Note",
       "category": "QG-tools/工作流",
       "source_id": "AUSBOSS_NODES_WorkflowNote",
       "source_class": "AusBossWorkflowNote",
@@ -310,7 +310,7 @@
     {
       "id": "QG_WorkflowSwitches",
       "class": "QGWorkflowSwitches",
-      "display": "QG Workflow Switches",
+      "display": "Workflow Switches",
       "category": "QG-tools/工作流",
       "source_id": "AUSBOSS_NODES_WorkflowSwitches",
       "source_class": "AusBossWorkflowSwitches",
@@ -386,7 +386,7 @@
     {
       "id": "QG_ImageCropRotatePad",
       "class": "QGImageCropRotatePad",
-      "display": "QG Image Crop + Rotate + Pad",
+      "display": "Image Crop + Rotate + Pad",
       "category": "QG-tools/Image",
       "source_id": "AUSBOSS_NODES_ImageCropRotatePad",
       "source_class": "AusBossImageCropRotatePad",
@@ -447,7 +447,7 @@
     {
       "id": "QG_RunTimer",
       "class": "QGRunTimer",
-      "display": "QG Run Timer",
+      "display": "Run Timer",
       "category": "QG-tools/展示",
       "source_id": "AUSBOSS_NODES_RunTimer",
       "source_class": "AusBossRunTimer",
@@ -466,7 +466,7 @@
     {
       "id": "QG_TextEditOutput",
       "class": "QGTextEditOutput",
-      "display": "QG Text",
+      "display": "Text",
       "category": "QG-tools/文本",
       "source_id": "MuyeTextEditOutput",
       "source_class": "MuyeTextEditOutput",
@@ -483,7 +483,7 @@
     {
       "id": "QG_MDReader",
       "class": "QGMarkdownReader",
-      "display": "QG 加载文档",
+      "display": "加载文档",
       "category": "QG-tools/文本",
       "source_id": "MarkdownFileReader",
       "source_class": "MarkdownFileReader",
@@ -504,7 +504,7 @@
     {
       "id": "QG_GoogleTranslateText",
       "class": "QGGoogleTranslateText",
-      "display": "QG Google 翻译",
+      "display": "Google 翻译",
       "category": "QG-tools/文本",
       "source_id": "GoogleTranslateTextNode",
       "source_class": "GoogleTranslateTextNode",
@@ -526,7 +526,7 @@
     {
       "id": "QG_AnySwitch",
       "class": "QGAnySwitch",
-      "display": "QG 任意切换",
+      "display": "任意切换",
       "category": "QG-tools/逻辑",
       "source_id": "GoohaiAnySwitch",
       "source_class": "GoohaiAnySwitch",
@@ -549,7 +549,7 @@
     {
       "id": "QG_DisplayAny",
       "class": "QGDisplayAny",
-      "display": "QG 展示任意",
+      "display": "展示任意",
       "category": "QG-tools/展示",
       "source_id": "GoohaiDisplayAny",
       "source_class": "GoohaiDisplayAny",
@@ -574,7 +574,7 @@
     {
       "id": "QG_IfElse",
       "class": "QGIfElse",
-      "display": "QG 是否判断",
+      "display": "是否判断",
       "category": "QG-tools/逻辑",
       "source_id": "easy ifElse",
       "source_class": "IfElse",
@@ -594,7 +594,7 @@
     {
       "id": "QG_TripleLoader",
       "class": "QGTripleLoader",
-      "display": "QG 模型加载器",
+      "display": "模型加载器",
       "category": "QG-tools/加载器",
       "source_id": "TripleLoader",
       "source_class": "TripleLoader",
@@ -619,7 +619,7 @@
     {
       "id": "QG_ImageResize",
       "class": "QGImageResize",
-      "display": "QG 图像缩放",
+      "display": "图像缩放",
       "category": "QG-tools/Image",
       "source_id": "rgthree-comfy",
       "source_class": "RgthreeImageResize",
@@ -634,7 +634,7 @@
     {
       "id": "QG_ImageOrLatentSize",
       "class": "QGImageOrLatentSize",
-      "display": "QG 图像或 Latent 尺寸",
+      "display": "图像或 Latent 尺寸",
       "category": "QG-tools/Image",
       "source_id": "rgthree-comfy",
       "source_class": "RgthreeImageOrLatentSize",
@@ -649,7 +649,7 @@
     {
       "id": "QG_Seed",
       "class": "QGSeed",
-      "display": "QG 种子",
+      "display": "种子",
       "category": "QG-tools/逻辑",
       "source_id": "rgthree-comfy + ComfyUI-AusBoss",
       "source_class": "RgthreeSeed",
@@ -661,12 +661,12 @@
         "web/seed/index.js",
         "web/shared/seed_history.mjs"
       ],
-      "notes": "种子控制。v0.8.5 起改成 AusBoss 的卡片模型：seed 是非负 INT，模式由 ComfyUI 自动附加的 control_after_generate 承载（前端藏起来，由「随机值 / 固定 / Step」驱动），后端通过 ui.seed 回传本次真正用的种子，前端据此记 8 条历史、「用上次」与底部「上次运行」。老工作流的 -1/-2/-3 哨兵在 onConfigure 里翻译成「随机值 / Step +1 / Step -1」；v0.8.4 之前包装 app.queuePrompt 改写哨兵的那套代码已删除。跨标签页的运行隔离（AusBoss 的 prompt_scope）未移植：多标签页同时跑时历史可能记到别的标签页的种子。"
+      "notes": "种子控制。v0.8.5 起改成 AusBoss 的卡片模型：seed 是非负 INT，模式由 ComfyUI 自动附加的 control_after_generate 承载（前端藏起来，由「随机值 / 固定 / Step」驱动），后端通过 ui.seed 回传本次真正用的种子，前端据此记 8 条历史、「用上次」与底部「上次运行」。老工作流的 -1/-2/-3 哨兵在 onConfigure 里翻译成「随机值 / Step +1 / Step -1」；v0.8.4 之前包装 app.queuePrompt 改写哨兵的那套代码已删除。跨标签页的运行隔离已随图像对比一并移植（web/prompt_scope + web/shared/prompt_scope.mjs，全局扩展）：别的标签页排队的那次运行，结果不会落到本标签的种子历史上。"
     },
     {
       "id": "QG_ImageWatermark",
       "class": "QGImageWatermark",
-      "display": "QG 图像水印",
+      "display": "图像水印",
       "category": "QG-tools/Image",
       "source_id": "AddImageWatermark",
       "source_class": "WatermarkMaster",
@@ -681,7 +681,7 @@
     {
       "id": "QG_TextOverlayImage",
       "class": "QGTextOverlayImage",
-      "display": "QG 文字叠加图像",
+      "display": "文字叠加图像",
       "category": "QG-tools/文本",
       "source_id": "TextOverlayImage",
       "source_class": "TextOverlayImage",
@@ -696,7 +696,7 @@
     {
       "id": "QG_ImageGrid",
       "class": "QGImageGrid",
-      "display": "QG 宫格图像拼接",
+      "display": "宫格图像拼接",
       "category": "QG-tools/Image",
       "source_id": "MuyeGridImageConcat",
       "source_class": "宫格图像拼接",
@@ -711,7 +711,7 @@
     {
       "id": "QG_MaskColorize",
       "class": "QGMaskColorize",
-      "display": "QG 遮罩上色",
+      "display": "遮罩上色",
       "category": "QG-tools/遮罩",
       "source_id": "MaskColorize",
       "source_class": "MaskColorize",
@@ -726,7 +726,7 @@
     {
       "id": "QG_MaskConcat",
       "class": "QGMaskConcat",
-      "display": "QG 遮罩拼接",
+      "display": "遮罩拼接",
       "category": "QG-tools/遮罩",
       "source_id": "MaskConcatenate",
       "source_class": "MaskConcatenate",
@@ -741,7 +741,7 @@
     {
       "id": "QG_TextReplace",
       "class": "QGTextReplace",
-      "display": "QG 批量文本替换",
+      "display": "批量文本替换",
       "category": "QG-tools/文本",
       "source_id": "BatchTextReplace",
       "source_class": "BatchTextReplace",
@@ -756,7 +756,7 @@
     {
       "id": "QG_TextSplit",
       "class": "QGTextSplit",
-      "display": "QG 文本按分隔符分割",
+      "display": "文本按分隔符分割",
       "category": "QG-tools/文本",
       "source_id": "TextSplitByDelimiterEnhanced",
       "source_class": "TextSplitByDelimiterEnhanced",
@@ -771,7 +771,7 @@
     {
       "id": "QG_SizeSelector",
       "class": "QGSizeSelector",
-      "display": "QG 尺寸选择器",
+      "display": "尺寸选择器",
       "category": "QG-tools/Image",
       "source_id": "MuyeSizeSelector",
       "source_class": "MuyeSizeSelector",
@@ -782,6 +782,34 @@
         "nodes/qg_size_selector.py"
       ],
       "notes": "修上游两个 bug：① 潜在通道数写死 16，SD1.5 / SDXL 会直接错，改为 latent_channels 下拉（4 / 16）；② ratio 填「无」时长边同时套到宽高，2:3 预设被压成正方形，改为按原比例换算。"
+    },
+    {
+      "id": "QG_ImageCompare",
+      "class": "QGImageCompare",
+      "display": "图像对比",
+      "category": "QG-tools/Image",
+      "source_id": "AUSBOSS_NODES_Compare",
+      "source_class": "AusBossCompare",
+      "source_display": "Image Compare A/B 🆎",
+      "source_category": "🆎 AusBoss/Image",
+      "source_license": "MIT",
+      "source_ref": "ComfyUI-AusBoss（nodes/node_compare.py、nodes/_preview_helpers.py、nodes/_compare_helpers.py、nodes/_brush_helpers.py、nodes/_psd_helpers.py、js/compare/index.js、js/shared/compare.mjs、js/shared/compare_erase.mjs、js/shared/compare_erase_stage.mjs、js/shared/brush.mjs、js/shared/slide_switch.mjs、js/shared/prompt_scope.mjs、js/prompt_scope/index.js；MIT）",
+      "kind": "backend+frontend",
+      "files_new": [
+        "nodes/qg_image_compare.py",
+        "nodes/_qg_compare_helpers.py",
+        "nodes/_qg_brush_helpers.py",
+        "nodes/_qg_psd_helpers.py",
+        "web/image_compare/index.js",
+        "web/shared/compare.mjs",
+        "web/shared/compare_erase.mjs",
+        "web/shared/compare_erase_stage.mjs",
+        "web/shared/brush.mjs",
+        "web/shared/slide_switch.mjs",
+        "web/shared/prompt_scope.mjs",
+        "web/prompt_scope/index.js"
+      ],
+      "notes": "四种用法：滑动 / 只看 A / 只看 B / 擦除。后端把两路图各取第一帧写成 temp 预览（前缀按节点实例区分，同一工作流放两个对比节点不互相覆盖），通过 ui.a_images / ui.b_images 回传；image_a 原样透传，节点本身是 OUTPUT_NODE。🔴 擦除存的是**笔画**不是位图：properties.qg_compare_paint = { w, h, strokes }，一笔 { o, d, s, p }（擦/画、笔宽、软度、路径）；保存时由 POST /qg/compare/save 按原图尺寸重画，所以和面板显示多大无关；图换尺寸旧笔迹自动丢。🔴 浏览器从不指名读文件：运行时把两张预览位置记进最多 64 条的 OrderedDict，给面板一个随机键（ui.pair），保存把它发回来；名字只放行 [\\w][\\w .\\-]*，落盘前再过 require_output_path 防穿越。可选输入 filename 接一根线给保存文件起名（目录和扩展名去掉），接上后节点上的名字框变灰只显示它。prompt_scope 一并移植（web/prompt_scope 是全局扩展，不专属于本节点）。🔴 前端 1.53 里 app 会在扩展加载之后把 api.queuePrompt 再包一层（函数名 collapsing），加载期打的补丁会被覆盖 → 改成 registerExtension 的 setup() 里再装一次、2 秒兜底重试；包装时把 app.api / globalThis.api / 模块导出的 api 三个候选都试一遍。上游 sizeAfterErase 那段是死代码（SIZE_BEFORE_ERASE 从来没被写入），没搬。"
     }
   ],
   "kept_on_purpose": [

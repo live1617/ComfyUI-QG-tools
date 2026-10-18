@@ -126,6 +126,6 @@ class QGTextReplace:
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextReplace": QGTextReplace}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextReplace": "QG 批量文本替换"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextReplace": "批量文本替换"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

@@ -1,28 +1,28 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026101603";
-import { hideInputsInDef, hideWidget } from "./widget_visibility.mjs?v=2026101603";
-import { mountTransformTrim } from "./transform_trim.mjs?v=2026101603";
-import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026101603";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026101603";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026101603";
-import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=2026101603";
-import { createMediaPicker } from "./media_picker.mjs?v=2026101603";
-import { normalizeFillColor } from "./fill_color.mjs?v=2026101603";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101603";
-import { confirmDiscard } from "./discard_prompt.mjs?v=2026101603";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101603";
-import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026101603";
-import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026101603";
-import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026101603";
-import { createSettle } from "./settle.mjs?v=2026101603";
+import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026101802";
+import { hideInputsInDef, hideWidget } from "./widget_visibility.mjs?v=2026101802";
+import { mountTransformTrim } from "./transform_trim.mjs?v=2026101802";
+import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026101802";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026101802";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026101802";
+import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=2026101802";
+import { createMediaPicker } from "./media_picker.mjs?v=2026101802";
+import { normalizeFillColor } from "./fill_color.mjs?v=2026101802";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026101802";
+import { confirmDiscard } from "./discard_prompt.mjs?v=2026101802";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101802";
+import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026101802";
+import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026101802";
+import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026101802";
+import { createSettle } from "./settle.mjs?v=2026101802";
 import {
   INPUT_FOLDER_MODE,
   LOCAL_PATH_MODE,
   normalizeVideoOptions,
   mediaSourceState,
   videoSourceState,
-} from "./video_source_card.mjs?v=2026101603";
+} from "./video_source_card.mjs?v=2026101802";
 import {
   alignChanges,
   aspectMatches,
@@ -77,9 +77,9 @@ import {
   turnedCrop,
   wrapDegrees,
   zoomAround,
-} from "./transform_geometry.mjs?v=2026101603";
-import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026101603";
-import { liftSocket } from "./widget_card.mjs?v=2026101603";
+} from "./transform_geometry.mjs?v=2026101802";
+import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026101802";
+import { liftSocket } from "./widget_card.mjs?v=2026101802";
 
 const HIDDEN_WIDGETS = [
   "image", "upload",

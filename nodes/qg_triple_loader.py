@@ -164,6 +164,6 @@ class QGTripleLoader:
 
 
 NODE_CLASS_MAPPINGS = {"QG_TripleLoader": QGTripleLoader}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TripleLoader": "QG 模型加载器"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TripleLoader": "模型加载器"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

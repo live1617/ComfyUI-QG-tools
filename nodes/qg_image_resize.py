@@ -139,4 +139,4 @@ class QGImageResize:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageResize": QGImageResize}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageResize": "QG 图像缩放"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageResize": "图像缩放"}

@@ -148,7 +148,7 @@ class QGLoraLoader:
 
 
 NODE_CLASS_MAPPINGS = {"QG_LoraLoader": QGLoraLoader}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_LoraLoader": "QG LoRA Loader"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_LoraLoader": "LoRA Loader"}
 
 register_lora_routes()
 

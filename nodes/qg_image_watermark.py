@@ -261,6 +261,6 @@ class QGImageWatermark:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageWatermark": QGImageWatermark}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageWatermark": "QG 图像水印"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageWatermark": "图像水印"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

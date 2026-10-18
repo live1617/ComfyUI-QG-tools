@@ -110,6 +110,6 @@ class QGMaskColorize:
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskColorize": QGMaskColorize}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_MaskColorize": "QG 遮罩上色"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_MaskColorize": "遮罩上色"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

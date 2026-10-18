@@ -67,4 +67,4 @@ class QGSeed:
 
 
 NODE_CLASS_MAPPINGS = {"QG_Seed": QGSeed}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_Seed": "QG 种子"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_Seed": "种子"}

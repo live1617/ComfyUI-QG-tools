@@ -256,6 +256,6 @@ class QGSizeSelector:
 
 
 NODE_CLASS_MAPPINGS = {"QG_SizeSelector": QGSizeSelector}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_SizeSelector": "QG 尺寸选择器"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_SizeSelector": "尺寸选择器"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

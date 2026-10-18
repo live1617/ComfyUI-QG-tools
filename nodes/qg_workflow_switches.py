@@ -66,6 +66,6 @@ class QGWorkflowSwitches:
 
 
 NODE_CLASS_MAPPINGS = {"QG_WorkflowSwitches": QGWorkflowSwitches}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_WorkflowSwitches": "QG Workflow Switches"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_WorkflowSwitches": "Workflow Switches"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

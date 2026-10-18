@@ -179,7 +179,7 @@ class QGImageCropRotatePad:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageCropRotatePad": QGImageCropRotatePad}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageCropRotatePad": "QG Image Crop + Rotate + Pad"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageCropRotatePad": "Image Crop + Rotate + Pad"}
 
 register_video_routes()
 

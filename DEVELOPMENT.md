@@ -43,11 +43,15 @@ ComfyUI-QG-tools/
 本插件所有节点统一：
 
 - **节点 ID**：`QG_` 前缀
-- **显示名**：`QG ` 前缀
+- **显示名**：**不带** `QG ` 前缀（2026-10-18 起；标题栏只留功能名，分类已经说明归属）
 - **分类**：`QG-tools`（再多就 `QG-tools/子分类`）
 - **前端扩展注册名**：`QG.<NodeName>`
 - **后端路由**：`/qg/<功能>/...`
 - **私有 CSS 类名 / style 元素 id**：`qgtools-` 前缀
+
+显示名去掉 `QG` 之后，中文标题就搜不到英文关键词了，所以每个节点必须同时在
+`web/shared/node_aliases.mjs` 里登记一组英文叫法（`tools/verify_display_names.py`
+会检查键不漏不多、别名非空）。
 
 ## 怎么加节点
 
@@ -56,7 +60,7 @@ ComfyUI-QG-tools/
 
 ```python
 NODE_CLASS_MAPPINGS = {"QG_MyNode": QGMyNode}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "QG 我的节点"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "我的节点"}
 ```
 
 3. 节点类里写 `CATEGORY = "QG-tools"`，菜单里就会归到 QG-tools 下面。
@@ -157,7 +161,7 @@ AusBoss 源码硬编码路径写的，通用性有限。下面「搬家记录」
 | 改动 | 从 | 到 |
 |---|---|---|
 | 节点 ID | `AUSBOSS_NODES_LoraLoader` | `QG_LoraLoader` |
-| 显示名 | `LoRA Loader 🆎` | `QG LoRA Loader` |
+| 显示名 | `LoRA Loader 🆎` | `LoRA Loader` |
 | 分类 | `🆎 AusBoss/Loaders` | `QG-tools` |
 | Python 类名 | `AusBossLoraLoader` | `QGLoraLoader` |
 | 节点文件名 | `nodes/ausboss_lora_loader.py` | `nodes/qg_lora_loader.py` |
@@ -317,7 +321,7 @@ Python（全部 `_qg_` 前缀，与 `_qg_lora_helpers.py` 一致）：
 | 节点 ID | `AUSBOSS_NODES_ImageCropRotatePad` | `QG_ImageCropRotatePad` |
 | Python 类名 | `AusBossImageCropRotatePad` | `QGImageCropRotatePad` |
 | 分类 | `🆎 AusBoss/Image` | `QG-tools/Image` |
-| 显示名 | `Image Crop + Rotate + Pad 🆎` | `QG Image Crop + Rotate + Pad` |
+| 显示名 | `Image Crop + Rotate + Pad 🆎` | `Image Crop + Rotate + Pad` |
 | 前端扩展注册名 | `ausboss.transform.<节点ID>` | `QG.transform.<节点ID>` |
 | | `ausboss.widget_kv` | `QG.widget_kv` |
 | **后端路由** | `/ausboss/transform/video/*`（4 条）、`/ausboss/pack_version` | `/qg/transform/video/*`、`/qg/pack_version` |
@@ -505,7 +509,7 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
   + `OUTPUT_NODE = True`，`process_text` 返回 `([text],)` —— **整段作为一个元素传出，
   绝不按换行切分**（上游语义如此；切了就变成多路输出，接下游会炸）。
 - **改名**：`MuyeTextEditOutput` → `QG_TextEditOutput` / `QGTextEditOutput`；
-  display 从中文「文本」改成 `QG Text`（中文标题「QG 文本」；v0.8.5 期按用户要求去掉「编辑」二字）；CATEGORY 走 `QG-tools/文本`。
+  display 从中文「文本」改成 `Text`（中文标题「QG 文本」；v0.8.5 期按用户要求去掉「编辑」二字）；CATEGORY 走 `QG-tools/文本`。
 - **许可证**：上游 `ComfyUI-Muye-nodes` 是 MIT（copyright 2025 muye_xiuluo），
   全文已落到 `licenses/ComfyUI-Muye-nodes-LICENSE.txt`；README 的许可证段一并列了出处。
 - **i18n**：`locales/zh/nodeDefs.json` 的 `QG_TextEditOutput` 四条（display_name /
@@ -571,7 +575,7 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
   节点数从 23 掉到 20。
 - `tools/verify_085_live.py`：8199 实例 `/object_info` 逐字比对两套字典（见验收报告）。
 
-## QG 种子 换脸记录（AusBoss 种子卡，v0.8.5）
+## 种子 换脸记录（AusBoss 种子卡，v0.8.5）
 
 节点 ID 不变（`QG_Seed`），只把 rgthree 那套「seed 控件 + 三个按钮 + 前端包装
 `queuePrompt` 改写哨兵」换成 AusBoss 的卡片模型：
@@ -583,17 +587,83 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
   旧的 `IS_CHANGED` 随机兜底随之删除（哨兵没了，缓存靠种子本身变化来区分）。
 - **前端**：`web/seed/index.js` 整份重写；新增 `web/shared/seed_history.mjs`
   （AusBoss 同源，纯逻辑：`seedFromExecuted` / `pushSeed` / `formatSeed`）。
-  复制按钮用 SVG 图标（与 `QG 展示任意` 一致），卡片配色走 `BRAND`。
+  复制按钮用 SVG 图标（与 `展示任意` 一致），卡片配色走 `BRAND`。
 - **老存档迁移**：`-1 / -2 / -3` 在 `onConfigure` 里翻译成「随机值 / Step +1 / Step -1」
   并当场抽一枚种子；只存了一个种子、没有模式的存档（v0.8.4 那版把控件摘掉了）
   一律按「固定」处理，否则会被默认的「随机值」抽走。
 - **新节点默认值**：`control_after_generate` 默认就是 `randomize`，而 ComfyUI 的
   生成后控制是「排队之后」才改值 → 新节点第一次排队会跑 0 号种子。所以
   `onNodeCreated` 里当场抽一枚（加载工作流时 `onConfigure` 会用存档值覆盖）。
-- **没搬**：AusBoss 的跨标签页运行隔离（`js/prompt_scope` + `shared/prompt_scope.mjs`，
-  92 行 + api 接线）。多标签页同时跑时，历史可能记到别的标签页的种子。
+- **没搬**：AusBoss 的跨标签页运行隔离（`js/prompt_scope` + `shared/prompt_scope.mjs`）。
+  这一条在搬「图像对比」时补上了，见下一节。
 - **校验**：`tools/probe_seed_card.py`（CDP，27 项）+ `tools/gen_seed_i18n.py`
   （两套字典由后端定义生成，tooltip 逐字一致）。
+
+## 图像对比 搬家记录（AusBoss，第一批：滑动 / A / B）
+
+`AUSBOSS_NODES_Compare` → `QG_ImageCompare`（`QG-tools/Image`）。上游约 3900 行，这次只搬
+「滑动 / A / B」这一支；橡皮擦（`compare_erase*.mjs` 约 2260 行）与保存合成图的
+`POST /ausboss/compare/save` 路由留到第二批。
+
+- **后端** `nodes/qg_image_compare.py`（约 130 行，零新增依赖）：两路 IMAGE 各取第一帧写进
+  temp（`folder_paths.get_save_image_path`），前缀按实例区分（`qg_compare_` + 5 位随机），
+  所以一个工作流放两个对比节点不会互相覆盖；`ui` 回 `a_images` / `b_images`。
+  `image_a` 原样从 `result` 送出，节点本身是 `OUTPUT_NODE`。
+- **前端** `web/image_compare/index.js`：DOM 面板 + 模式切换条（`web/shared/slide_switch.mjs`，
+  前缀改成 `qgtools-slide`）。台面用 `<img>` 叠两层 + `clip-path` 裁左半，竖线与 A/B 标签
+  跟着 fraction 走。`compare.mjs` 的纯逻辑（`slideFraction` / `compareClip` / `compareBadges` /
+  `compareResultSide`）原样搬过来，「结果」按连线判断，同一子图里的两路会钻进去找。
+- **跨标签页串台** `web/prompt_scope/index.js` + `web/shared/prompt_scope.mjs`：
+  🔴 上游在模块顶层就包 `api.queuePrompt`，**在本机前端 1.53 上会被覆盖**——核心会在扩展加载之后
+  再包一层（函数名 `collapsing`），于是原来的补丁形同不存在，`runScope.current` 永远是 null。
+  改法：包的动作放进 `registerExtension({ setup() })` 里再装一次，另加 2 秒兜底重试；
+  候选实例 `app.api` / `globalThis.api` / 模块导出的 `api` 三个都试，谁有 `queuePrompt` 就包谁。
+  探针里 `[FAIL] runScope 认得刚才那次运行` 就是撞的这条，别删那段兜底。
+- **另一个坑**：同一个 `.mjs` 带 `?v=` 和不带是**两个模块实例**，`runScope` 状态互不相通。
+  插件自己的代码一律带 `?v=2026101603`；探针要验状态也必须用带 `?v=` 的那条 URL。
+- **模式与存档**：模式存 `node.properties.qg_compare_mode`（`slide` / `toggle`），
+  toggle 的那一侧存 `qg_compare_side`（`A` / `B`）；`hold` 这种老模式名映射到 `toggle`。
+- **校验**：`tools/probe_image_compare.py`（CDP，真跑一次两个 `EmptyImage` → 42 项）、
+  `tools/gen_image_compare_i18n.py`（两套字典由后端定义生成）。
+
+## 图像对比 搬家记录（AusBoss，第二批：橡皮擦 + 保存）
+
+补上第一批留下的那一半。上游橡皮擦相关约 2260 行，这里实际搬了 `compare_erase.mjs`（185）
++ `compare_erase_stage.mjs`（920）+ `brush.mjs`（168），再加后端约 400 行。
+
+- **存的是笔画，不是位图**：面板只往 `properties.qg_compare_paint` 里存
+  `{ w, h, strokes }`，一笔是 `{ o, d, s, p }`（擦/画、笔宽、软度、路径）。所以保存时
+  由服务端按**原图尺寸**重画一遍，跟面板当时显示到多大无关。图换了尺寸，旧笔迹自动丢掉
+  （`readPaint` 只认 `w`/`h` 对得上的）。
+- **前端三个新模块**：`compare_erase.mjs`（纯逻辑，`thinStroke` / `extendStroke` 从上游
+  `touch_math.mjs` 里摘出来内联，免得为两个函数拖进 1174 行）、`compare_erase_stage.mjs`
+  （画布 + 工具行 + 保存行，920 行）、`brush.mjs`（全包共用的画笔数学，改成中文 `brushWords`）。
+- **后端三个新模块**：`_qg_brush_helpers.py`（笔芯/软边/`stroke_cover`）、
+  `_qg_psd_helpers.py`（PSD 写入器，139 行原样搬）、`_qg_compare_helpers.py`
+  （笔画校验 + 遮罩 + 混合 + 命名 + 预览键；`next_free_counter` / `require_output_path` /
+  `strip_image_extension` 三个小工具内联，省得拖上游 354 行的 `_image_save_helpers`）。
+- 🔴 **浏览器从不指名要读哪个文件**：每次运行把两张 temp 预览的位置记进一个最多 64 条的
+  `OrderedDict`，给面板一个 `secrets.token_urlsafe(16)` 的随机键（`ui.pair`）；保存时把这个键
+  发回来。请求里唯一能带的文字是新文件的名字，`clean_save_name` 只放行
+  `[\w][\w .\-]*`（去扩展名后 ≤ 80 字），路径穿越和目录一律拒——不是「修」成合法名字。
+- 🔴 **防路径穿越有两道**：名字先过正则，落盘前再过 `require_output_path`（`resolve()` 后必须
+  在 output 根目录里），因为文件名本身可以是一个符号链接。
+- **保存是离线重算**：`POST /qg/compare/save` 走 `run_in_executor`，不占服务器自己的线程；
+  笔画有上限（400 笔 / 单笔 600 点 / 共 40000 点 / 坐标不超过画外 4096px），超了就拒而不是崩。
+- **PSD**：`layers` 打开时另写 `<name>_00001.psd`（底下那张一层，上面那张一层 + 擦掉的部分作
+  图层蒙版）+ `<name>_00001_mask.png`（下面那张露出来处为白）。不压缩写，所以文件大但写得准。
+- **工具行的键盘**：`[` `]` 改笔宽、`Shift` 加它们改软度、`E`/`B` 切擦/画、`Ctrl` 或右键临时反着
+  做、`Alt`+右键拖动调笔（横拖改宽、竖拖改软）、`Esc` 取消这一笔。`Ctrl+Z` 留给 ComfyUI
+  ——一笔对图来说就是一次改动，它的撤销连笔画一起退。
+- **切回滑动不撑高节点**：上游有一段 `sizeAfterErase`（记下撑高前后的尺寸再收回），但那个
+  `SIZE_BEFORE_ERASE` 属性在上游**从来没被写入过**，等于死代码；这里没搬。工具行窄了就折行，
+  「地方从图上出」，节点宽度不变（真机验过 `[420,326]` 进出擦除完全一致）。
+- **不走上游的两件事**：`video_ui.mjs` 的 `makeToolButton` 只为一个 22px 按钮，这里直接画；
+  `canvas_passthrough.mjs` 只用到 `keepKeyInField`，插件里早就有这份（`web/shared/`），直接复用。
+- **校验**：`tools/test_compare_erase.py`（纯后端数值，47 项：笔画/名字校验、混合像素、
+  软边过渡、PSD 头、遮罩极性、编号递增、换方向擦、预览键 404 —— 用 ComfyUI 的 python 跑）；
+  `tools/probe_compare_erase.py`（CDP 真机，62+ 项：真画一笔、撤销、清空、真保存并下载回来、
+  `filename` 接线后名字框变灰）。
 
 ## appearance 全局扩展（AusBoss 全局前端层，v0.6.0）
 
