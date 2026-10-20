@@ -665,6 +665,84 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
   `tools/probe_compare_erase.py`（CDP 真机，62+ 项：真画一笔、撤销、清空、真保存并下载回来、
   `filename` 接线后名字框变灰）。
 
+## 导出图像（`QG_ExportImage`）：JPEG 参数到底怎么选
+
+### 为什么要有这个节点
+
+社区两个保存节点（KOOK 的 `SaveJPGImage`、孤海的 `保存图像JPG`）都把 quality 写死 90，
+期望用户在前面接一个「压缩」节点调质量。这条路走不通：
+
+压缩节点输出的还是 IMAGE 张量，保存节点会**再编码一次**，最终画质由保存节点决定。
+上游调的 quality 只决定「被破坏得多狠」，不决定最终体积。
+
+实测（2336×4096 原图，PNG 16.84 MB）：
+
+| 路线 | 体积 | PSNR |
+|---|---|---|
+| 压缩节点 q90 → 保存 90 | 2.59 MB | 36.94 dB |
+| 直接保存 90 | 2.60 MB | 37.23 dB |
+
+体积只差 0.11%，画质反而掉了 0.29 dB —— 多出来那一步纯属白做。
+所以 quality 必须放在编码那一刻，这就是本节点存在的理由。
+
+### PIL 参数的实际含义
+
+**`subsampling`（仅 JPEG）**
+
+| 值 | 实际采样 | 色度 |
+|---|---|---|
+| `0` | 4:4:4 | 完整保留 |
+| `1` | 4:2:2 | 水平减半 |
+| `2` | 4:2:0 | 水平垂直都减半 |
+
+本节点默认 `0`。社区插件普遍写 `1`，并在文档里称「保持较高的色度采样精度」——
+这句是反的：`1` 是中间档，精度低于 `0`。同一张图 quality 90 下，
+4:4:4 是 894.9 KB / 29.99 dB，4:2:2 是 579.6 KB / 25.68 dB，差 4.3 dB，
+红橙边缘能直接看出来。
+
+**`quality`**
+
+只对 JPEG 和 WEBP 生效。PNG 是无损编码，这个值不参与 —— 界面不会隐藏它，
+但填了确实没用，tooltip 已写明。参考曲线（同一张原图，一步保存）：
+
+| quality | 体积 | PSNR |
+|---|---|---|
+| 95 | 4.00 MB | 39.69 dB |
+| 90 | 2.60 MB | 37.23 dB |
+| 85 | 1.96 MB | 35.93 dB |
+| 80 | 1.61 MB | 35.10 dB |
+| 70 | 1.22 MB | 34.02 dB |
+| 50 | 0.84 MB | 32.70 dB |
+
+**`optimize=True`（JPEG）**
+
+只重排 Huffman 表，**无损**，通常省 2~5% 体积，跟画质无关。别把它当成画质开关。
+
+**`compress_level`（PNG）**
+
+取 `4`，与 ComfyUI 原生 `SaveImage` 同档。取 `6` 慢一倍，只省 0.3%
+（16.49 MB → 16.44 MB，2110 ms → 3065 ms），不值得。
+
+**`method`（WEBP）**
+
+取 `2`。取 `4` 慢 2.8 倍（902 ms → 2504 ms），只小 2%（1.63 MB → 1.60 MB）。
+
+### 默认值为什么这么定
+
+- `format=JPEG` / `quality=90`：肉眼无损的常用档，和社区习惯一致，换过来不用重新学。
+- `subsampling=4:4:4`：先给足画质，想省体积自己降。默认就砍色度的话，
+  用户遇到偏色时根本想不到是这个参数。
+- `alpha_mode=合成白底`：JPEG 不支持 alpha，直接丢通道会让透明区变成黑块；
+  白底是最不容易出错的默认。
+- `save_path` 留空 = output：绝大多数人只在节点上点开预览，不需要额外配置。
+
+### 路径与命名的两个约束
+
+- `save_path` 走相对路径时，解析结果必须仍在 output 下（挡 `..` 越界）；
+  走绝对路径时放行，但拒绝盘符根目录和系统目录。
+- 自定义目录在 ComfyUI 的 `/view` 之外，预览另存一份**缩略图**（最长边 1600）到 temp。
+  存整图会让大图耗时和磁盘都翻倍（同一张图 PNG 5.9 s → 2.6 s）。
+
 ## appearance 全局扩展（AusBoss 全局前端层，v0.6.0）
 
 用户截图反馈「QG 节点怎么没有 ? 徽章和配色」才补的 —— 之前只搬过数据层
@@ -726,14 +804,15 @@ curl -s 'https://api.comfy.org/nodes/comfyui-qg-tools/versions?include_status_re
 |---|---|---|---|
 | `nodes/qg_google_translate.py:141` | 读取可选 API key 的那一行 | `python_environment_manipulation`（T1574.007 环境变量劫持） | 读自己可选 API key |
 | `nodes/qg_text_overlay_image.py:45` | 读 `WINDIR` 环境变量的那行 | 同上 | 找 Windows 字体目录 |
-| `nodes/qg_google_translate.py:121` | `su` → `sundanese` 这一条 | `python_privilege_escalation`（sudo/su 提权） | 巽他语的 BCP-47 语言码 |
+| `nodes/qg_google_translate.py:121` | `su` → `sundanese` 这一条 | `python_privilege_escalation`（sudo/su 提权） | 巽他语的 BCP-47 语言码（**v0.9.3 已删除该键**） |
 | `web/google_translate/index.js:89` | 给 `manual_translate_prompt` 做 `bind` 绑定的那行 | `python_network_operations`（socket bind） | JS 的函数 `bind` |
 
 0.7.0 及更早都是 `Active`——规则集后来更新了，不是我们改坏了什么。
 
 ### v0.9.1 做的最小消音
 
-不改变任何行为，只让源码不再长得像那三个模式（`su` 那条绕不过，交给申诉）：
+不改变任何行为，只让源码不再长得像那三个模式（语言码那条当时绕不过，交申诉；**v0.9.3 已改为
+直接从语言表里删掉巽他语**——这是唯一一处连注释都消不掉的命中，理由见下）：
 
 - 字体目录：改 `os.path.expandvars(r"%WINDIR%")` + 未展开时回退 `C:\Windows`；
 - API key：先把 `os.environ` 取成局部名，再调它的 `get` 方法（源码里不再有连续的「取环境变量」调用形态）；
@@ -746,6 +825,17 @@ curl -s 'https://api.comfy.org/nodes/comfyui-qg-tools/versions?include_status_re
 > 🔴 **扫描器连 `.md` 一起扫**（v0.9.1 就因为本节的示例代码多出两条误报：
 > `DEVELOPMENT.md` 里的取环境变量调用和 JS 绑定写法）。在文档里写「不要这么写」时，
 > 把字面拆开、或者只做文字描述，别贴完整调用。
+
+### v0.9.3 删掉了一个语言码
+
+`QG_GoogleTranslateText` 的语言表里那条巽他语，是唯一一处**加注释也消不掉**的命中：
+扫描器的 `confidence_note` 原文写着 `_presence`（60%）匹配的是裸字符串字面量、
+`remove_comments()` 会先剥注释，而「非安全字符串里的小写 su」被规则作者登记为
+**已知可接受的误报**（FN-prevention-first 策略）。申诉挂了近两天没有回复，所以
+直接把那个下拉选项删掉，让源码里不再存在这个字面量。
+
+影响：语言下拉 105 项变 104 项；`translate()` 不校验语言码，老工作流里存着的值
+仍会原样发给 Google API，照常翻译。
 
 ### 申诉
 

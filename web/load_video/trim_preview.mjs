@@ -1,6 +1,6 @@
-import { clamp, finiteNumber } from "../shared/video_preview.mjs?v=2026101802";
+import { clamp, finiteNumber } from "../shared/video_preview.mjs?v=2026102002";
 
-export { responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026101802";
+export { responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026102002";
 
 export const MIN_TRIM_SECONDS = 0.1;
 

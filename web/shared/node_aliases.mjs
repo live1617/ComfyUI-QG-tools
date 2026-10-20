@@ -121,6 +121,22 @@ export const NODE_ALIASES = {
         "before after", "diff", "slide compare",
         "image",
     ],
+    QG_ExportImage: [
+        "save image", "saveimage", "export image", "exportimage",
+        "save", "export", "write image",
+        "jpg", "jpeg", "png", "webp", "quality", "compress",
+        "image",
+    ],
+    QG_CanvasLabel: [
+        "canvas label", "canvaslabel", "label", "text label", "sticky note",
+        "note", "annotation", "comment", "title", "caption",
+        "text",
+    ],
+    QG_MarkdownNote: [
+        "markdown note", "markdownnote", "markdown", "md note", "sticky note",
+        "note", "annotation", "comment", "documentation",
+        "markdown text",
+    ],
 };
 
 export const NODE_ALIAS_COUNT = Object.keys(NODE_ALIASES).length;

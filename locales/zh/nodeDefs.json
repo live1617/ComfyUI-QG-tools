@@ -816,5 +816,52 @@
         "tooltip": "输入 A 的一批图，原样送出，方便接在流程中间。"
       }
     }
+  },
+  "QG_ExportImage": {
+    "display_name": "导出图像",
+    "description": "把图像批次存成 JPEG / PNG / WEBP，质量参数就放在真正决定文件大小的地方——编码器。JPEG 可以调质量和色度采样，PNG 保持无损，WEBP 既能调质量又支持透明；带透明通道的图可以合成到白底或黑底，不会留下黑边。文件名跟 ComfyUI 原生保存节点完全一致（ComfyUI_00001_.png，5 位递增计数，自动跳过已有编号），前缀还支持 %date:yyyyMMdd% / %time:HHmmss% 日期时间和 %INDEX% / %BATCH% 序号模板，默认写 ComfyUI 的 output 目录，也可以指定子目录或绝对路径。",
+    "inputs": {
+      "images": {
+        "name": "图像",
+        "tooltip": "要导出的图像批次；批次里每张都会单独存成一个文件"
+      },
+      "format": {
+        "name": "格式",
+        "tooltip": "JPEG 有损、体积最小；PNG 无损、体积大；WEBP 兼顾两者并支持透明"
+      },
+      "quality": {
+        "name": "质量",
+        "tooltip": "编码质量，只对 JPEG 和 WEBP 生效（PNG 无损，填了也没用）。90 是肉眼无损的常用档；想明显省体积降到 85，再往下画质开始看得出来"
+      },
+      "subsampling": {
+        "name": "色度采样",
+        "tooltip": "只对 JPEG 生效。4:4:4 保留全部彩色细节；4:2:2 省约 15% 体积、红橙边缘开始发软；4:2:0 再省一些，缩小到一半看才明显"
+      },
+      "alpha_mode": {
+        "name": "透明处理",
+        "tooltip": "输入带透明通道时怎么处理：合成到白底或黑底后存成不透明图；或者原样保留透明（只有 PNG / WEBP 支持，选 JPEG 时会自动改成白底）"
+      },
+      "filename_prefix": {
+        "name": "文件名前缀",
+        "tooltip": "只写文件名，不要写目录。命名规则和 ComfyUI 原生保存节点完全一致：成品形如 ComfyUI_00001_.png，5 位递增计数，自动跳过目录里已有的编号。可用变量：%date:yyyyMMdd% 日期、%time:HHmmss% 时间、%INDEX% 批次内序号、%BATCH% 批次总数；也认原生那套 %width% %height% %year% %month% %day% %hour% %minute% %second% %batch_num%"
+      },
+      "save_path": {
+        "name": "保存路径",
+        "tooltip": "留空写 ComfyUI 的 output 目录；也可以写子目录名，或整条绝对路径（例如 D://出图//今天）。系统目录会被拒绝"
+      }
+    },
+    "outputs": {}
+  },
+  "QG_CanvasLabel": {
+    "display_name": "画布标签",
+    "description": "放在画布任意位置的一块纯文字：分区标题、一句提醒、给某个组加的注释。不接线、不参与运行。双击（或右键 → 编辑标签…）会在节点正下方弹出浮动工具条，字号、字体、颜色、背景、圆角、内边距、对齐和旋转都边改边在画布上实时生效。要标题、列表、表格或代码块，就改用 Markdown 便签。",
+    "inputs": {},
+    "outputs": {}
+  },
+  "QG_MarkdownNote": {
+    "display_name": "Markdown 便签",
+    "description": "画布上的 Markdown 便签：标题、粗斜体、列表、引用、表格、代码块和行内颜色都画得出来，渲染器是内置的，不依赖浏览器 HTML，也没有外部库。双击打开居中编辑器，左边实时预览、右边表单；点「应用」之前改动只影响预览，不会写回画布。不参与运行——没有输出。只要一行纯文字就用画布标签。",
+    "inputs": {},
+    "outputs": {}
   }
 }

@@ -125,9 +125,10 @@ function isUpstream(target, start, feeds) {
   return false;
 }
 
-// Which input holds the result, the picture the panel rests on. B is the
-// "after" picture by convention. When B's picture feeds the node that makes
-// A, they are wired the other way round and the result is A.
+// Which input holds the result, the picture the panel rests on. The node hands
+// image_a downstream, so A is the result side: that is where the panel settles
+// whenever the wiring does not say otherwise. When A's picture feeds the node
+// that makes B, they are wired the other way round and the result is B.
 //
 // `a` and `b` say where the two pictures come from: { id, slot } of the node
 // and output wired to each input. `graph` reads the links: feeds(id) lists
@@ -138,9 +139,13 @@ export function compareResultSide(a, b, graph) {
   // Both pictures out of one subgraph: the answer is inside it.
   for (let depth = 0; a && b && a.id === b.id && depth < 16; depth += 1) {
     const inner = graph.inside?.(a.id);
-    if (!inner) return "B";
+    if (!inner) return "A";
     [a, b, graph] = [inner.output(a.slot), inner.output(b.slot), inner];
   }
-  if (!a || !b || a.id === b.id) return "B";
-  return isUpstream(b.id, a.id, graph.feeds) ? "A" : "B";
+  // Two unrelated loaders (the common "compare these two pictures" case) used
+  // to land on B, which fought the fact that image_a is what the node outputs.
+  if (!a || !b || a.id === b.id) return "A";
+  if (isUpstream(b.id, a.id, graph.feeds)) return "A";
+  if (isUpstream(a.id, b.id, graph.feeds)) return "B";
+  return "A";
 }

@@ -25,20 +25,20 @@
 // decisions live in js/shared/workflow_switches.mjs under node:test.
 
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026101802";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026101802";
-import { holdNodeMinWidth, holdVueNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026101802";
-import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026101802";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026102002";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102002";
+import { holdNodeMinWidth, holdVueNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102002";
+import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026102002";
 import {
   DEFAULT_SETTINGS, SETTINGS_PROPERTY, SWITCHES_MAX, TITLE_MAX, addMembers, addSwitch, cardView, choiceState, choosePlan, flipTo, frameBounds, groupBounds, heldCount,
   hideGroup, listedRows, modeMatters, moveSwitch, normalizeSettings, pairValue, placeNodes, readGroups, readSwitches,
   removeMembers, removeSwitch, renameSwitch, restoreGroups, rowLabel, rowsSignature, saveValues, snapshotNode, suggestTitle, switchAllPlan,
   switchPlan, valueAllPlan, valuePlan,
-} from "../shared/workflow_switches.mjs?v=2026101802";
+} from "../shared/workflow_switches.mjs?v=2026102002";
 // Sentences the DOM translator cannot reach: every one here is built at
 // runtime (a name, a count, or a branch), or written onto a title after the
 // fact. zh() looks the whole English sentence up and falls back to it.
-import { zh, zhOn, zhReady, zhSep } from "../shared/zh.mjs?v=2026101802";
+import { zh, zhOn, zhReady, zhSep } from "../shared/zh.mjs?v=2026102002";
 
 const NODE_CLASS = "QG_WorkflowSwitches";
 const CSS_ID = "qgtools-workflow-switches-css";

@@ -343,19 +343,54 @@ function findRow(rows, name) {
   return same.length === 1 ? same[0] : undefined;
 }
 
-function rowSetting(row) {
-  const strength = Number(row.strength);
-  return { enabled: Boolean(row.enabled), strength: Number.isFinite(strength) ? strength : null };
+// A strength as the LoRA Loader reads it: a missing one is the fallback.
+function strengthOf(value, fallback) {
+  const number = value === null || value === undefined || value === "" ? NaN : Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
-function sameSetting(a, b) {
-  return a.enabled === b.enabled && a.strength === b.strength;
+// What a stack row holds that a switch can set: whether it is on, and its
+// model and CLIP strengths, read the way the loader reads them (no strength
+// is 1, no CLIP strength is the model's).
+function rowSetting(row) {
+  const strength = strengthOf(row.strength, 1);
+  return { enabled: Boolean(row.enabled), strength, strength_clip: strengthOf(row.strength_clip, strength) };
+}
+
+const STRENGTHS = ["strength", "strength_clip"];
+
+// What a switch sets on one stack row, for its on and its off: whether the
+// row is on, and a strength only where the two sides give the row different
+// ones. A switch made to turn a row on and off (both sides at one strength,
+// the usual case) leaves the strength to the person: a row turned down to 0.6
+// by hand keeps its 0.6 through every click and still reads on or off.
+// Returns [on, off], or null when both sides hold the row the same way.
+function rowSides(onRow, offRow) {
+  const a = rowSetting(onRow);
+  const b = rowSetting(offRow);
+  const on = { enabled: a.enabled };
+  const off = { enabled: b.enabled };
+  let differs = a.enabled !== b.enabled;
+  for (const key of STRENGTHS) {
+    if (a[key] === b[key]) continue;
+    on[key] = a[key];
+    off[key] = b[key];
+    differs = true;
+  }
+  return differs ? [on, off] : null;
+}
+
+// Whether a stack row holds everything one side of a switch sets on it.
+function rowAt(row, side) {
+  const now = rowSetting(row);
+  return Object.keys(side).every((key) => now[key] === side[key]);
 }
 
 // The settings a switch changes: every control that held one value when "on"
 // was saved and another when "off" was saved. A LoRA stack is compared row
 // by row, by file name, so the switch moves only the rows that differ and
-// leaves whatever else was changed in the stack since. Returns
+// leaves whatever else was changed in the stack since; on such a row it sets
+// only what differs between the sides (see rowSides). Returns
 // { node, widget, on, off } and, for a stack row, { ..., row }.
 export function valuePairs(entry) {
   const pairs = [];
@@ -373,9 +408,8 @@ export function valuePairs(entry) {
       }
       for (const row of onRows) {
         const other = findRow(offRows, row.name);
-        if (!other) continue;
-        const [a, b] = [rowSetting(row), rowSetting(other)];
-        if (!sameSetting(a, b)) pairs.push({ node: id, widget, row: row.name, on: a, off: b });
+        const sides = other && rowSides(row, other);
+        if (sides) pairs.push({ node: id, widget, row: row.name, on: sides[0], off: sides[1] });
       }
     }
   }
@@ -388,22 +422,19 @@ export function pairNow(pair, current) {
   const rows = stackRows(current);
   const row = rows && findRow(rows, pair.row);
   if (!row) return "other";
-  const now = rowSetting(row);
-  return sameSetting(now, pair.on) ? "on" : sameSetting(now, pair.off) ? "off" : "other";
+  return rowAt(row, pair.on) ? "on" : rowAt(row, pair.off) ? "off" : "other";
 }
 
 // The value a control should hold for one side of a switch. For a stack row
-// it is the stack as it is now with that one row changed.
+// it is the stack as it is now with that one row changed, and only in what
+// the switch sets on it: the row's other strengths and its triggers stay.
 export function pairValue(pair, side, current) {
   const want = side === "on" ? pair.on : pair.off;
   if (pair.row === undefined) return want;
   const rows = stackRows(current);
   if (!rows) return current;
   const target = findRow(rows, pair.row);
-  return JSON.stringify(rows.map((row) => {
-    if (row !== target) return row;
-    return want.strength === null ? { ...row, enabled: want.enabled } : { ...row, enabled: want.enabled, strength: want.strength };
-  }));
+  return JSON.stringify(rows.map((row) => (row === target ? { ...row, ...want } : row)));
 }
 
 // A switch's settings as they stand on the graph: each pair with its node,

@@ -58,29 +58,114 @@ def _as_bhw(mask: torch.Tensor) -> torch.Tensor:
     return mask.float().clamp(0.0, 1.0)
 
 
+def _max_filter_1d(values: torch.Tensor, width: int, dim: int) -> torch.Tensor:
+    """Widest value in every `width`-long window along `dim`, as a pool would.
+
+    Identical to max_pool2d(kernel=width, stride=1, padding=width//2), edges
+    reading as -inf, but each output costs a fixed handful of comparisons
+    instead of `width` of them (van Herk / Gil-Werman): pad the edges with
+    -inf, pad the far end up to a multiple of `width`, cut the axis into
+    blocks of that length, take the running max forwards and backwards
+    inside each block, and window [i, i+width) is then the larger of
+    suffix[i] and prefix[i+width-1] - the two blocks a window can straddle.
+
+    Why it matters: the pooling version was the whole cost of a wide feather.
+    32 px on a 1824x3243 frame took 3.15 s and 8 px took 1.21 s on a CPU;
+    this is 0.45 s and 0.73 s, and the time no longer grows with the radius.
+    Bit-for-bit the same result in all 810 shapes x contents x radii checked
+    against it, erosion and soft masks included, so nothing downstream can tell.
+
+    Only for a CPU tensor, though - see grow_shrink_mask for why.
+    """
+    radius = width // 2
+    length = values.shape[dim]
+
+    # torch's pad takes its pairs from the last axis backwards.
+    pad = [0] * (2 * values.ndim)
+    pad[2 * (values.ndim - 1 - dim)] = radius
+    pad[2 * (values.ndim - 1 - dim) + 1] = radius
+    padded = functional.pad(values, pad, value=float("-inf"))
+
+    # Leading -inf cannot change a window, but it can change where the blocks
+    # start, so both ends are padded to a whole number of blocks up front.
+    trailing = (-padded.shape[dim]) % width
+    if trailing:
+        pad = [0] * (2 * padded.ndim)
+        pad[2 * (padded.ndim - 1 - dim) + 1] = trailing
+        padded = functional.pad(padded, pad, value=float("-inf"))
+
+    shape = list(padded.shape)
+    blocks = shape[dim] // width
+    shape[dim : dim + 1] = [blocks, width]
+    blocks_view = padded.reshape(shape)
+
+    forward = torch.cummax(blocks_view, dim=dim + 1).values
+    backward = torch.cummax(blocks_view.flip(dim + 1), dim=dim + 1).values.flip(dim + 1)
+
+    flat = list(forward.shape)
+    flat[dim : dim + 2] = [blocks * width]
+    forward = forward.reshape(flat)
+    backward = backward.reshape(flat)
+    # narrow() keeps this copy-free: the two views overlap in memory, which is
+    # fine for a read-only combine.
+    return torch.maximum(
+        backward.narrow(dim, 0, length), forward.narrow(dim, width - 1, length)
+    )
+
+
+def _grow_shrink_by_blocks(work: torch.Tensor, width: int, growing: bool) -> torch.Tensor:
+    """Square max (or min) filter across then down, in constant time per pixel."""
+    if growing:
+        work = _max_filter_1d(work, width, 3)  # across
+        return _max_filter_1d(work, width, 2)  # down
+    work = -_max_filter_1d(-work, width, 3)
+    return -_max_filter_1d(-work, width, 2)
+
+
+def _grow_shrink_by_pooling(work: torch.Tensor, width: int, growing: bool) -> torch.Tensor:
+    """The same filter as two max pools - what every device used to get."""
+    half = width // 2
+    if growing:
+        work = functional.max_pool2d(work, (1, width), 1, (0, half))
+        return functional.max_pool2d(work, (width, 1), 1, (half, 0))
+    work = -functional.max_pool2d(-work, (1, width), 1, (0, half))
+    return -functional.max_pool2d(-work, (width, 1), 1, (half, 0))
+
+
 def grow_shrink_mask(mask: torch.Tensor, pixels: int) -> torch.Tensor:
     """Dilate (positive) or erode (negative) by whole pixels; soft values survive.
 
-    One separable pass, not ``pixels`` iterated 3x3 pools: n 3x3 dilations
-    equal a single (2n+1)-square dilation, and a square max filter splits
-    into a horizontal then a vertical 1-D pass. Same result to the bit -
-    max is order-free and the -inf padding composes identically - for a
-    fraction of the work: two passes however far the mask moves, instead of
-    2n full-image pools. Measured at 32 px on a 16-frame 1080p batch this
-    is ~5x; the matting trimap, which used to pay it per frame, gains more.
+    A square max filter splits into a horizontal then a vertical 1-D pass, so
+    however far the mask moves this is two passes over the frame, never
+    2 * pixels full-image pools. Erosion is the same filter on the negated
+    mask; max and -inf padding are order-free, so soft (non-binary) values
+    keep their exact edges either way.
+
+    The two halves are executed two different ways, because the faster one
+    depends entirely on the device. Pooling re-reads the frame once per step
+    on a CPU (32 px on a 1824x3243 frame: 3.15 s) but is a tuned kernel on a
+    GPU (11 ms); the blocked pass is constant-time on a CPU (0.45 s) but goes
+    through an unoptimised cummax on a GPU (34 ms, and 108 ms at 8 px where
+    pooling needs only 4 ms). So CPU gets the blocked pass and everything
+    else keeps pooling. Both give the identical bits, so this only ever
+    changes how long the node takes.
     """
     steps = abs(int(pixels))
     if steps == 0:
         return mask
-    size = 2 * steps + 1
-    grown = mask.unsqueeze(1)
-    if pixels > 0:
-        grown = functional.max_pool2d(grown, kernel_size=(1, size), stride=1, padding=(0, steps))
-        grown = functional.max_pool2d(grown, kernel_size=(size, 1), stride=1, padding=(steps, 0))
+    # A bare HW mask is lifted to BHW and put back, so callers that pass one
+    # frame get a mask of the shape they handed in rather than a B1HW one.
+    flat = mask.ndim == 2
+    if flat:
+        mask = mask.unsqueeze(0)
+    width = 2 * steps + 1
+    work = mask.unsqueeze(1)
+    if mask.device.type == "cpu":
+        work = _grow_shrink_by_blocks(work, width, pixels > 0)
     else:
-        grown = -functional.max_pool2d(-grown, kernel_size=(1, size), stride=1, padding=(0, steps))
-        grown = -functional.max_pool2d(-grown, kernel_size=(size, 1), stride=1, padding=(steps, 0))
-    return grown.squeeze(1)
+        work = _grow_shrink_by_pooling(work, width, pixels > 0)
+    work = work.squeeze(1)
+    return work.squeeze(0) if flat else work
 
 
 def _torch_fill_holes(solid: torch.Tensor) -> torch.Tensor:

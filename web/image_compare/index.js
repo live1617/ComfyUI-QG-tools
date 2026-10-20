@@ -16,13 +16,13 @@ import {
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026101802";
-import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026101802";
-import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026101802";
-import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026101802";
-import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026101802";
-import { savedLinks } from "../shared/compare_erase.mjs?v=2026101802";
-import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026101802";
+} from "../shared/index.mjs?v=2026102002";
+import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026102002";
+import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026102002";
+import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026102002";
+import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026102002";
+import { savedLinks } from "../shared/compare_erase.mjs?v=2026102002";
+import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026102002";
 import {
   compareBadges,
   compareClip,
@@ -32,7 +32,7 @@ import {
   findCompareImages,
   normalizeCompareMode,
   slideFraction,
-} from "../shared/compare.mjs?v=2026101802";
+} from "../shared/compare.mjs?v=2026102002";
 
 const NODE_NAME = "QG_ImageCompare";
 const PANEL_WIDGET = "qgtools_compare_panel";
@@ -237,6 +237,13 @@ function loadPreviews(state, refs) {
   state.imageB.src = api.apiURL(`/view?${mediaViewQuery(refs.b, "temp")}`);
 }
 
+// 对齐把 B 换成对齐后的 B（或者换回原来那张）：面板上这一对变了，
+// 之后的保存和复制用的也就是这一对。笔迹留在原地不动。
+function showAligned(state, refs) {
+  if (!refs) return;
+  loadPreviews(state, refs);
+}
+
 function buildPanel(node) {
   if (node.__qgCompare) return node.__qgCompare;
   ensureCompareCss();
@@ -283,6 +290,7 @@ function buildPanel(node) {
   const eraser = makeEraser({
     node, root, stage, imageA, imageB, signal,
     onSaved: (files) => showSaved(node.__qgCompare, files),
+    onAligned: (refs) => node.__qgCompare && showAligned(node.__qgCompare, refs),
   });
   const footer = document.createElement("div");
   footer.className = "qgtools-compare-footer";

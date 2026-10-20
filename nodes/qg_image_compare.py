@@ -26,7 +26,9 @@ import torch
 from PIL import Image
 
 from ._qg_compare_helpers import (
+    ALIGN_GONE,
     CompareSaveError,
+    align_pair,
     clean_save_name,
     pair_pictures,
     remember_pair,
@@ -37,6 +39,7 @@ from ._qg_route_errors import safe_route_error
 
 NODE_NAME = "QG_ImageCompare"
 SAVE_ROUTE = "/qg/compare/save"
+ALIGN_ROUTE = "/qg/compare/align"
 
 
 def temp_prefix() -> str:
@@ -94,6 +97,10 @@ def _register_save_route() -> None:
     **不指名要读哪个文件**：两张预览是这个节点自己写、自己记下的。名字是纯
     文本、不含目录（clean_save_name 会把别的都拒掉），图直接写进 ComfyUI 的
     output 目录。笔画有校验，会被压回固定上限（见 _qg_compare_helpers）。
+
+    POST /qg/compare/align 把一次运行的 B 对齐到 A。它只收同一个键，读同
+    样的两张预览，把对齐后的 B 写在 B 的预览旁边（ComfyUI 的 temp 目录），
+    回答里带上那张预览的名字，写法和一次运行给预览命名一致。
     """
     try:
         from aiohttp import web
@@ -136,6 +143,46 @@ def _register_save_route() -> None:
                 {"error": "混合图没能保存，ComfyUI 的控制台里有原因。"}, status=500
             )
         return web.json_response(result)
+
+    @instance.routes.post(ALIGN_ROUTE)
+    async def align(request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        if not isinstance(body, dict):
+            return web.json_response({"error": "图像对比：请求读不出来。"}, status=400)
+        try:
+            try:
+                picture_a, picture_b, wired = pair_pictures(body.get("pair"))
+            except CompareSaveError as error:
+                raise CompareSaveError(ALIGN_GONE, status=error.status) from error
+            temp_root = Path(folder_paths.get_temp_directory())
+            work = functools.partial(
+                align_pair, picture_a=picture_a, picture_b=picture_b, temp_root=temp_root, name=wired
+            )
+            # 别占着服务器自己的线程：量两张图要算一会儿。
+            result = await asyncio.get_running_loop().run_in_executor(None, work)
+        except CompareSaveError as error:
+            return web.json_response({"error": safe_route_error(error)}, status=error.status)
+        except Exception:
+            logging.exception("[QG-tools] 图像对比：对齐没能做出来。")
+            return web.json_response(
+                {"error": "对齐没能做出来，ComfyUI 的控制台里有原因。"}, status=500
+            )
+        answer = {"aligned": result["aligned"], "message": result["message"]}
+        if result["aligned"]:
+            file = result["file"]
+            folder = file.parent.resolve().relative_to(Path(temp_root).resolve()).as_posix()
+            answer["b"] = {
+                "filename": file.name,
+                "subfolder": "" if folder == "." else folder,
+                "type": "temp",
+                "width": result["width"],
+                "height": result["height"],
+            }
+            answer["pair"] = result["pair"]
+        return web.json_response(answer)
 
 
 class QGImageCompare:

@@ -118,7 +118,6 @@ LANGUAGES = {
     "sl": "slovenian",
     "so": "somali",
     "es": "spanish",
-    "su": "sundanese",
     "sw": "swahili",
     "sv": "swedish",
     "tg": "tajik",

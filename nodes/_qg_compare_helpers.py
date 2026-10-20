@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import secrets
@@ -30,10 +31,12 @@ from pathlib import PurePosixPath
 from pathlib import Path
 
 import numpy as np
+import torch
 from PIL import Image
 
 from ._qg_brush_helpers import brush_core, brush_sigma, stroke_cover  # noqa: F401 - 画笔的数字也从这里读
 from ._qg_psd_helpers import PSD_MAX_SIDE, write_psd
+from ._qg_realign_helpers import crop_if_shift, measure, warp_to_source
 
 ERASE_SIZE = (2, 2000)
 ERASE_MAX_STROKES = 400
@@ -55,6 +58,13 @@ COUNTER_WIDTH = 5
 # 多少轮运行的两张图还能保存：留最新的那些。
 PAIRS_KEPT = 64
 PICTURES_GONE = "那两张图在服务器上已经没了。重新运行一次工作流，然后再保存。"
+
+# ALIGN：拿「对齐到原图」那套量法，量两张预览图。缩放超过这个比例就不信
+# （对齐节点自己的默认值）；四角偏移全都小于这么多像素，说明本来就对齐了。
+ALIGN_MAX_ZOOM = 0.2
+ALIGN_SETTLED = 0.5
+ALIGN_GONE = "那两张图在服务器上已经没了。重新运行一次工作流，然后再对齐。"
+ALIGN_FAILED = "对齐没能把两张图对上。它们可能差得太多，或者细节太少量不出来。"
 # 读到的名字里，这些后缀算图片扩展名，保存前去掉。
 IMAGE_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".jfif", ".webp", ".bmp", ".tif", ".tiff",
@@ -232,6 +242,52 @@ def pair_pictures(key) -> tuple[Path, Path, str]:
     return pair
 
 
+def align_pair(*, picture_a, picture_b, temp_root, name: str = "") -> dict:
+    """模型把图画得偏了一点或放大了一点时，把 B 对齐到 A。
+
+    用「对齐到原图」那套量法量 B 相对 A 的位移和缩放，然后把对齐后的 B
+    （按 A 的尺寸）写在 B 那张预览旁边，同样放 temp 目录。B 被挪出边缘露出的
+    地方由 A 补上，所以混合图那里显示的是 A。
+    返回 aligned 和一句给人看的 message；真挪动了还会带上新的 file 和代表
+    「A + 对齐后的 B」的 pair 键。
+    """
+    try:
+        first = _load_rgb(Path(picture_a))
+        second = _load_rgb(Path(picture_b))
+    except OSError as error:
+        raise CompareSaveError(ALIGN_GONE, status=404) from error
+    source = torch.from_numpy(np.array(first)).float() / 255.0
+    edit = torch.from_numpy(np.array(second)).float() / 255.0
+    result = measure(source, edit, "zoom + shift", ALIGN_MAX_ZOOM)
+    if not result.reliable:
+        logging.info("[QG-tools] 图像对比：对齐没动 B —— %s", result.reason)
+        return {"aligned": False, "message": ALIGN_FAILED}
+    off = result.worst_corner
+    if off < ALIGN_SETTLED:
+        return {"aligned": False, "message": "B 本来就对齐着 A。"}
+    height, width = first.shape[:2]
+    lined = crop_if_shift(edit, result.matrix, width, height)
+    if lined is None:
+        lined, _empty = warp_to_source(edit, result.matrix, width, height, "source", source)
+    target = Path(picture_b).with_name(f"{Path(picture_b).stem}_aligned.png")
+    try:
+        require_output_path(target, Path(temp_root))
+    except ValueError as error:
+        raise CompareSaveError(
+            "图像对比：预览图不在 ComfyUI 的 temp 目录里。重新运行一次工作流。"
+        ) from error
+    pixels = np.round(lined.numpy() * 255.0).clip(0, 255).astype(np.uint8)
+    Image.fromarray(pixels).save(target, compress_level=1)
+    return {
+        "aligned": True,
+        "file": target,
+        "width": int(width),
+        "height": int(height),
+        "pair": remember_pair(picture_a, target, name),
+        "message": f"B 已经对齐到 A。原来最多差 {max(1, round(off))} 像素。",
+    }
+
+
 def _load_rgb(path: Path) -> np.ndarray:
     with Image.open(path) as image:
         return np.asarray(image.convert("RGB"))
@@ -298,6 +354,8 @@ def save_mix(*, picture_a, picture_b, output_dir, top="A", strokes=None, layers=
 
 
 __all__ = [
+    "ALIGN_FAILED",
+    "ALIGN_GONE",
     "CompareSaveError",
     "ERASE_MAX_POINTS",
     "ERASE_MAX_STROKES",
@@ -308,6 +366,7 @@ __all__ = [
     "SAVE_NAME",
     "SAVE_NAME_MAX",
     "brush_core",
+    "align_pair",
     "brush_sigma",
     "clean_save_name",
     "clean_strokes",

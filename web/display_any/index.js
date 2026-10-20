@@ -6,7 +6,7 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026101802";
+import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102002";
 
 const NODE_TYPE = "QG_DisplayAny";
 const CONNECTION_MENU_LABEL = "QG 展示任意";

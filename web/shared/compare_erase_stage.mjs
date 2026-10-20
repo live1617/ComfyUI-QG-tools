@@ -8,12 +8,12 @@
 // 移植自 ComfyUI-AusBoss（MIT，js/shared/compare_erase_stage.mjs）。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026101802";
-import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026101802";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026101802";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026101802";
-import { makeSlideSwitch } from "./slide_switch.mjs?v=2026101802";
-import { extendStroke } from "./compare_erase.mjs?v=2026101802";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026102002";
+import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026102002";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102002";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102002";
+import { makeSlideSwitch } from "./slide_switch.mjs?v=2026102002";
+import { extendStroke } from "./compare_erase.mjs?v=2026102002";
 import {
   ERASE_OUTSIDE,
   ERASE_SIZE,
@@ -37,7 +37,7 @@ import {
   steppedSoft,
   strokeFits,
   typedName,
-} from "./compare_erase.mjs?v=2026101802";
+} from "./compare_erase.mjs?v=2026102002";
 
 // 图上面那行工具、图下面那行保存，各有多高。节点窄的时候这两行会折成两行，
 // 而不是把节点撑宽——地方从图上出。
@@ -58,6 +58,7 @@ const SAVE_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" s
 const COPY_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">'
   + '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>';
 const SAVE_ROUTE = "/qg/compare/save";
+const ALIGN_ROUTE = "/qg/compare/align";
 const UNDO_KEPT = 60;
 // 视图按它在屏幕上的大小画，最多这么多像素。
 const VIEW_SIDE = 2600;
@@ -98,6 +99,7 @@ export const ERASE_CSS = `
 .qgtools-compare-copybtn:disabled{border-color:#23504c;color:#5f8a86;background:transparent;cursor:default;}
 .qgtools-compare-tool{box-sizing:border-box;height:22px;min-width:24px;padding:0 6px;border:1px solid rgba(0,180,170,.52);border-radius:4px;background:rgba(0,0,0,.66);color:#c8dddd;font:700 9px/20px "Segoe UI",sans-serif;cursor:pointer;}
 .qgtools-compare-tool:hover{border-color:${BRAND};color:#fff;background:rgba(0,79,75,.78);}
+.qgtools-compare-tool.active{border-color:${BRAND};background:${BRAND};color:#04201d;}
 .qgtools-compare-tool:disabled{opacity:.42;cursor:default;pointer-events:none;}
 .qgtools-compare-erase{position:absolute;inset:0;width:100%;height:100%;display:none;cursor:crosshair;touch-action:none;}
 .qgtools-compare-stage.is-erasing:not(.is-empty) .qgtools-compare-erase{display:block;}
@@ -348,6 +350,15 @@ function syncTools(er) {
   er.topSwitch.set(top);
   const layers = er.node.properties?.[LAYERS_PROPERTY] === true;
   er.layersSwitch.set(layers ? "on" : "off");
+  const aligned = Boolean(er.refs?.aligned);
+  er.alignButton.disabled = !ready || er.aligning;
+  er.alignButton.textContent = er.aligning ? "对齐中" : "对齐";
+  er.alignButton.classList.toggle("active", aligned);
+  er.alignButton.title = !ready
+    ? "先运行一次工作流：对齐需要那两张图。"
+    : aligned
+      ? "B 已经对齐到 A 了。再点一下回到 B 原来的样子。"
+      : "对齐：模型把图画得偏了一点或放大了一点时，把 B 对齐到 A。再点一下撤销。";
   er.undoButton.disabled = !er.history.length && !er.strokes.length;
   er.clearButton.disabled = !er.strokes.length;
   er.saveButton.disabled = !ready || er.saving;
@@ -617,6 +628,42 @@ function mixBlob(er) {
   });
 }
 
+// 让服务器把 B 对齐到 A（用的就是「对齐到原图」那套量法），或者退回 B 原来的
+// 样子。面板自己换图；之后的保存和复制用的都是对齐后的 B，笔画留在原地。
+async function align(er) {
+  if (er.aligning || !er.refs) return;
+  if (er.refs.aligned) {
+    er.onAligned?.(er.refs.original);
+    return;
+  }
+  er.aligning = true;
+  syncTools(er);
+  try {
+    const response = await api.fetchApi(ALIGN_ROUTE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pair: er.refs.pair }),
+    });
+    const answer = await response.json().catch(() => null);
+    if (!response.ok) {
+      // 路由没有回话：这个 ComfyUI 是在更新之前启动的。
+      const missing = (response.status === 404 || response.status === 405) && !answer?.error;
+      throw new Error(missing ? "重启一次 ComfyUI 再对齐：QG-tools 的更新只加载了一半。" : (answer?.error || `服务器回了 ${response.status}。`));
+    }
+    if (answer?.aligned && answer.b?.filename && typeof answer.pair === "string") {
+      showToast({ severity: "success", summary: "图像对比", detail: answer.message, life: 4000 });
+      er.onAligned?.({ ...er.refs, b: answer.b, pair: answer.pair, aligned: true, original: er.refs });
+    } else {
+      showToast({ severity: "info", summary: "图像对比", detail: answer?.message || "B 保持原样。", life: 6000 });
+    }
+  } catch (error) {
+    showToast({ severity: "error", summary: "图像对比", detail: String(error?.message ?? error), life: 8000 });
+  } finally {
+    er.aligning = false;
+    syncTools(er);
+  }
+}
+
 // 把混合图复制到剪贴板。浏览器只允许以 localhost 或 https 打开的页面往剪贴板
 // 写图片。
 function copy(er) {
@@ -667,9 +714,9 @@ function makeToolButton(label, title) {
 
 // 给一个对比面板做一套橡皮擦工具。`onSaved` 会拿到保存写了哪些文件。调用方
 // 把 `bar` 放在台面上方、`saveRow` 放在它下面一行，模式或图片变了就告诉它。
-export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved }) {
+export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved, onAligned }) {
   const er = {
-    node, root, stage, imageA, imageB, onSaved,
+    node, root, stage, imageA, imageB, onSaved, onAligned,
     canvas: document.createElement("canvas"),
     mask: document.createElement("canvas"),
     live: document.createElement("canvas"),
@@ -680,7 +727,7 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved 
     refs: null, width: 0, height: 0, fit: null,
     strokes: [], history: [],
     active: false, stroke: null, adjust: null, pointer: null, back: false, flipKey: false,
-    saving: false, copying: false, frame: 0, keys: null,
+    saving: false, copying: false, aligning: false, frame: 0, keys: null,
   };
   er.canvas.className = "qgtools-compare-erase";
   stage.append(er.canvas);
@@ -771,7 +818,7 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved 
     },
   });
   const topField = labelled("在上面", TOP_HELP, er.topSwitch.root).wrap;
-  // 撤销和清空贴在一起，放在右端，折行时也还在一起。
+  // 对齐、撤销、清空贴在一起，放在右端，折行时也还在一起。
   const steps = document.createElement("div");
   steps.className = "qgtools-compare-steps";
   er.undoButton = click(makeToolButton("撤销", "撤掉最后一笔，或者一次清空。"), () => {
@@ -789,7 +836,8 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved 
     rebuildMask(er);
     schedule(er);
   });
-  steps.append(er.undoButton, er.clearButton);
+  er.alignButton = click(makeToolButton("对齐", ""), () => align(er));
+  steps.append(er.alignButton, er.undoButton, er.clearButton);
   er.bar.append(er.kindSwitch.root, sizeField, softField, topField, steps);
 
   // 图下面那行保存：名字、要不要图层、右端（眼睛最后落到的地方）的保存。
