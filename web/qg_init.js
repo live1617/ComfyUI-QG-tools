@@ -1,7 +1,9 @@
 /**
  * ComfyUI-QG-tools 前端扩展入口
  *
- * 目前只打一条启动日志，确认 WEB_DIRECTORY 管线是通的。
+ * 除了打一条启动日志，还负责一件全局的事：把各节点的默认宽度钉成一致
+ * （ComfyUI 的默认宽度由前端按控件类型算，带多行文本框的会被撑宽，
+ *  Python 侧没法声明，见 shared/node_width.mjs）。
  *
  * 路径约定：
  *   - 节点自带的界面脚本放 web/<节点名>/index.js，会被 ComfyUI 自动当扩展加载。
@@ -12,9 +14,13 @@
  */
 
 import { app } from "/scripts/app.js";
+import { pinNodeWidth } from "./shared/node_width.mjs?v=2026102319";
 
 app.registerExtension({
     name: "QG.tools.init",
+    beforeRegisterNodeDef(nodeType, nodeData) {
+        pinNodeWidth(nodeType, nodeData);
+    },
     async setup() {
         console.log(
             "%c[QG-tools] 前端扩展已加载",

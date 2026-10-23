@@ -3,7 +3,7 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { zh } from "../shared/zh.mjs?v=2026102002";
+import { zh } from "../shared/zh.mjs?v=2026102319";
 
 const NODE_NAME = "QG_MDReader";
 const NO_FILE = "<no document>";
@@ -18,7 +18,7 @@ function injectCss() {
     const style = document.createElement("style");
     style.id = CSS_ID;
     style.textContent = `
-.qgtools-md-box{display:flex;flex-direction:column;gap:4px;width:100%;height:100%;
+.qgtools-md-box{display:flex;flex-direction:column;gap:4px;width:100%;height:100%;min-height:0;
   box-sizing:border-box;background:var(--mdr-bg,#1b1b1b);border:1px solid var(--mdr-border,#3a3a3a);
   border-radius:6px;overflow:hidden;font-family:inherit;}
 .qgtools-md-bar{display:flex;align-items:center;gap:2px;padding:3px 4px;flex:0 0 auto;
@@ -31,7 +31,7 @@ function injectCss() {
 .qgtools-md-btn svg{width:14px;height:14px;display:block;}
 .qgtools-md-name{flex:1;min-width:0;margin-left:4px;font-size:11px;color:var(--mdr-dim,#9a9a9a);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left;}
-.qgtools-md-body{flex:1 1 auto;overflow:auto;padding:6px 8px;font-size:12px;line-height:1.55;
+.qgtools-md-body{flex:1 1 0;min-height:0;overflow:auto;padding:6px 8px;font-size:12px;line-height:1.55;
   color:var(--mdr-fg,#d8d8d8);word-break:break-word;}
 .qgtools-md-body::-webkit-scrollbar{width:8px;height:8px;}
 .qgtools-md-body::-webkit-scrollbar-thumb{background:#4a4a4a;border-radius:4px;}

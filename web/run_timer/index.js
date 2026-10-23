@@ -14,8 +14,12 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, zh } from "../shared/index.mjs?v=2026102002";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102002";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, zh } from "../shared/index.mjs?v=2026102319";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102319";
+import {
+  detachDomWidget,
+  installModeWatcher,
+} from "../shared/vue_mode.mjs?v=2026102319";
 import {
   cachedLayer,
   createTimer,
@@ -24,7 +28,7 @@ import {
   startTimer,
   stopTimer,
   tickTimer,
-} from "../shared/run_timer.mjs?v=2026102002";
+} from "../shared/run_timer.mjs?v=2026102319";
 
 const NODE_CLASS = "QG_RunTimer";
 const CSS_ID = "qgtools-run-timer-css";
@@ -112,6 +116,16 @@ function listen(state) {
   api.addEventListener("execution_success", () => finish(state, "done"), { signal });
   api.addEventListener("execution_error", () => finish(state, "error"), { signal });
   api.addEventListener("execution_interrupted", () => finish(state, "interrupted"), { signal });
+}
+
+// 切渲染模式会换掉 state（连同它的 interval），但计时本身不能断：
+// 把 timer 搬过去、把心跳接上就行 —— timer 是纯数据，startedAt 还有效。
+function resumeTicking(state) {
+  if (!state.timer.running || state.interval) return;
+  state.interval = setInterval(() => {
+    state.timer = tickTimer(state.timer, performance.now());
+    state.render();
+  }, TICK_MS);
 }
 
 // The frontend hangs a "which pack" badge above every custom node; on a
@@ -290,34 +304,61 @@ function keepAspect(node) {
   return true;
 }
 
+// 切渲染模式时把计时搬过去：state 会被丢掉，timer 不能跟着丢
+// （正在跑的那一轮，elapsed 就断了）。
+function takeTimer(node) {
+  const carried = node.__qgTimerCarry;
+  node.__qgTimerCarry = null;
+  return carried && typeof carried === "object" ? carried : createTimer(savedHistory(node));
+}
+
 function installCanvasReadout(node) {
   if (node.__qgRunTimer) return node.__qgRunTimer;
   node.flags ??= {};
   node.flags.no_title = true;
   suppressBadges(node);
   paintBlack(node);
+  installCanvasHooks(node);
   const state = (node.__qgRunTimer = {
     node, abort: new AbortController(), interval: null, mode: "canvas",
-    timer: createTimer(savedHistory(node)), glow: {},
+    timer: takeTimer(node), glow: {},
     render: () => node.setDirtyCanvas?.(true, false),
   });
   // Width is the handle: drag the corner and the readout scales with it.
   // computeSize is the MINIMUM the canvas will let a drag reach - it must
   // never echo the current size, or the node can only ever grow.
   node.resizable = true;
+  // 原样存一份：切到 Nodes 2.0 时要还回去，否则 DOM 那条路被这个常量最小尺寸压着。
+  node.__qgOrigComputeSize ??= node.computeSize;
   node.computeSize = () => [MIN_WIDTH, Math.round((MIN_WIDTH * BASE_HEIGHT) / BASE_WIDTH)];
   // A saved workflow overwrites this in onConfigure; a fresh node starts here.
   node.size = [BASE_WIDTH, BASE_HEIGHT];
-  chainCallback(node, "onResize", function () { keepAspect(this); });
+  listen(state);
+  resumeTicking(state);
+  return state;
+}
+
+// 🔴 画布钩子只装一次：chainCallback 摘不掉，而切渲染模式会反复 install/uninstall，
+//    每切一次再包一层的话，onDrawForeground 会把读数画两遍。
+//    钩子只跟节点挂钩，装完靠自己看 mode 短路。
+function installCanvasHooks(node) {
+  if (node.__qgRunTimerHooks) return;
+  node.__qgRunTimerHooks = true;
+  const canvasMode = (n) => n.__qgRunTimer?.mode === "canvas";
+
+  chainCallback(node, "onResize", function () {
+    if (!canvasMode(this)) return;
+    keepAspect(this);
+  });
+
   chainCallback(node, "onDrawForeground", function (ctx) {
-    if (this.flags?.collapsed) return;
+    if (!canvasMode(this) || this.flags?.collapsed) return;
     // The body was already painted at whatever size the drag left; fix
     // the size now and ask for one more frame so the box catches up.
     if (keepAspect(this)) this.setDirtyCanvas?.(true, false);
-    drawReadout(this, ctx, state);
+    // state 随模式重建，所以现取，别闭包捕获
+    drawReadout(this, ctx, this.__qgRunTimer);
   });
-  listen(state);
-  return state;
 }
 
 // ---------------------------------------------------------------------------
@@ -393,7 +434,7 @@ function installDomReadout(node) {
 
   const state = (node.__qgRunTimer = {
     node, abort: new AbortController(), interval: null, mode: "dom",
-    timer: createTimer(savedHistory(node)),
+    timer: takeTimer(node), root, widget,
     render: () => {
       const view = readout(state);
       main.textContent = view.main;
@@ -407,11 +448,43 @@ function installDomReadout(node) {
   });
   state.render();
   listen(state);
+  resumeTicking(state);
   return state;
 }
 
 function install(node) {
-  return usesVueNodes() ? installDomReadout(node) : installCanvasReadout(node);
+  const state = usesVueNodes() ? installDomReadout(node) : installCanvasReadout(node);
+  if (state) node.__qgSyncMode = () => syncTimerMode(node);
+  return state;
+}
+
+// ---------------------------------------------------------------- 渲染模式迁移
+//
+// install 只在新建 / 读档时按当时模式装一次，切渲染模式时卡片不跟着换。
+// 迁移时要把「正在跑的计时」带过去，见 takeTimer。
+function uninstall(node) {
+  const state = node.__qgRunTimer;
+  if (!state) return;
+  node.__qgRunTimer = null;
+  node.__qgTimerCarry = state.timer;
+  stopTicking(state);
+  try { state.abort.abort(); } catch { /* 忽略 */ }
+  if (state.mode === "dom") {
+    detachDomWidget(node, state.widget, state.root);
+    state.widget = null;
+    state.root = null;
+  }
+  // 画布钩子摘不掉，只把被它改过的实例字段还回去
+  if (node.__qgOrigComputeSize) node.computeSize = node.__qgOrigComputeSize;
+}
+
+function syncTimerMode(node) {
+  const want = usesVueNodes() ? "dom" : "canvas";
+  if (node.__qgRunTimer?.mode !== want) {
+    uninstall(node);
+    install(node);
+  }
+  return node.__qgRunTimer;
 }
 
 app.registerExtension({
@@ -429,7 +502,9 @@ app.registerExtension({
       // Saved properties land after onNodeCreated: pick the history up then,
       // and keep the readout black however the save was colored.
       queueMicrotask(() => {
-        const state = install(this);
+        // syncTimerMode 而不是 install：读档时渲染模式可能跟建节点那一刻不同
+        // （同一个工作流在两种模式下打开过），顺手校正到当前模式。
+        const state = syncTimerMode(this);
         if (!state) return;
         if (!state.timer.running) state.timer = createTimer(savedHistory(this));
         this.flags.no_title = true;
@@ -470,6 +545,16 @@ app.registerExtension({
       stopTicking(state);
       state.abort.abort();
       this.__qgRunTimer = null;
+    });
+  },
+
+  async setup() {
+    installModeWatcher((node) => {
+      if (String(node?.comfyClass ?? node?.type ?? "") !== NODE_CLASS) return null;
+      if (typeof node.__qgSyncMode !== "function") {
+        node.__qgSyncMode = () => syncTimerMode(node);
+      }
+      return node.__qgSyncMode;
     });
   },
 });

@@ -1151,9 +1151,18 @@ function drawLabelBlocksUnsafe(ctx, blocks, opt, x0, y0, blockW, align, color) {
     ctx.restore();
 }
 
+// 后三个是给 DOM 渲染分支（markdown_dom.mjs）共用的：字号缩放、颜色校验、
+// 图片地址校验必须和 canvas 分支用同一套规则，否则同一个节点在两种渲染模式下
+// 会显示得不一样。
+// 🔴 注释别写在 `export { }` 里面：静态检查脚本按逗号切分块内容，注释会跟下一个
+//    符号粘成一条，于是「明明导出了却报未导出」。
 export {
     MD_DEFAULT_MAX_WIDTH,
+    MD_MONO,
     buildLabelBlocks,
     getLabelLayout,
     drawLabelBlocks,
+    isValidColor,
+    isSafeImageUrl,
+    segFontSize,
 };

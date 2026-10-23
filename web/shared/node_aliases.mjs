@@ -39,8 +39,9 @@ export const NODE_ALIASES = {
         "text",
     ],
     QG_TextReplace: [
-        "text replace", "textreplace", "batch replace", "find and replace",
-        "search replace", "string replace",
+        "text replace", "textreplace", "find and replace", "search replace",
+        "string replace", "literal replace", "regex replace", "regex",
+        "replace text",
         "text",
     ],
     QG_TextSplit: [
@@ -48,12 +49,38 @@ export const NODE_ALIASES = {
         "string split", "chunk text",
         "text",
     ],
+    QG_TextConcat: [
+        "text concat", "textconcat", "concatenate", "concat text", "merge text",
+        "join text", "combine text", "string concat",
+        "text",
+    ],
     QG_AnySwitch: [
         "any switch", "anyswitch", "switch", "type switch", "merge inputs",
     ],
     QG_IfElse: [
         "if else", "ifelse", "conditional", "condition", "branch",
-        "boolean switch",
+        "if then else",
+    ],
+    QG_BoolToggle: [
+        "bool switch", "boolswitch", "boolean switch", "boolean", "bool",
+        "toggle", "switch", "on off", "master switch", "flag", "gate",
+        "label", "caption", "named switch",
+    ],
+    QG_Number: [
+        "number", "value", "constant", "primitive", "int", "integer",
+        "float", "decimal", "whole number", "double", "steps", "seed",
+        "cfg", "strength", "denoise", "scale",
+    ],
+    QG_Math: [
+        "math", "maths", "mathematics", "calculate", "calculator", "calculation",
+        "expression", "formula", "arithmetic", "compute", "equation", "eval",
+        "add", "subtract", "multiply", "divide", "sum", "average", "percent",
+        "number", "value",
+    ],
+    QG_StringSwitch: [
+        "string switch", "stringswitch", "switch string", "text switch",
+        "prompt switch", "prompt ab", "ab test", "variant",
+        "string",
     ],
     QG_Seed: [
         "seed", "random seed", "seed control", "seed history",
@@ -113,7 +140,8 @@ export const NODE_ALIASES = {
     ],
     QG_SizeSelector: [
         "size selector", "sizeselector", "resolution preset", "aspect ratio",
-        "size picker", "megapixel",
+        "size picker", "megapixel", "megapixels", "mp",
+        "preset ratio", "adopt ratio", "ratio preset", "ratio",
         "size",
     ],
     QG_ImageCompare: [

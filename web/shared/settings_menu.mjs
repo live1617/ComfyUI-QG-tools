@@ -8,10 +8,10 @@
 //                        title: "LoRA Loader settings",
 //                        onChange: (values, key) => rerender(values) });
 
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102002";
-import { BRAND } from "./index.mjs?v=2026102002";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026102002";
-import { zh } from "./zh.mjs?v=2026102002";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102319";
+import { BRAND } from "./index.mjs?v=2026102319";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026102319";
+import { zh } from "./zh.mjs?v=2026102319";
 import {
   isOverrideActive,
   isOverrideEntry,
@@ -19,7 +19,7 @@ import {
   overrideEnableValue,
   overrideIsCustom,
   schemaDefaults,
-} from "./node_settings.mjs?v=2026102002";
+} from "./node_settings.mjs?v=2026102319";
 
 const CSS_ID = "qgtools-settings-css";
 
@@ -332,7 +332,15 @@ export function openInfoCard({ anchor, title, sections }) {
   requestAnimationFrame(place);
   document.addEventListener(
     "pointerdown",
-    (event) => { if (!pop.contains(event.target)) closeSettingsMenu(); },
+    (event) => {
+      // 触发按钮自己那一下不算「点别处」。用同一个按钮开关菜单的调用方
+      // （number 的卡片齿轮就是）会在这里被抢先关掉，然后它自己的 click
+      // 发现菜单没了、又开一次 —— 表现就是「点第二次关不掉」。
+      // capture 阶段在祖先先跑，按钮上 stopPropagation 拦不住，只能在这里让路。
+      // 用属性标记而不是绑具体节点：谁是开关，谁自己打这个标记。
+      if (event.target?.closest?.("[data-qgtools-menu-toggle]")) return;
+      if (!pop.contains(event.target)) closeSettingsMenu();
+    },
     { capture: true, signal: abort.signal },
   );
   window.addEventListener(
@@ -511,7 +519,15 @@ export function openSettingsMenu({ scope, schema, anchor, title, onChange, initi
   requestAnimationFrame(place);
   document.addEventListener(
     "pointerdown",
-    (event) => { if (!pop.contains(event.target)) closeSettingsMenu(); },
+    (event) => {
+      // 触发按钮自己那一下不算「点别处」。用同一个按钮开关菜单的调用方
+      // （number 的卡片齿轮就是）会在这里被抢先关掉，然后它自己的 click
+      // 发现菜单没了、又开一次 —— 表现就是「点第二次关不掉」。
+      // capture 阶段在祖先先跑，按钮上 stopPropagation 拦不住，只能在这里让路。
+      // 用属性标记而不是绑具体节点：谁是开关，谁自己打这个标记。
+      if (event.target?.closest?.("[data-qgtools-menu-toggle]")) return;
+      if (!pop.contains(event.target)) closeSettingsMenu();
+    },
     { capture: true, signal: abort.signal },
   );
   window.addEventListener(

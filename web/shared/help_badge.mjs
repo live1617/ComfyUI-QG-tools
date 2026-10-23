@@ -25,10 +25,32 @@ export function hitsBadge(pos, nodeWidth) {
   );
 }
 
-function inputItems(inputSpec) {
+// 有些节点的输入是「同一类、成串出现」的：QG_Math 声明了 a–z 共 26 个变量
+// （前端默认只放出 3 个，接满一个才长出下一个）。帮助卡是按注册表逐个列输入的
+// 实现，26 行「变量 a … 变量 z」会把整张卡刷成一片噪声 —— 这里折叠成一行讲清楚。
+const FOLDED_INPUTS = {
+  QG_Math: {
+    match: /^[a-z]$/,
+    term: "a–z",
+    detail:
+      "变量槽：默认露 3 个空槽，接满一个自动长出下一个（最多到 z）；" +
+      "整数、小数、布尔都能接，没连线按 0。",
+  },
+};
+
+function inputItems(inputSpec, nodeName) {
+  const fold = FOLDED_INPUTS[nodeName];
   const items = [];
+  let folded = false;
   for (const group of ["required", "optional"]) {
     for (const [name, spec] of Object.entries(inputSpec?.[group] ?? {})) {
+      if (fold && fold.match.test(name)) {
+        if (!folded) {
+          items.push({ term: fold.term, detail: fold.detail });
+          folded = true;
+        }
+        continue;
+      }
       const options = Array.isArray(spec) ? spec[1] : undefined;
       const detail = options && typeof options === "object" ? options.tooltip : undefined;
       items.push({ term: name, detail: detail || undefined });
@@ -42,7 +64,7 @@ function inputItems(inputSpec) {
 export function helpSections(nodeData) {
   const sections = [];
   if (nodeData?.description) sections.push({ text: nodeData.description });
-  const inputs = inputItems(nodeData?.input);
+  const inputs = inputItems(nodeData?.input, nodeData?.name);
   if (inputs.length) sections.push({ heading: "Inputs", items: inputs });
   const names = nodeData?.output_name ?? [];
   const tooltips = nodeData?.output_tooltips ?? [];

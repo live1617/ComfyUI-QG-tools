@@ -3,7 +3,7 @@
 // splits into folder and name, and where the highlight moves. No DOM, so
 // node:test covers them.
 
-import { parseImageReference } from "./pad_canvas.mjs?v=2026102002";
+import { parseImageReference } from "./pad_canvas.mjs?v=2026102319";
 
 // "pasted/image (2).png" or "clip.mp4 [output]" -> "filename=...&subfolder=...&type=...".
 export function mediaViewQuery(value) {

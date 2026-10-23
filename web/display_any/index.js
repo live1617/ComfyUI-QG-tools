@@ -6,7 +6,7 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102002";
+import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102319";
 
 const NODE_TYPE = "QG_DisplayAny";
 const CONNECTION_MENU_LABEL = "QG 展示任意";
@@ -24,7 +24,8 @@ function addStyles() {
     const style = document.createElement("style");
     style.id = "qgtools-display-any-style";
     style.textContent = `
-        .qgtools-display-any{position:relative;box-sizing:border-box;width:100%;height:100%;min-height:140px;display:flex;flex-direction:column;overflow:hidden;background:rgba(0,0,0,.12);border-radius:6px;font-family:var(--font-inter,Inter),"DengXian",Arial,"Microsoft YaHei",sans-serif;}
+        /* 不给最小高度：一行数字不该被撑成一大块空板，够装内容就行 */
+        .qgtools-display-any{position:relative;box-sizing:border-box;width:100%;height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:rgba(0,0,0,.12);border-radius:6px;font-family:var(--font-inter,Inter),"DengXian",Arial,"Microsoft YaHei",sans-serif;}
         .qgtools-display-toolbar{position:absolute;top:0;right:6px;z-index:2;pointer-events:none;}
         .qgtools-display-any [hidden]{display:none!important;}
         .qgtools-display-copy{opacity:0;pointer-events:none;display:flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:1px solid #ffffff12;border-radius:4px;background:#14141499;color:#c8c8c8;cursor:pointer;transition:opacity .15s ease,color .15s ease,background .15s ease;}
@@ -33,12 +34,11 @@ function addStyles() {
         .qgtools-display-copy svg{display:block;width:14px;height:14px;pointer-events:none;}
         .qgtools-display-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:6px 8px 8px;}
         .qgtools-display-any.qgtools-has-media{background:transparent;border:0;border-radius:0;box-shadow:none;}
-        .dom-widget>.qgtools-display-any.qgtools-has-media{width:calc(100% + 20px);margin:-0 -10px;}
-        .lg-node .qgtools-display-any.qgtools-has-media{width:calc(100% + 28px);margin:0 -14px;}
+        /* 媒体态要贴边铺满：宽度和负边距由 syncRootWidth() 按节点宽度写死，不走百分比 */
         .qgtools-display-any.qgtools-has-media .qgtools-display-body{position:relative;padding:0;margin:0;overflow:hidden;}
         .qgtools-display-any.qgtools-has-media .qgtools-display-body{border:0!important;outline:0!important;}
         .qgtools-display-any.qgtools-has-media .qgtools-display-toolbar{top:0;}
-        .qgtools-display-text{display:flex;flex-direction:column;gap:10px;margin:0;padding-right:0;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;font-family:inherit;line-height:1.5;}
+        .qgtools-display-text{display:flex;flex-direction:column;gap:10px;margin:0;padding-right:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;min-width:0;max-width:100%;user-select:text;font-family:inherit;line-height:1.5;}
         .qgtools-display-text.qgtools-display-single{display:block;}
         .qgtools-display-first-line{display:block;padding-right:0;}
         .qgtools-display-rest-line{display:block;}
@@ -94,6 +94,53 @@ function addStyles() {
 
 const DEFAULT_TEXT_FONT_SIZE = 16;
 const DEFAULT_TEXT_FONT_COLOR = "#B2B7BD";
+// 节点高度按内容给：一行数字 / 短文本不需要一块 260px 的空板，真要放图才撑开。
+// 用户手动拖过尺寸之后就不再自动改（properties.qg_user_resized 随工作流存盘）。
+const TEXT_NODE_HEIGHT = 110;
+const MEDIA_NODE_HEIGHT = 260;
+const TEXT_WIDGET_MIN_HEIGHT = 40;
+const MEDIA_WIDGET_MIN_HEIGHT = 200;
+
+function hasMedia(state) {
+    return !!state?.media?.childElementCount;
+}
+
+// 🔴 root 的宽度不能靠 CSS 的 width:100%：ComfyUI 的 .dom-widget 一旦被内容撑宽，
+// 100% 就跟着变宽，节点右边会露出一块背景板（文字也会横着跑到节点外面）。
+// 每帧按节点宽度钉死一次，父容器怎么变都逃不掉。
+function syncRootWidth(node) {
+    const state = node._qgDisplay;
+    if (!state) return;
+    const width = Math.max(80, Math.round(node.size?.[0] ?? 320));
+    const media = state.root.classList.contains("qgtools-has-media");
+    const wanted = media ? width : width - 20;
+    const left = media ? "-10px" : "0px";
+    if (state.root.style.width !== `${wanted}px`) state.root.style.width = `${wanted}px`;
+    if (state.root.style.marginLeft !== left) {
+        state.root.style.marginLeft = left;
+        state.root.style.marginRight = left;
+    }
+}
+
+// 程序自己改高度：置一个标记，好让 onResize 区分「用户拖的」和「我们调的」。
+function setNodeHeight(node, height) {
+    const current = node.size?.[1];
+    if (Math.abs((current ?? 0) - height) < 4) return;
+    node.__qgAutoSize = true;
+    try {
+        node.setSize([node.size[0], height]);
+    } finally {
+        node.__qgAutoSize = false;
+    }
+    node.setDirtyCanvas?.(true, true);
+}
+
+function fitNodeToContent(node) {
+    const state = node._qgDisplay;
+    if (!state || node.flags?.collapsed) return;
+    if (node.properties?.qg_user_resized) return;
+    setNodeHeight(node, hasMedia(state) ? MEDIA_NODE_HEIGHT : TEXT_NODE_HEIGHT);
+}
 const TYPE_TEXT_STYLES = {
     INT: { size: 30, color: "#72ADE3" },
     FLOAT: { size: 30, color: "#E35990" },
@@ -627,6 +674,9 @@ function renderPreview(node, payload) {
     if (state.figures.length) state.galleryResize.observe(state.media);
     applyTextStyle(node, payload?.type);
     syncPorts(node);
+    // 内容换了：文本收到图就撑开，图换成数字就收回去（用户手动拖过则不动）
+    fitNodeToContent(node);
+    syncRootWidth(node);
 }
 
 function syncPorts(node, visited = new Set()) {
@@ -689,8 +739,8 @@ function createPreview(node) {
     copy.type = "button";
     copy.className = "qgtools-display-copy";
     copy.innerHTML = COPY_ICON_SVG;
-    copy.title = "复制数值";
-    copy.setAttribute("aria-label", "复制数值");
+    copy.title = "复制";
+    copy.setAttribute("aria-label", "复制");
     toolbar.append(copy);
     const body = document.createElement("div");
     body.className = "qgtools-display-body";
@@ -710,12 +760,23 @@ function createPreview(node) {
     body.append(media, text, galleryClose, galleryNext);
     root.append(toolbar, body);
     const widget = node.addDOMWidget("qg_display_preview", "qg_display", root, {
-        serialize: false, hideOnZoom: false, getMinHeight: () => 140,
+        serialize: false, hideOnZoom: false,
+        getMinHeight: () => (hasMedia(node._qgDisplay) ? MEDIA_WIDGET_MIN_HEIGHT : TEXT_WIDGET_MIN_HEIGHT),
         getMaxHeight: () => undefined,
+        // 跟孤海原版一致：画布和 Vue 节点都显示，侧边面板不显示。
+        // 少这一句时，侧边面板会再挂一份同样的 DOM，画布上就会多出一块。
+        surfaces: { canvas: "shown", vueNode: "shown", panel: "never" },
     });
+    // 老版前端没有 surfaces，但有 visibility.surfaces，补同样的一份
+    if (widget?.visibility?.surfaces) {
+        widget.visibility.surfaces.canvas = "shown";
+        widget.visibility.surfaces.panel = "never";
+        widget.visibility.surfaces.vueNode = "shown";
+    }
     widget.serialize = false;
     widget.options ??= {};
-    widget.options.minNodeSize = [250, 200];
+    // 原来写的是 [250, 200]：一行字也拖不小，只能一直占着 200 往上的高度。
+    widget.options.minNodeSize = [250, 96];
     const state = { root, toolbar, copy, body, media, text, widget, galleryClose, galleryNext, figures: [], galleryIndex: null, copyTimer: null, contextMedia: null };
     state.flashContextItem = (element, label, isError = false) => {
         if (!element) return;
@@ -832,9 +893,30 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             const result = created?.apply(this, arguments);
             createPreview(this);
-            this.setSize([320, 260]);
+            // 这里也是程序调尺寸，不能记成「用户拖过」，否则自动调整立刻失效
+            this.__qgAutoSize = true;
+            try {
+                this.setSize([320, TEXT_NODE_HEIGHT]);
+            } finally {
+                this.__qgAutoSize = false;
+            }
             requestAnimationFrame(() => syncPorts(this));
             return result;
+        };
+        // 每帧把卡片宽度钉到节点宽度（只在变了的时候写 DOM，代价可忽略）
+        const drawn = nodeType.prototype.onDrawForeground;
+        nodeType.prototype.onDrawForeground = function (ctx) {
+            syncRootWidth(this);
+            return drawn?.apply(this, arguments);
+        };
+        // 只有用户自己拖的尺寸才锁死自动调整；程序调整过的（setNodeHeight）不算。
+        const resized = nodeType.prototype.onResize;
+        nodeType.prototype.onResize = function () {
+            if (!this.__qgAutoSize && this._qgDisplay) {
+                this.properties ??= {};
+                this.properties.qg_user_resized = true;
+            }
+            return resized?.apply(this, arguments);
         };
         const configured = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function () {
@@ -844,7 +926,7 @@ app.registerExtension({
             }
             createPreview(this);
             renderPreview(this, this.properties.qg_display_preview);
-            requestAnimationFrame(() => syncPorts(this));
+            requestAnimationFrame(() => { syncPorts(this); fitNodeToContent(this); });
             return result;
         };
         const connected = nodeType.prototype.onConnectionsChange;

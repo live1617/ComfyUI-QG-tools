@@ -3,8 +3,8 @@
 // 只提供：样式注入、DOM 小工具、编辑弹窗、画布绘制/穿透钩子
 // ===========================================================================
 import { app } from "/scripts/app.js";
-import { zh } from "./zh.mjs?v=2026102002";
-import { MD_DEFAULT_MAX_WIDTH } from "./md_render.mjs?v=2026102002";
+import { zh } from "./zh.mjs?v=2026102319";
+import { MD_DEFAULT_MAX_WIDTH } from "./md_render.mjs?v=2026102319";
 
 const CSS_ID = "qgtools-canvaslabel-css";
 
@@ -124,6 +124,24 @@ function el(tag, className, text) {
     return node;
 }
 
+/**
+ * <input type="number"> 默认响应鼠标滚轮 —— 用户滚动画布时鼠标扫过输入框，
+ * 值会被悄悄改掉（实测把字号从 20 滚成 200，8 个字量出 1600px 宽，
+ * 节点直接被顶出画布，看起来像「标签消失了」）。
+ *
+ * 所以未聚焦时禁止滚轮改值（聚焦时保留，用户明确在调才生效）。
+ */
+function guardNumberInput(inp) {
+    if (!inp || inp.__qgNoWheel) return inp;
+    inp.__qgNoWheel = true;
+    inp.addEventListener("wheel", (e) => {
+        if (document.activeElement === inp) return; // 已聚焦：用户自己在调
+        e.preventDefault();
+        inp.blur();
+    }, { passive: false });
+    return inp;
+}
+
 // 离屏上下文：computeSize 拿不到画布 ctx，用它来量文字（两节点共用）
 let _measureCtx = null;
 function getMeasureCtx() {
@@ -162,8 +180,11 @@ function toHexColor(value) {
 // 把表单里的当前值读成一个纯对象
 function readValues(form, node, showMarkdown) {
     // 字段为空/非法时保留节点当前值，再不行才回退到默认 20
+    // 上限 400：字号再大也没意义，而且会把节点宽度顶成几千 px、直接飞出画布
+    // （踩过：误输入 200 让 8 个字量出 1600px 宽，节点看起来「消失」了）
     const fsRaw = (form.fontSize.value ?? "").trim();
-    const fontSize = fsRaw === "" ? Number(node?.properties?.["fontSize"]) || 20 : Number(fsRaw);
+    const fsNum = fsRaw === "" ? Number(node?.properties?.["fontSize"]) || 20 : Number(fsRaw);
+    const fontSize = Math.max(1, Math.min(400, Number.isFinite(fsNum) ? fsNum : 20));
     const values = {
         text: form.text.value,
         fontSize,
@@ -213,6 +234,10 @@ function applyToNode(node, v) {
             if (Array.isArray(s) && s[0] > 0 && s[1] > 0) node.size = s;
         } catch (e) { /* 量算失败不阻断 */ }
     }
+    // 🔴 Vue（Nodes 2.0）下内容画在 DOM widget 里：直接改 title / properties 不会
+    //    触发任何重绘，setDirtyCanvas 也只作用于 canvas。必须显式通知 DOM 分支重排，
+    //    否则「输入框里改了字、画布上还是旧内容」。经典模式没有 __qgLabelDom，空操作。
+    node.__qgLabelDom?.refresh?.();
     app.graph?.setDirtyCanvas?.(true, true);
 }
 
@@ -222,30 +247,84 @@ const FALLBACK_FONTS = [
     "Georgia", "Verdana", "Impact", "Consolas",
 ];
 
-// 所有节点属性的完整默认值模板。仅用于「取消/ESC 回滚」时把本次会话新增、
-// 快照里没有的 key（如 shadow/opacity）归位到默认，绝不覆盖快照里已有的真实值。
-const NODE_DEFAULTS = {
-    fontSize: 20, fontFamily: "Arial", fontColor: "#ffffff", textAlign: "left",
-    backgroundColor: "transparent", padding: 0, borderRadius: 0, angle: 0,
-    bold: false, italic: false, markdown: true, wrap: true,
-    maxWidth: MD_DEFAULT_MAX_WIDTH, shadow: false, opacity: 100,
+// 两类便签的默认外观。⚠️ 它们是【唯一色源 / 尺寸源】：节点的 properties 默认值、
+// draw() 与 DOM 侧的兜底、编辑器的取色器初始值都引用这里，别在别处再写字面量。
+//
+// 画布标签（CanvasLabel）：透明底 + 3px 内边距 + 3px 圆角 —— 它通常直接压在画面上，
+//   不填充才不会挡住底图，内边距/圆角只为「万一填了色」时留出边界感。
+// Markdown 便签（MarkdownNote）：#2B3A3F 深青灰卡片 + 8px 内边距 + 8px 圆角。
+//   底色由 #161F21 换到 #2B3A3F 的原因：深色主题画布是 rgb(26,26,26)，
+//   #161F21 与它只有 1.04:1（等于隐形），这个色是 1.47:1，能看出卡片边界。
+const DEFAULT_LABEL_BG = "transparent";
+const DEFAULT_MD_BG = "#2B3A3F";
+const DEFAULT_LABEL_PAD = 3;
+const DEFAULT_LABEL_RADIUS = 3;
+const DEFAULT_MD_PAD = 8;
+const DEFAULT_MD_RADIUS = 8;
+
+// 按节点类型取默认底色（编辑器的取色器初始值要走这里，否则打开面板会显示错色）
+const isMdNode = (node) => String(node?.comfyClass ?? "") === "QG_MarkdownNote";
+const defaultBgOf = (node) => (isMdNode(node) ? DEFAULT_MD_BG : DEFAULT_LABEL_BG);
+
+// 「取消/ESC 回滚」模板。仅用于把快照里没有的 key（如 shadow/opacity）归位到默认，
+// 绝不覆盖快照里已有的真实值。两类节点分开，免得把另一类的默认值写进来。
+const COMMON_DEFAULTS = {
+    fontColor: "#ffffff", textAlign: "left", angle: 0,
+    shadow: false, opacity: 100, maxWidth: MD_DEFAULT_MAX_WIDTH,
 };
+const LABEL_DEFAULTS = Object.assign({}, COMMON_DEFAULTS, {
+    fontSize: 20, fontFamily: "Arial",
+    backgroundColor: DEFAULT_LABEL_BG,
+    padding: DEFAULT_LABEL_PAD, borderRadius: DEFAULT_LABEL_RADIUS,
+    bold: false, italic: false, markdown: false, wrap: false,
+});
+const MD_DEFAULTS = Object.assign({}, COMMON_DEFAULTS, {
+    fontSize: 16, fontFamily: "Arial",
+    backgroundColor: DEFAULT_MD_BG,
+    padding: DEFAULT_MD_PAD, borderRadius: DEFAULT_MD_RADIUS,
+    markdown: true, wrap: true,
+});
+const defaultsFor = (node) => (isMdNode(node) ? MD_DEFAULTS : LABEL_DEFAULTS);
 
 let openDialog = null;
 
 // 版本标记：方便在浏览器控制台确认新 js 已加载（面板根节点也带 data-qgtools-cl-build）
-const BUILD = "2026-10-19.19";
+const BUILD = "2026-10-22.20";
 function logBuild() {
     if (window.__qgLabelBuildLogged) return;
-    console.info("[QG-tools] build " + BUILD + "（Markdown 弹窗：预览无滚动条、按宽度自适应、纵向跟随文本框）");
+    console.info("[QG-tools] build " + BUILD + "（标签编辑器：切渲染模式自动收起浮层、遮罩点空白即关闭）");
     window.__qgLabelBuildLogged = 1;
+}
+
+/**
+ * 清掉任何残留的 QG 浮层。
+ *
+ * 🔴 全屏遮罩（.qgtools-cl-mdl-overlay）是 position:fixed;inset:0、背景完全透明、
+ *    z-index 10000，且设计成「点空白不关闭、只吞事件」。它一旦没被正常关闭
+ *    （切节点 / 切渲染模式 / 异常路径），就会永久盖在最上层 —— 画布拖不动、
+ *    滚轮缩放失效、连顶部按钮都点不了，用户只能强刷页面。
+ *    所以每次打开编辑器前先清一遍；也给控制台留一个手动清理入口。
+ */
+function killStaleFloating() {
+    let n = 0;
+    try { openDialog?.close?.(); } catch { /* 忽略 */ }
+    openDialog = null;
+    try {
+        const sel = ".qgtools-cl-mdl-overlay, .qgtools-cl-editor-toolbar, "
+            + ".qgtools-cl-editor-dims, .qgtools-cl-editor-pop";
+        for (const e of document.querySelectorAll(sel)) {
+            e.remove();
+            n++;
+        }
+    } catch { /* 忽略 */ }
+    return n;
 }
 
 // 打开标签编辑面板（暗色浮动工具条版式，画布标签节点专用）。
 // 编辑时画布上的真实节点实时同步；工具条浮在节点正下方，并在节点左上角显示 W×H 尺寸徽标。
 // opts: { showMarkdown, placeholder }
 function openLabelEditor(node, opts) {
-    if (openDialog) return; // 同时只开一个
+    killStaleFloating();
     ensureCss();
     logBuild();
     const showMarkdown = !!opts.showMarkdown;
@@ -272,6 +351,8 @@ function openLabelEditor(node, opts) {
     const fontSize = el("input", "qgtools-cl-tnum");
     fontSize.type = "number";
     fontSize.min = "1";
+    fontSize.max = "400";
+    guardNumberInput(fontSize);
     fontSize.value = node.properties["fontSize"] ?? 20;
     bar.append(fontSize);
     bar.append(el("span", "qgtools-cl-tsep"));
@@ -408,8 +489,8 @@ function openLabelEditor(node, opts) {
     bar.append(el("span", "qgtools-cl-tsep"));
 
     // --- 背景颜色（含「透明」开关：系统取色器本身给不出 transparent） ---
-    const backgroundColor = el("input"); backgroundColor.type = "text"; backgroundColor.value = node.properties["backgroundColor"] ?? "transparent";
-    const bgPicker = el("input"); bgPicker.type = "color"; bgPicker.value = toHexColor(node.properties["backgroundColor"] ?? "#000000");
+    const backgroundColor = el("input"); backgroundColor.type = "text"; backgroundColor.value = node.properties["backgroundColor"] ?? defaultBgOf(node);
+    const bgPicker = el("input"); bgPicker.type = "color"; bgPicker.value = toHexColor(node.properties["backgroundColor"] ?? defaultBgOf(node));
     const bgWrap = el("div", "qgtools-cl-tcolor");
     bgWrap.append(backgroundColor, bgPicker); // 同上：取色器置于最上层
     const bgTransBtn = el("button", "qgtools-cl-tbtn", "透明");
@@ -459,6 +540,7 @@ function openLabelEditor(node, opts) {
         const row = el("div", "qgtools-cl-pop-row");
         row.append(el("label", "", labelText));
         const inp = el("input"); inp.type = "number";
+        guardNumberInput(inp);
         if (o && o.min != null) inp.min = String(o.min);
         if (o && o.step != null) inp.step = String(o.step);
         inp.value = value ?? 0;
@@ -618,12 +700,12 @@ function openLabelEditor(node, opts) {
         }
         openDialog = null;
     };
-    // 取消 / ESC：把快照原样写回节点。用 NODE_DEFAULTS 兜底——把本次会话新增、
+    // 取消 / ESC：把快照原样写回节点。用 defaultsFor(node) 兜底——把本次会话新增、
     // 快照里没有的 key（shadow/opacity）归位到默认，避免「勾了阴影又取消却还在」的回滚遗漏。
     const close = (revert) => {
         if (revert) {
             node.title = snapshot.title;
-            const restored = Object.assign({}, NODE_DEFAULTS);
+            const restored = Object.assign({}, defaultsFor(node));
             for (const k in snapshot.properties) restored[k] = snapshot.properties[k];
             node.properties = restored;
             if (typeof node.computeSize === "function") {
@@ -632,6 +714,8 @@ function openLabelEditor(node, opts) {
                     if (Array.isArray(s) && s[0] > 0 && s[1] > 0) node.size = s;
                 } catch (e) { /* 忽略 */ }
             }
+            // Vue 模式下回滚同样要重排 DOM（经典模式没有 __qgLabelDom，空操作）
+            node.__qgLabelDom?.refresh?.();
             app.graph?.setDirtyCanvas?.(true, true);
         }
         cleanup();
@@ -661,7 +745,8 @@ function openLabelEditor(node, opts) {
     }
 
     document.body.append(root, dims, pop);
-    openDialog = { overlay: root };
+    // close(true) = 取消并回滚（编辑期间没写节点，等价于丢弃本次修改）
+    openDialog = { overlay: root, close: () => close(true) };
     text.focus();
     refresh();
 }
@@ -675,7 +760,14 @@ function openLabelEditor(node, opts) {
 //   measure —— 返回内容在给定可视宽度下的实际占位尺寸 { w, h }，用来撑出滚动范围；
 //              必须与 paint 用同一套缩放算式，否则联动比例会跑偏。
 function openLabelEditorModal(node, opts) {
-    if (openDialog) return; // 同时只开一个
+    // 同时只开一个 —— 但「已登记」不等于「还活着」：切渲染模式 / 异常卸载会把
+    // 浮层从 DOM 摘走却留下 openDialog，此时的 return 等于永久锁死编辑器。
+    // 只有登记对象确实还挂在文档里才真的跳过，否则按残留清掉再开。
+    if (openDialog) {
+        const alive = openDialog.overlay?.isConnected;
+        if (alive) return;
+        killStaleFloating();
+    }
     ensureCss();
     logBuild();
     const showMarkdown = !!opts.showMarkdown;
@@ -726,6 +818,7 @@ function openLabelEditorModal(node, opts) {
         const mdLine = el("div", "qgtools-cl-mdl-checkline");
         mdLine.append(markdown, el("span", "qgtools-cl-mdl-hint", "Markdown"), wrap, el("span", "qgtools-cl-mdl-hint", "自动换行"));
         maxWidth = el("input"); maxWidth.type = "number";
+        guardNumberInput(maxWidth);
         maxWidth.min = "40"; maxWidth.step = "10";
         maxWidth.value = Number(node.properties["maxWidth"]) || MD_DEFAULT_MAX_WIDTH;
         const mdRow = el("div", "qgtools-cl-mdl-row");
@@ -737,6 +830,8 @@ function openLabelEditorModal(node, opts) {
     const fontSize = el("input");
     fontSize.type = "number";
     fontSize.min = "1";
+    fontSize.max = "400";
+    guardNumberInput(fontSize);
     fontSize.value = node.properties["fontSize"] ?? 20;
 
     // 字体：自定义下拉（原生 <select> 的展开方向由浏览器决定，无法保证向下）
@@ -838,6 +933,7 @@ function openLabelEditorModal(node, opts) {
     textAlign.value = node.properties["textAlign"] ?? "left";
     const padding = el("input");
     padding.type = "number";
+    guardNumberInput(padding);
     padding.min = "0";
     padding.value = node.properties["padding"] ?? 0;
     const row2 = el("div", "qgtools-cl-mdl-row");
@@ -862,10 +958,10 @@ function openLabelEditorModal(node, opts) {
     const bgLine = el("div", "qgtools-cl-colorline");
     const bgPicker = el("input");
     bgPicker.type = "color";
-    bgPicker.value = toHexColor(node.properties["backgroundColor"] ?? "#000000");
+    bgPicker.value = toHexColor(node.properties["backgroundColor"] ?? defaultBgOf(node));
     const backgroundColor = el("input");
     backgroundColor.type = "text";
-    backgroundColor.value = node.properties["backgroundColor"] ?? "transparent";
+    backgroundColor.value = node.properties["backgroundColor"] ?? defaultBgOf(node);
     bgPicker.addEventListener("input", () => { backgroundColor.value = bgPicker.value; refresh(); });
     bgPicker.addEventListener("change", () => { backgroundColor.value = bgPicker.value; refresh(); });
     backgroundColor.addEventListener("input", () => { if (/^#[0-9a-fA-F]{6}$/.test(backgroundColor.value)) bgPicker.value = backgroundColor.value; });
@@ -881,10 +977,12 @@ function openLabelEditorModal(node, opts) {
     // --- 圆角 / 旋转 ---
     const borderRadius = el("input");
     borderRadius.type = "number";
+    guardNumberInput(borderRadius);
     borderRadius.min = "0";
     borderRadius.value = node.properties["borderRadius"] ?? 0;
     const angle = el("input");
     angle.type = "number";
+    guardNumberInput(angle);
     angle.value = node.properties["angle"] ?? 0;
     const row3 = el("div", "qgtools-cl-mdl-row");
     row3.append(field("圆角", borderRadius), field("旋转(度)", angle));
@@ -975,7 +1073,7 @@ function openLabelEditorModal(node, opts) {
         openDialog = null;
     };
     // 取消 / ESC：编辑期间从未写过节点，所以【不需要回滚】，直接关掉即可。
-    // （旧版在这里把 snapshot 合进 NODE_DEFAULTS 再写回，会顺手给节点补上
+    // （旧版在这里把 snapshot 合进默认模板再写回，会顺手给节点补上
     //   shadow/opacity 两个默认键，把存档数据弄脏。）
     const close = () => cleanup();
     const commit = () => { applyToNode(node, readValues(form, node, showMarkdown)); cleanup(); };
@@ -987,11 +1085,18 @@ function openLabelEditorModal(node, opts) {
         else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commit(); }
     };
     document.addEventListener("keydown", onKeydown, true);
-    // 点击遮罩空白处【不】关闭弹窗（防误触丢失编辑内容），但仍吞掉事件防止穿透到画布
-    overlay.addEventListener("pointerdown", (e) => { e.stopPropagation(); });
+    // 点击遮罩空白处 = 取消关闭（编辑期间从未写过节点，取消即丢弃修改）。
+    // 🔴 绝不能只 stopPropagation 而不关闭：遮罩是全屏、背景完全透明、z-index 10000，
+    //    残留一份就会永久盖住整页 —— 画布拖不动、滚轮缩放失效、顶部按钮点不了。
+    overlay.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        if (e.target === overlay) close();
+    });
+    // 滚轮也别让它漏到画布（否则遮罩在时画布还会跟着缩放）
+    overlay.addEventListener("wheel", (e) => { e.stopPropagation(); }, { passive: true });
 
     document.body.append(overlay);
-    openDialog = { overlay };
+    openDialog = { overlay, close };
     text.focus();
     refresh();
 }
@@ -1071,4 +1176,4 @@ function registerLabelCanvasHooks(classes) {
     }
 }
 
-export { ensureCss, el, field, toHexColor, getMeasureCtx, openLabelEditor, openLabelEditorModal, registerLabelCanvasHooks };
+export { ensureCss, el, field, toHexColor, getMeasureCtx, openLabelEditor, openLabelEditorModal, registerLabelCanvasHooks, killStaleFloating, DEFAULT_LABEL_BG, DEFAULT_MD_BG, DEFAULT_LABEL_PAD, DEFAULT_LABEL_RADIUS, DEFAULT_MD_PAD, DEFAULT_MD_RADIUS };

@@ -19,8 +19,8 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { isQgNode } from "../shared/index.mjs?v=2026102002";
-import { nodeByExecutionId, outputKey, runScope } from "../shared/prompt_scope.mjs?v=2026102002";
+import { isQgNode } from "../shared/index.mjs?v=2026102319";
+import { nodeByExecutionId, outputKey, runScope } from "../shared/prompt_scope.mjs?v=2026102319";
 
 const rootGraph = () => app.rootGraph ?? app.graph ?? null;
 const graphOwner = (graph) => graph?.rootGraph?.id ?? graph?.id ?? null;

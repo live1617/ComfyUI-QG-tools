@@ -741,17 +741,18 @@
     {
       "id": "QG_TextReplace",
       "class": "QGTextReplace",
-      "display": "批量文本替换",
+      "display": "文本替换",
       "category": "QG-tools/文本",
-      "source_id": "BatchTextReplace",
-      "source_class": "BatchTextReplace",
-      "source_ref": "ComfyUI_Muye 1.0.17（text/batch_text_replace.py）",
-      "source_license": "MIT — licenses/ComfyUI-Muye-nodes-LICENSE.txt",
+      "source_id": "CR_TextReplace",
+      "source_class": "CR_TextReplace",
+      "source_ref": "ComfyUI_Comfyroll_CustomNodes（nodes/nodes_utils_text.py）",
+      "source_license": "MIT — licenses/ComfyUI_Comfyroll_CustomNodes-LICENSE.txt",
       "kind": "backend",
       "files_new": [
-        "nodes/qg_text_replace.py"
+        "nodes/qg_text_replace.py",
+        "web/text_replace/index.js"
       ],
-      "notes": "上游把所有输入都设成必填连线，单独放一个节点都点不动；改为全部可选：接 texts 走批量，否则用文本框单段文本。查找串先尝试编译正则，失败退化字面量替换。"
+      "notes": "v0.9.3 及更早搬的是 Muye 的 BatchTextReplace（文本框输入 + 文本列表槽），v0.9.4 起改搬 Comfyroll 的 CR_TextReplace（text 只从上游接、单段）。相对上游加了两点：① 模式下拉（字面 / 正则），不再靠「先试编译正则」的隐式猜测；② 空的查找串整组跳过，上游会把替换内容插到每个字符之间。web/text_replace/index.js 负责旧存档迁移：模式归位、老文本补多行文本节点接上、摘掉悬空的文本列表槽。"
     },
     {
       "id": "QG_TextSplit",

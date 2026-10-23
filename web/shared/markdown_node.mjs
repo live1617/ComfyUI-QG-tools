@@ -2,8 +2,10 @@
 // 纯前端虚拟节点：在画布上显示支持 Markdown 的便签/说明文字。
 // 渲染引擎：md_render.js（解析 → 排版 → 绘制）
 // 共用代码：label_common.js（编辑面板 + 画布钩子）
-import { openLabelEditorModal, registerLabelCanvasHooks, getMeasureCtx } from "./label_common.mjs?v=2026102002";
-import { MD_DEFAULT_MAX_WIDTH, getLabelLayout, drawLabelBlocks } from "./md_render.mjs?v=2026102002";
+import { openLabelEditorModal, registerLabelCanvasHooks, getMeasureCtx, DEFAULT_MD_BG,
+         DEFAULT_MD_PAD, DEFAULT_MD_RADIUS } from "./label_common.mjs?v=2026102319";
+import { MD_DEFAULT_MAX_WIDTH, getLabelLayout, drawLabelBlocks } from "./md_render.mjs?v=2026102319";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102319";
 
 const MD_NODE_TYPE = "QG_MarkdownNote";
 
@@ -118,9 +120,10 @@ class QGMarkdownNote extends LGraphNode {
                 fontFamily: "Arial",
                 fontColor: "#ffffff",
                 textAlign: "left",
-                backgroundColor: "transparent",
-                padding: 6,
-                borderRadius: 0,
+                // 默认外观（同 label_common 常量）：深青灰卡片 + 8px 内边距 + 8px 圆角
+                backgroundColor: DEFAULT_MD_BG,
+                padding: DEFAULT_MD_PAD,
+                borderRadius: DEFAULT_MD_RADIUS,
                 angle: 0,
                 markdown: true,
                 wrap: true,
@@ -137,6 +140,9 @@ class QGMarkdownNote extends LGraphNode {
     drawBadges(ctx) {}
 
     draw(ctx) {
+        // Nodes 2.0（Vue 渲染）：节点由 DOM widget 显示，这里必须立刻返回，
+        // 否则 canvas 自绘与 DOM 会同时出现（双影 / 错位叠字）。
+        if (vueNodesEnabled()) return;
         this.flags = this.flags || {};
         // Pin 后不再响应拖拽等交互
         this.flags.allow_interaction = !this.flags.pinned;
@@ -146,7 +152,7 @@ class QGMarkdownNote extends LGraphNode {
 
         const fontSize = Number(this.properties["fontSize"]) || 16; // 与构造函数默认值保持一致
         const fontColor = this.properties["fontColor"] || "#ffffff";
-        const backgroundColor = this.properties["backgroundColor"] || "";
+        const backgroundColor = this.properties["backgroundColor"] || DEFAULT_MD_BG;
         const family = this.properties["fontFamily"] || "Arial";
         const padding = Number(this.properties["padding"]) || 0;
         const opts = {
@@ -208,6 +214,12 @@ class QGMarkdownNote extends LGraphNode {
         if (!mctx) return [100, 40];
         const { layout } = getLabelLayout(mctx, processed, opts);
         return [layout.width + padding * 2, layout.height + padding * 2];
+    }
+
+    // 属性变化时重排 Vue 分支的 DOM（经典模式没有 __qgLabelDom，空操作）。
+    // 🔴 setDirtyCanvas() 在 Vue 下不管 DOM widget，改完属性必须主动刷新。
+    onPropertyChanged(name, value, prev) {
+        this.__qgLabelDom?.refresh?.();
     }
 
     // 双击或右键菜单都走同一个编辑弹窗（备份版布局：左预览 / 右表单）

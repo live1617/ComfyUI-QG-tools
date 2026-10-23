@@ -35,10 +35,10 @@ const NODE_CLASS = "QG_TripleLoader";
 const PRETTY_WIDGETS = new Set(["unet_name", "clip_name", "vae_name"]);
 
 // 新建节点的默认宽度（CSS px）。
-// 取值依据：用户截图（DPR=2）中目标节点横向 x 25->736 = 711 img px = 356 CSS px。
+// 取 400 = 「LoRA 加载器」的宽度，两个加载器并排放着一样宽（2026-10-21 用户指定）。
 // 仅在节点创建时设置一次；工作流加载时 configure() 会用保存的 size 覆盖，
 // 用户手动调整过的宽度不会丢。高度取当前值，不改变默认高度行为。
-const DEFAULT_WIDTH = 356;
+const DEFAULT_WIDTH = 400;
 
 // nodeId -> { element, widgets: [widget...], observer }
 const patchedNodes = new Map();

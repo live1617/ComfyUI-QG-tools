@@ -2,7 +2,10 @@
 // 纯前端虚拟节点：不参与后端执行，只在画布上显示一行/多行纯文字。
 // Markdown 相关的渲染已拆到独立节点「Markdown 文本」；本节点保持纯文本，不做语法解析。
 // 共用代码：label_common.js（编辑面板 + 画布钩子）
-import { openLabelEditor, registerLabelCanvasHooks, getMeasureCtx } from "./label_common.mjs?v=2026102002";
+import { openLabelEditor, registerLabelCanvasHooks, getMeasureCtx, DEFAULT_LABEL_BG,
+         DEFAULT_LABEL_PAD, DEFAULT_LABEL_RADIUS } from "./label_common.mjs?v=2026102319";
+import { syncCanvasLabelMode } from "./canvas_label_dom.mjs?v=2026102319";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102319";
 
 const NODE_TYPE = "QG_CanvasLabel";
 
@@ -58,18 +61,29 @@ class QGCanvasLabel extends LGraphNode {
                 fontFamily: "Arial",
                 fontColor: "#ffffff",
                 textAlign: "left",
-                backgroundColor: "transparent",
-                padding: 0,
-                borderRadius: 0,
+                // 默认外观（色 / 内边距 / 圆角）统一取 label_common 的常量：
+                // 画布标签默认透明底（压在画面上不挡底图），3px 内边距 + 3px 圆角
+                // 只是「用户一旦填了色」时的边界感。
+                backgroundColor: DEFAULT_LABEL_BG,
+                padding: DEFAULT_LABEL_PAD,
+                borderRadius: DEFAULT_LABEL_RADIUS,
                 angle: 0,
                 bold: false,
                 italic: false,
             },
             this.properties
         );
-        // 节点本身不带任何边框/底色，视觉完全由 draw() 控制
         this.color = "#fff0";
         this.bgcolor = "#fff0";
+    }
+
+    // 节点加入 graph 时挂上模式迁移入口。Vue 模式下 ComfyUI 可能不走 constructor，
+    // 但 onAdded 在两种模式下都会被调用。
+    onAdded() {
+        if (typeof this.__qgSyncMode !== "function") {
+            this.__qgSyncMode = () => syncCanvasLabelMode(this);
+        }
+        syncCanvasLabelMode(this);
     }
 
     // 覆盖 litegraph 的徽标绘制：前端虚拟节点默认会被 ComfyUI 打上
@@ -77,6 +91,8 @@ class QGCanvasLabel extends LGraphNode {
     drawBadges(ctx) {}
 
     draw(ctx) {
+        // Vue 渲染模式下由 DOM widget 接管，canvas 自绘会跟 DOM 双影，直接短路。
+        if (vueNodesEnabled()) return;
         this.flags = this.flags || {};
         // Pin 后不再响应拖拽等交互
         this.flags.allow_interaction = !this.flags.pinned;
@@ -86,7 +102,7 @@ class QGCanvasLabel extends LGraphNode {
 
         const fontSize = Number(this.properties["fontSize"]) || 20;
         const fontColor = this.properties["fontColor"] || "#ffffff";
-        const backgroundColor = this.properties["backgroundColor"] || "";
+        const backgroundColor = this.properties["backgroundColor"] || DEFAULT_LABEL_BG;
         const family = this.properties["fontFamily"] || "Arial";
         const padding = Number(this.properties["padding"]) || 0;
 
@@ -151,6 +167,11 @@ class QGCanvasLabel extends LGraphNode {
         mctx.font = `${style}${Math.max(fontSize, 1)}px ${quoteFamily(family)}`;
         const met = textMetrics(mctx, lines, Math.max(fontSize, 1));
         return [met.maxW + padding * 2, met.lineH * lines.length + padding * 2];
+    }
+
+    // 属性变化时，Vue 模式的 DOM 分支需要重排内容
+    onPropertyChanged(name, value, prev) {
+        this.__qgLabelDom?.refresh?.();
     }
 
     // 双击或右键菜单都走同一个编辑弹窗

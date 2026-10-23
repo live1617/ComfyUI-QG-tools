@@ -6,7 +6,7 @@
 // Resolves true when the user chose to discard, false to keep editing.
 // "Keep editing" is the focused default, so a stray Enter or Escape is safe.
 
-import { BRAND } from "./index.mjs?v=2026102002";
+import { BRAND } from "./index.mjs?v=2026102319";
 
 const STYLE_ID = "qgtools-discard-prompt-style";
 

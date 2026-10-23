@@ -38,6 +38,19 @@ ComfyUI-QG-tools/
 以及被它们串起来带进来的通用工具（`transform_geometry`、`media_picker`、`pad_canvas`…）。
 后一类当前没有节点直接用，但**别删** —— 删了会让 `widget_card.mjs` 的 import 断链。
 
+### 节点默认宽度：`web/shared/node_width.mjs`
+
+ComfyUI 的节点默认宽度**不在 Python 里**，是前端按控件类型算的（带多行文本框的会被撑到
+400，普通节点 270，只有两个控件的甚至算成 159），`INPUT_TYPES` 里没法声明，grep 也 grep 不到。
+所以统一由 `qg_init.js` 在所有 `QG_*` 节点注册前调用 `pinNodeWidth()` 钉一遍：
+
+- `DEFAULT_WIDTH = 270`；
+- `SKIP` 里是**自己有尺寸逻辑**的节点（种子卡片 300、LoRA 面板 400、对比台 420…），绝不碰；
+- `OVERRIDES` 给带多行输入框的节点单独定宽（目前 400）；
+- **只影响新建**：存档里有宽度的节点由 `onConfigure` 覆盖回来，不动用户调过的尺寸。
+
+想看全部节点的实际默认尺寸：`tools/probe_all_node_widths.py`（工作区脚本，headless 起页面逐个新建量）。
+
 ## 命名约定
 
 本插件所有节点统一：
@@ -65,6 +78,22 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "我的节点"}
 
 3. 节点类里写 `CATEGORY = "QG-tools"`，菜单里就会归到 QG-tools 下面。
 4. 重启 ComfyUI。`__init__.py` 会自动扫描 `nodes/`，无需手工注册。
+5. 还有五处要一起改 —— 漏了不会崩，但会静默缺中文、搜不到、宽度不对：
+
+| 位置 | 改什么 |
+|---|---|
+| `locales/zh/nodeDefs.json` | 加条目：`display_name` / `description` / `inputs`（带 tooltip）/ `outputs` |
+| 汉化插件 `zh-CN/Nodes/ComfyUI-QG-tools.json` | 同上但**格式不同**（`title` + 纯字符串 name），两套不可互换 |
+| `web/shared/node_aliases.mjs` | 登记英文别名；`verify_display_names.py` 会检查键不多不少 |
+| `web/shared/node_width.mjs` | 带多行框的加进 `OVERRIDES`；自己有尺寸逻辑的加进 `SKIP` |
+| `tools/sync_translation_pack.py` | 加进 `NODE_ORDER`，否则同步汉化包时报「字典里还有本脚本没列出的键」 |
+
+改完跑 `verify_display_names.py` / `verify_i18n.py` / `verify_i18n_reverse.py` /
+`js_check.py` / `verify_port.py`，再 `sync_translation_pack.py --apply` 刷新分发的汉化包。
+
+> 节点总数**不用手改**：`verify_display_names.py` 现在从 `nodes/*.py` 里数出来
+> （两种写法都认：映射块里的字面量键，以及 `{NODE_TYPE: "显示名"}` 这种常量做键）。
+> 之前写死 28，加节点忘了改就会误报「数量不符」，反而盖住真正的缺口。
 
 ## 硬性约定（踩过的坑）
 
@@ -92,6 +121,11 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "我的节点"}
   用户普通刷新即可生效。**每次改了 shared 模块都要换一个新版本串**（建议用
   `YYYYMMDDNN`），否则 URL 不变等于没打。
 - 前端 JS 改动后浏览器要 `Ctrl+Shift+R` 强刷（带版本串的模块改动只需普通刷新）。
+- 🔴 **DOM widget 里的滚动区用 `flex:1 1 0` + `min-height:0`，别用 `flex:1 1 auto`。**
+  Vue（Nodes 2.0）的节点高度是 `renderingSize = max(node.size, DOM 内容高度)`；
+  `flex-basis:auto` 会让滚动区按**全文内容**撑开 —— 实测 6,389 字的文档把 360 高的节点
+  撑到 721.9，切 Vue 后节点高度失控。经典模式画布尺寸固定，看不出来，所以只在 Vue 复现。
+  `display_any` 一直是 `flex:1;min-height:0` 的正确写法，`md_reader` 曾写成 `auto`。
 - **面板上的文案：静态串进字典，拼接串/后写的 `title`/画布文字必须走 `zh()`。**
   汉化插件只整串全等匹配、且不监听属性变化，细节与纪律见下方「汉化深度清理」。
 - **前端绝不在页面加载时调用 ComfyUI-Manager 的接口；非要用必须带 `skip_update=true`**。
@@ -128,18 +162,258 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "我的节点"}
 
 ## 抽取来源
 
+32 个节点 = **25 搬运** + **1 按思路重写** + **6 原创**。逐文件的 from/to 与每一处
+字符串替换记在 `PORTED.json`（`pack_version` 停在 0.8.0，后面几批以本表为准）。
+
 | 来源插件 | 抽取的节点 | 当前 ID | 说明 |
 |---|---|---|---|
-| ComfyUI-AusBoss v2.10.1（MIT） | LoRA Loader | `QG_LoraLoader` | 见下方「LoRA Loader 搬家记录」 |
-| ComfyUI-AusBoss v2.10.1（MIT） | Workflow Note | `QG_WorkflowNote` | 见「说明卡 / 开关 搬家记录」 |
-| ComfyUI-AusBoss v2.10.1（MIT） | Workflow Switches | `QG_WorkflowSwitches` | 同上 |
+| ComfyUI-AusBoss v2.10.1 / 2.11.1 / 2.12.x（MIT） | LoRA Loader / 图像裁剪 + 旋转 + 补边 / Workflow Note / Workflow Switches / RunTimer / 图像对比 | `QG_LoraLoader` / `QG_ImageCropRotatePad` / `QG_WorkflowNote` / `QG_WorkflowSwitches` / `QG_RunTimer` / `QG_ImageCompare` | 见下方各「搬家记录」；`QG_ImageCompare` 上游约 3900 行，只搬滑动 / A / B / 擦除那一部分 |
+| ComfyUI-AusBoss + rgthree-comfy（MIT） | 种子 | `QG_Seed` | 卡片界面来自 AusBoss，取值与随机逻辑来自 rgthree；老存档 -1/-2/-3 在 `onConfigure` 翻译 |
 | ComfyUI_Muye 1.0.17（MIT） | Text Edit Output | `QG_TextEditOutput` | v0.6.0，见「Text Edit Output 搬家记录」 |
-| ComfyUI_Muye 1.0.17（MIT） | 图像水印 / 文字叠加图像 / 宫格图像拼接 / 遮罩上色 / 遮罩拼接 / 批量文本替换 / 文本按分隔符分割 / 尺寸选择器 | `QG_ImageWatermark` / `QG_TextOverlayImage` / `QG_ImageGrid` / `QG_MaskColorize` / `QG_MaskConcat` / `QG_TextReplace` / `QG_TextSplit` / `QG_SizeSelector` | v0.8.5，见「Muye 8 节点搬家记录」 |
+| ComfyUI_Muye 1.0.17（MIT） | 图像水印 / 文字叠加图像 / 宫格图像拼接 / 遮罩上色 / 遮罩拼接 / 文本按分隔符分割 / 尺寸选择器 | `QG_ImageWatermark` / `QG_TextOverlayImage` / `QG_ImageGrid` / `QG_MaskColorize` / `QG_MaskConcat` / `QG_TextSplit` / `QG_SizeSelector` | v0.8.5，见「Muye 8 节点搬家记录」 |
+| ComfyUI_Comfyroll_CustomNodes（MIT） | 文本合并 / 文本替换 | `QG_TextConcat` / `QG_TextReplace` | v0.9.4。`QG_TextReplace` 原本搬的是 Muye 的 `BatchTextReplace`（v0.8.5 ~ v0.9.3），v0.9.4 换成 Comfyroll 的 `CR_TextReplace`，旧存档由 `web/text_replace/index.js` 自动迁移 |
+| rgthree-comfy（MIT） | 图像缩放 / 图像或 Latent 尺寸 | `QG_ImageResize` / `QG_ImageOrLatentSize` | 复用 ComfyUI 自带的 `common_upscale`，没有额外依赖 |
+| ComfyUI_Custom_Nodes_AlekPet（MIT） | Google 翻译 | `QG_GoogleTranslateText` | 上游依赖 `googletrans`；这里用 `requests` 直连同一批端点，保持「零新增依赖」 |
+| 孤海工具箱（Goohaitools-comfyui，GPL-3.0） | 任意切换 / 展示任意 | `QG_AnySwitch` / `QG_DisplayAny` | 类名与分类改成 QG，GPL 出处标注保留在文件头 |
+| ComfyUI-Easy-Use（GPL-3.0） | 是否判断 | `QG_IfElse` | 未选中那一支走 `check_lazy_status` 不执行 |
+| ComfyUI-MD-Reader（**作者自有插件**） | 加载文档 | `QG_MDReader` | 同一作者的旧插件，合并进来，不是第三方搬运 |
+| ComfyUI-TripleLoader（**作者自有插件**） | 模型加载器 | `QG_TripleLoader` | 同上；它在 import 期就实例化内置的 UNET / CLIP / VAE Loader |
+| ComfyUI-Crystools（GPL-3.0） | 字符串切换（**按思路重写，非逐行搬运**） | `QG_StringSwitch` | v0.9.4，见下方「字符串切换」 |
+| 原创（无上游代码） | 布尔开关 | `QG_BoolToggle` | v0.9.4，见下方「布尔开关」。交互参考孤海「布尔」，卡片绘制 / 等比缩放 / 命中区是自己写的 |
+| 原创（无上游代码） | 数值 | `QG_Number` | v0.9.4，见下方「数值」 |
+| 原创（无上游代码） | 数学运算 | `QG_Math` | v0.9.4，见下方「数学运算」 |
+| 原创（无上游代码） | 画布标注 / Markdown 便签 / 导出图像 | `QG_CanvasLabel` / `QG_MarkdownNote` / `QG_ExportImage` | v0.9.3。前两个是纯前端裸节点，第三个只借了 KOOK / 孤海同类节点「quality 该放在哪」的结论 |
+
 
 搬运与改名用的是一批开发期脚本（`port_node.py` 抽节点、`rename_to_qg.py` 统一命名、
 `rename_css_prefix.py` 改 CSS 前缀），**不随本仓库分发** —— 它们是按当时那个版本的
 AusBoss 源码硬编码路径写的，通用性有限。下面「搬家记录」保留了每一步的完整映射表，
 照着表可以逐步复现，不需要那些脚本。
+
+## 字符串切换（原创，v0.9.4）
+
+Crystools 的 `Switch string [Crystools]` 之所以好用，是因为它的两个字符串分支是
+**可编辑框**而不是槽 —— 两版提示词直接写在节点上，拨个布尔就换。`QG_IfElse` 做不到：
+它的两路是任意类型的纯槽，想填常量得再拉两个文本节点、再连两根线。
+
+所以按它的**思路重写**了一个（不是逐行搬运，文案/惰性判断/显示名都不同）：
+
+```python
+"boolean":  ("BOOLEAN", {"default": False, "tooltip": "..."}),
+"on_true":  ("STRING", {"default": "", "multiline": True, "rows": 3, "lazy": True, "tooltip": "..."}),
+"on_false": ("STRING", {"default": "", "multiline": True, "rows": 3, "lazy": True, "tooltip": "..."}),
+```
+
+要点：
+
+- **`default` 才是「画成可编辑框」的原因**，`lazy` 只管执行。两个都有，才能既在节点上
+  打字、又能拖成输入槽被上游覆盖（连线优先于框里的值）。
+- `check_lazy_status` 沿用 `QG_IfElse` 的写法（带 `is None` 判断）。上游 Crystools 是
+  「无条件 `return [needed]`」，那个写法在输入未连接时会把不存在的输入当成待解析项。
+- 上游接了线却返回 `None` 时输出空串，避免下游拿到 `None` 报难以定位的错。
+
+**没有搬 `LazySwitch2way`（LG_Tools 的「惰性开关（双路）」）**：它与 `QG_IfElse` 重叠
+≥90%，而且四个输入全在 `required` —— 实测缺一条就 `Required input is missing`
+（`execution.py:909` 的校验不看 `lazy`），省不了接线，只省一个节点。
+
+## 布尔开关（原创，v0.9.4）
+
+本包里的布尔（`QG_IfElse` / `QG_StringSwitch` 的 `boolean`）都是各节点自己的小控件，
+一处控制多处就得逐个点。这个节点把开关本身画到画布上：整张节点就是一枚开关，
+一大号「开 / 关」+ 一枚可点的胶囊，输出一个 BOOLEAN 供任意扇出。
+
+后端只有两个普通控件（布尔 + 标签），前端把它们都折叠掉自己画：
+
+```python
+"boolean": ("BOOLEAN", {"default": False, "tooltip": "..."}),
+"label":   ("STRING",  {"default": "", "multiline": False, "tooltip": "..."}),
+RETURN_TYPES = ("BOOLEAN",)
+```
+
+`label` 放在 `boolean` **后面**：`configure()` 按位置塞 `widgets_values`，新控件加在末尾才不会
+让老存档错位。它只是给前端画字用的，`execute()` 收下就丢；没有输入槽，所以不会被误接上游。
+
+前端 `web/bool_toggle/index.js` 的要点（都是踩过的坑）：
+
+- **隐藏控件，不删控件** —— `hideInputsInDef(nodeData, ["boolean"])` 连输入点一起收掉，
+  `hideWidget(widget)` 折叠渲染（两个控件都要 hide）；值仍在 `widgets_values`，存档 / 撤销 /
+  API 全不用管。实测存档是 `[false, "美颜"]`。
+- **名字得另给入口** —— 控件被折叠就点不到了：双击卡片、或右键「重命名标签…」走
+  `openLabelEditor()`。**没有弹窗**：输入框直接浮在卡片那几个大字上面，回车 / 失焦生效、
+  Esc 放弃。Nodes 2.0 下标签是真实 DOM，照孤海 `BOOLEAN.js` 那套把 `span` 换成 `input`
+  再换回来；经典画布下用 `position:fixed` 浮层。
+- 🔴 **就地编辑的位置来自 `state.textBox`**：`drawCard()` 画大字时把 `{x, cy, w, size}`
+  记到节点上（局部坐标，`size` 是**缩过之后**的实际字号）。别再自己算一遍 —— 标签太长时
+  字号是运行时按剩余宽度缩的，算不对框就会跟字对不齐、大小跳一下。
+- 🔴 浮层位置每帧重算（`requestAnimationFrame`）：编辑期间用户可能滚轮缩放、拖画布、拖节点；
+  节点被折叠 / 删除时直接关掉。换算一律 `convertOffsetToCanvas` + `canvas.getBoundingClientRect()`。
+- 🔴 `input` 里 `stopPropagation()`，否则退格 / 空格会被画布当快捷键；提交还要放过
+  `event.isComposing || event.keyCode === 229`，不然中文输入法选词的回车会把名字提前提交。
+- 🔴 **`computeSize` 是「拖拽能到的最小尺寸」，不能回声当前尺寸**，否则节点永远拉不大。
+  初始尺寸在 `onNodeCreated` 里显式写 `node.size = [320, 84]`。
+- 🔴 **坐标系**：`onDrawForeground` / `onMouseDown` 的局部原点在**标题栏左上角**，
+  标题栏占 `y ∈ [-30, 0]`，主体是 `y ∈ [0, size[1]]`；`size` 不含标题栏，别再 +30。
+- 🔴 **只有胶囊吃点击**。整张卡片都吃点击的话节点就没法拖了（`onMouseDown` 返回 true
+  会连拖拽一起吃掉）。命中区还要让开四角 15×15 的缩放手柄，否则右下角再也拉不大。
+- **高度恒定，宽度是唯一的把手**：`keepSize()` 把高度钉在 `NODE_HEIGHT`（58 = 「缩到最小
+  时的高度」），宽度不小于 220。拉宽只是为了放得下长名字，**不加厚**；一排开关并排时
+  高度完全齐平。`onResize` 里调它（拖拽时 LiteGraph 直接写 size、`onResize` 很少回调，
+  所以绘制路径里也补一次）。
+- **缩放系数由高度定**（`scaleOf` 取 `h/BASE_HEIGHT`，再乘 `w/BASE_WIDTH` 兜极窄）：
+  高度固定后系数恒为 58/84 ≈ 0.69，字和胶囊不随拉宽变大，一排并排字号才一致。
+- 🔴 `BASE_HEIGHT`（84）只是**缩放基准**，不是节点高度 —— 别拿它当 `node.size[1]`。
+- **清掉 `ctx.shadowBlur`**：LiteGraph 画节点主体时留下的阴影会跟着描边一起偏移。
+- 🔴 **顶部要给输出槽名留一行**：槽是 LiteGraph 原生画的（在 `onDrawForeground` **之后**），
+  卡片铺满整个主体就会跟「布尔值」叠在一起。`cardRect()` 里按 `SLOT_ROW = 22` 让开，
+  胶囊和文字都相对卡片算，不再用 `h / 2`。
+  🔴 **这 22 不能乘缩放系数**：槽名字号与节点缩放无关，永远占顶部那 ~20px；节点扁到 58 高
+  时乘 0.69 只剩 15px，卡片会切掉槽名下半截。顶部只让 `SLOT_ROW`，别再叠 `pad`。
+- **标签太长要缩字号**：按胶囊左边的剩余宽度 `measureText`，超了就等比缩（下限 11px）。
+- Nodes 2.0 下 canvas 不绘制 → `installDom()` 挂一个大按钮（`addDOMWidget`），
+  两种渲染器用 `usesVueNodes()` 分流（同 `web/run_timer/`）。
+
+真机验证（`--port 8199` + `POST /prompt`）：`BoolToggle → StringSwitch.boolean → PreviewAny`，
+开 → `TRUE_BRANCH`、关 → `FALSE_BRANCH`。
+
+探针 `tools/probe_bool_toggle.py`：起 8199 → headless 打开 → 真鼠标点胶囊 → 再点回来 →
+拉 500x999 / 压 80x80 验等比 → 把 `label` 设成「美颜」截图 → 双击卡片验编辑框**贴在卡片
+大字上**（dx / dy / 字号三条断言；换回居中弹窗的话 dx 会差一百多像素，直接被抓住）→
+输入「开关测试」回车提交 → 再双击按 Esc 验不提交 → 编辑中把 `ds.scale` 从 1.2 改成 0.9，
+验框跟着卡片走。
+截图落在 `%TEMP%/qg_bool_shots/`（`off/on/wide/named/editor/renamed/editor_zoom.png`）。
+
+## 数值 —— 整数 / 浮点合一（原创，v0.9.4）
+
+这条节点改了三轮，把过程记下来免得再走回头路：
+
+1. 先是两个节点（`QG_Int` / `QG_Float`）+ 一套 canvas 自绘卡片 → **否掉**（数字框飞位置、看不见）
+2. 改成「双击就地编辑」，还是 canvas 自绘 → 还是 **否掉**
+3. 最后落到：**用包里现成的 DOM 卡片（`shared/widget_card.mjs`）+ 标题栏齿轮菜单**，
+   两个节点合并成一个。canvas 自绘那套（`number_card.mjs`、就地编辑、fixed 坐标换算）
+   已整体删除，别再往回改。
+
+```python
+"kind":  (["整数", "浮点数"], {"default": "整数"}),
+"value": ("FLOAT", {"default": 0.0, "min": -1e12, "max": 1e12, "step": 0.1}),
+RETURN_TYPES = ("*",)
+```
+
+🔴 **类型是运行时选的，而 `RETURN_TYPES` 是类级静态声明 —— 改不了。**
+所以输出声明成 `*`（任意类型，ComfyUI 会跳过类型校验）。真正的类型由 `execute` 的返回值
+决定：整数回 `int`、浮点回 `float`。代价是「浮点模式接到 INT 输入」时 ComfyUI 不会拦，
+会一路传下去 —— 跟原生 primitive 的行为一致，由用户自己选对类型。
+
+前端（`web/number/index.js`）做的事：
+
+- **卡片接管 `value`**：`mountWidgetCard(node, { rows: [{ widget: "value", label: "值",
+  trimZeros: true }], minWidth: 260, hide: ["kind"] })`。卡片会自己 `hideWidget`，
+  并把 `value` 的槽位画到那一行上（隐藏控件的 socket 要靠卡片的 `y` 访问器才落在正确位置）。
+- **`kind` 藏起来，走标题栏齿轮**：`?` 左边 22px 那枚齿轮，点开是统一设置弹层
+  （`shared/settings_menu.mjs`），里面就一项 `类型`。几何整套抄 `web/export_image/`
+  的 `gearCenter / hitsGear / drawGear / gearAnchor`。
+- 🔴 **齿轮菜单的 `persist: false` 不能省**：`kind` 是每个节点自己的状态，存进
+  localStorage 会让新建的节点跟着上次那个节点的模式走。
+- 🔴 **`applyKind` 要改四处**：控件 `step`/`precision`、卡片数字框的 `setStep`/`setDecimals`、
+  整数模式取整、`node.outputs[0].type`。少哪一处都会「看着变了其实没变」。
+- 🔴 **`scrub_input.mjs` 为此加了 `trimZeros` 和 `setDecimals`**（都向后兼容，默认行为不变）：
+  小数位要能跟着类型换，而 `decimals` 是闭包里的值；`trimZeros` 让浮点里的整数也读作
+  `12` 而不是 `12.00`，两种模式长得一样干净。
+- 🔴 **读档不走 callback**：`widgets_values` 是直接塞进控件的，所以 `onConfigure` 里
+  必须 `queueMicrotask(() => applyKind(this, kindOf(this)))` 重放一次；卡片自己的
+  `onConfigure` microtask 会重挂隐藏控件，两者互不依赖，先后都行。
+- 控件顺序必须是 `kind` 在前、`value` 在后，跟 `widgets_values` 对齐；卡片 widget
+  `serialize=false`，不进 `widgets_values`（探针会断言这一点）。
+- **切到整数要顺手取整**：不然框里挂着 3.7、输出却是 4，看着别扭。
+
+探针 `tools/probe_number.py` 验十件事（起 8199 + headless Chrome，真点齿轮、真跑 prompt）：
+控件列表与 `widgets_values`、卡片标签/数字框真的占地方、齿轮点开是「数值设置」且当前项高亮、
+点 `?` 不会串到齿轮菜单、从菜单切成浮点后框里变 `1.25`、切回整数后框里只有 `4`、
+**浮点模式存档读回来还是浮点**、整数接 `EmptyLatentImage.width` 跑通、
+浮点接 `PreviewAny` 拿到 `1.25`。
+
+## 数学运算（原创，v0.9.4）
+
+「宽按高度算」「百分比」「勾股」这类地方，串三个节点不如写一行。所以做成
+**一个表达式 + 四个变量**，而不是「运算下拉 + 两输入」的四则节点。
+
+- `nodes/qg_math.py` —— 节点本体，五个控件（`expr` 字符串 + a/b/c/d 四个 `FLOAT`，后者是
+  **optional**，所以能就地改也能接线）
+- `nodes/_qg_math_engine.py` —— 求值引擎，**故意单独一个文件**：它只 import `ast` / `math`，
+  探针可以直接 `sys.path.insert(nodes_dir)` 后 import，不用起 ComfyUI 就能跑全部用例
+- `web/math/index.js` —— 卡片：3 行（表达式 + 两行 pair）
+
+### 为什么不用内置的动态求值
+
+节点上的表达式来自**工作流文件**，跟别人分享的 workflow 一样属于外部输入。哪怕把
+`__builtins__` 清空，属性链（`().__class__`）照样能绕出去。所以引擎走
+「`ast.parse(mode="eval")` → 白名单逐节点递归求值」：
+
+- 允许：数字、`a`/`b`/`c`/`d`、`pi`/`e`/`tau`、四则/整除/取余/幂、一元正负、比较、
+  `and`/`or`/`not`、三元、列表、白名单函数调用
+- 拒绝：属性访问、下标、lambda、推导式、f-string、`*` 展开、关键字参数，
+  以及任何不在表里的名字/函数
+
+三条闸门防卡死：表达式 ≤ 2000 字符、语法节点 ≤ 400、幂指数 ≤ 512（`10**10**10` 这种
+会在算之前就被拦住）。`int()` 也夹了 `1e15`，免得 `int(1e300)` 生成天文数字串。
+
+### 几个刻意的取舍
+
+- 🔴 **`^` 保持 Python 语义（按位异或），不偷偷当幂**。想换幂是 `**`。帮助卡和 README
+  里都写明了 —— 静默改语义比让人查文档更糟。
+- **全角归一**：`（ ）＋ － × ÷ ：` 全部转半角再解析（`3：4` 还能当 `3/4` 用）。
+- **报错就报错**：语法错 / 未知名字 / 除零 / 参数不对一律抛 `ValueError`，消息里带**原始
+  表达式**（`数学运算「a +」算不了：语法错误…`）。空表达式是唯一的例外：输出 0，不报错。
+- **三个输出**：`数值 FLOAT` / `整数 INT`（四舍五入 + 夹 INT32）/ `布尔 BOOLEAN`（非零）。
+  比较表达式 `a > b` 的结果本来就是 bool，三个槽都能直接用，不用再挂一个转换节点。
+- **NaN 归零**：`number != number` 时按 0 输出，免得下游拿 NaN 当尺寸。
+
+### 卡片
+
+```js
+mountWidgetCard(node, { rows: [
+  { widget: "expr", label: "表达式", placeholder: "a * b / 2" },
+  { pair: ["a", "b"], label: "变量", prefixes: ["a", "b"], sep: "", top: true },
+  { pair: ["c", "d"], label: "", prefixes: ["c", "d"], sep: "", top: true },
+], minWidth: 300 });
+```
+
+- 两行变量用 `pair` 摆成 a|b、c|d，靠 `prefixes` 标名字 —— 两个并排的数字框本身不带标签，
+  不标出来根本分不清谁是谁。
+- 🔴 **`top: true` 不是装饰**。a/b/c/d 是 optional 输入，属于「控件型输入」（`input.widget`
+  指着那个控件）：前端只在**拖动连线时**才画这种槽的圆点，而卡片又把控件藏成了 0 高
+  —— 结果画布上一个输入点都看不见（用户反馈「没有输入点」）。`top: true` 走
+  `liftSocket()`，把 `input.widget` 删掉，槽就变成节点真正的输入槽，常显在左上角的槽位列里。
+  控件本身还在 `node.widgets` 里（值仍是 `widgets_values` 第 2~5 位），所以：
+  没连线 → 卡片的数照常进 prompt（实测 `graphToPrompt` 里 `a: 7`）；
+  连着线 → 上游赢（`input.link` 优先）。**这两条都要探针盯着**，删 `input.widget` 很容易
+  把「没连线时的值」弄丢。
+- `QG_Math` 要进 `web/shared/node_width.mjs` 的 **`SKIP`**：卡片自己用 `minWidth: 300`
+  管宽度，外层再钉 270 会把卡片压扁。
+- 变量行接上线后只有那一格变灰（`fieldsLinked[0] === true`，行本身不变灰）——
+  这是 `mountWidgetCard` 既有的「pair 里只暗被连的那个字段」行为，不是特例。
+
+两条实测结论，别再走弯路：
+
+- 🔴 **卡片上方那块空白不是排布没刷新**。前端 `_arrangeWidgets` 把控件区起点定在
+  「槽位区底部 + 2」（`widgets_start_y ?? (widgets_up ? 0 : 槽位底) + 2`），
+  槽位区高度 = `max(输入槽数, 输出槽数) × 20`。现在是 4 个输入槽（a/b/c/d）对 3 个输出槽
+  → 4×20 = 80，卡片从 86px 处开始（节点总高 216）。手动调 `node.arrange()` 结果一样
+  （而且在 `onNodeCreated` 里调会抛 `NullGraphError`：那时还没进图）。
+  想更紧凑只能减槽 —— 减输出槽或者把变量并成两个。
+- 🔴 **INT 输出接不到这里的 FLOAT 变量** —— 实测原生 `PrimitiveInt` 同样接不上，
+  `PrimitiveFloat` 可以。这是前端的连线规则，不是本节点的问题；所以 `QG_Number`
+  处于整数模式时也不要指望能直接接到 `a`，切到浮点即可。这条写进了变量 tooltip，
+  免得用户以为是 bug。
+
+### 探针
+
+`tools/probe_math.py`（起 8199 + headless Chrome）：
+
+- **后端 11 条**：四则 / 除法 / 函数 / 百分比 / 比较 / 三元 / 全角 / 空表达式 / 只写常量 /
+  除零报错 / 语法错报错，三个输出各接一个 `PreviewAny` 对文本
+- **前端**：控件表、五个控件都藏掉、三行布局、四个变量前缀、卡片宽度跟节点一致、
+  真连线后 a 那格变灰而 b 仍可改、表达式那行照常能打字
+- **存档往返**：改值 → `serialize()` → 新节点 `configure()`，`expr` / `a` / 卡片都回来
 
 ## LoRA Loader 搬家记录
 
@@ -521,6 +795,10 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 遮罩上色、遮罩拼接、批量文本替换、文本按分隔符分割、尺寸选择器。
 **全部纯 Python、零前端、零新增 pip 依赖**，所以这一批的坑全在「上游 bug + 汉化」上。
 
+> v0.9.4 补充：其中「批量文本替换」（`QG_TextReplace`）后来**改搬 Comfyroll 的
+> `CR_TextReplace`**（加了字面/正则模式下拉），显示名也从「批量文本替换」变成「文本替换」。
+> 本节其余 7 个节点没动。
+
 ### 上游 bug（不是改名，是修逻辑）
 
 | 节点 | 上游问题 | 处理 |
@@ -537,6 +815,55 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 | 文本替换 | 所有输入强制必填连线，单放一个节点点不动 | 全部可选：接 texts 走批量，否则用文本框 |
 | 尺寸选择器 | 潜在通道数写死 16（SD1.5/SDXL 直接错） | 新增 `latent_channels` 下拉 4 / 16 |
 | 尺寸选择器 | `ratio="无"` 时长边同时套到宽高 → 2:3 被压成正方形 | 按原比例换算另一边 |
+| 尺寸选择器 ★ | 比例改完再各自向上取整 → **比例漂移**（16:9 @ factor32 算出 1344×768 = 7:4） | 改 `w=rx·k, h=ry·k` 求解，k 走 `lcm(step/gcd(step,rx), step/gcd(step,ry))`，比例精确且两边同时在网格上；拒绝时回退旧算法（`_legacy_shape`） |
+| 尺寸选择器 ★ | LATENT 不带 `downscale_ratio_spacial` → **16 倍下采样的模型出图正好翻倍** | 补 `8`（与核心 `EmptyLatentImage` 一致），其余交给 `comfy.sample.fix_empty_latent_channels` 换算 |
+| 尺寸选择器 ★ | `对齐倍数=0` 时求解器只保证整数 → 出 **810×1215** 这类非 8 倍数尺寸，latent 的 `//8` 把它截断（节点报 1215、图只有 1208） | 求解路径的步长兜底 `max(factor, 8)`；手填宽高覆盖与 preset 原样两条老路径不动 |
+
+★ 是本包自己发现、上游没有的问题（v0.9.4）。第二条的证据链：
+`comfy/sample.py:53` 只在**传了非 None 且与模型不符**时才缩放；核心 `nodes.py:1275`
+恒返回 `{"samples": ..., "downscale_ratio_spacial": 8}`；`comfy/latent_formats.py` 里
+有 10 个 format 不是 8 倍（42 / 4 / 16×5 / 32×2 / 1）。
+
+`mp`（百万像素）是 v0.9.4 新加的可选参数，算法照 AusBoss `resolution_math.mjs` 的
+`sizeForMegapixels` 改写（候选三档按面积误差取最近），**只借思路，不引前端依赖**。
+它排在 `INPUT_TYPES()` 的 `optional` 末尾 —— LiteGraph 按位置还原 `widgets_values`，
+插在 `required` 里会让老存档整体错位（探针 `tools/probe_size_selector.py` 断言了这点）。
+
+### 「采用比例」：`ratio` 从自由文本改成下拉
+
+用户要求「比例里面加上采用比例」。为什么需要它：预设的**像素比和标签比经常对不上**
+—— `2304x1280 - 16:9` 的实际比例是 9:5（1.8），标签写的才是 16:9（1.778）。
+只按像素比算 `mp` / `长边`，出图永远不是标签承诺的那个形状。
+
+- `ratio` 由 `STRING` 改成 `COMBO`：
+  `无 / 采用比例 / 1:1 / 4:3 / 3:4 / 3:2 / 2:3 / 16:9 / 9:16 / 5:4 / 4:5 / 7:4 / 4:7 / 2:1 / 21:9`
+- **`采用比例`** = 用 preset 标签里的比例（`_ratio_from_preset` 正则取 `- 16:9` 那段），
+  取不到就退回像素最简比。`无` 保持老语义（用预设原始像素）。
+- 自由文本没丢：新增可选参数 **`ratio_custom`**（`optional` 最末，第 9 格 widget），
+  填了优先于下拉，支持 `2.39:1` / `5 4` / `1.85`。
+- 🔴 **老存档可能存着自定义比例**（那时 `ratio` 是文本框），而它**不在 COMBO 选项里** ——
+  直接加载会让后端 COMBO 成员校验报错。`web/size_selector/index.js` 的 `onConfigure`
+  负责接住：值不在选项里就搬到 `ratio_custom`、下拉回「无」。
+  探针 `probe_size_selector.py` 的 **2b 段**用 `LEGACY_CUSTOM` 存档断言这条。
+- 老存档 8 项（含 mp）→ 新 9 项，`ratio_custom` 缺席取默认空串，前面一格格都不会错位。
+
+### 求解路径的步长兜底到 8
+
+`对齐倍数=0` 原本等于 `step=1`，求解器只保证「整数」。但 latent 是按
+`out_w // 8` 展开的 —— 非 8 的倍数会被**悄悄截断**：
+
+```
+采用比例（preset 832x1216 - 2:3, 对齐倍数 0）
+  改前 → 810x1215   （1215 // 8 = 151 → 张量实际 808x1208，节点却报 810x1215）
+  改后 → 816x1224   （8 的倍数，张量展开与输出一致）
+```
+
+- 改法：`step = max(int(factor), LATENT_SPACIAL_DOWNSCALE)`，同一条兜底也加进
+  `_legacy_shape` 的回退路径。
+- **只作用于求解路径**（比例 / 百万像素 / 长边）。两条老路径保持原样：
+  手填 `width`/`height` 覆盖（factor=0 即原样）、`比例=无` 直接用 preset 像素。
+- 已知取舍：`factor` 填 1~7 会被抬到 8（低于 8 在 latent 层面没有意义）。
+  tooltip 里写的是「0 = 不额外贴，但求解比例时最低仍保证 8 的倍数」。
 
 宫格拼接上游是**输出节点**（`OUTPUT_NODE = True`），保留并改造成
 `return {"ui": {...}, "result": (grid,)}`，节点上照旧直接预览。
@@ -742,6 +1069,35 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
   走绝对路径时放行，但拒绝盘符根目录和系统目录。
 - 自定义目录在 ComfyUI 的 `/view` 之外，预览另存一份**缩略图**（最长边 1600）到 temp。
   存整图会让大图耗时和磁盘都翻倍（同一张图 PNG 5.9 s → 2.6 s）。
+
+## 启动横幅（`__init__.py` 的 `_print_banner`）
+
+用户看到 AusBoss 启动时那三行框（`AusBoss v2.17.0 | 44 nodes loaded` + 仓库地址），
+要求 QG 也来一个。实现在 `__init__.py` 末尾，节点全部加载完之后打印：
+
+```
+----------------------------------------------------------------------
+  QG-tools v0.9.4  |  32 nodes loaded  |  8 categories
+  https://github.com/live1617/ComfyUI-QG-tools
+----------------------------------------------------------------------
+```
+
+节点数、子分类数都是**现算**的（`len(NODE_CLASS_MAPPINGS)`、扫描 `CATEGORY` 的
+`/` 后段），不写死。加载失败 / 节点 ID 冲突的行只在出问题时才出现。
+
+- 🔴 **横幅内只用 ASCII**。Windows 控制台的编码可能是 cp1252，`print` 中文会在
+  import 阶段抛 `UnicodeEncodeError` → 整个插件静默加载失败。所以 `QG-tools`、
+  `nodes loaded`、`categories` 全是英文；中文告警（模块加载失败）走原来的
+  `print("[QG-tools] ...")`，那部分一直是中文且能跑（用户控制台是 GBK/UTF-8）。
+- **只在真终端上色**：`_use_color()` = `sys.stdout.isatty()` 且环境里没有 `NO_COLOR`。
+  stdout 被重定向到 `comfyui_8188.log` 时（启动器常见）输出纯文本，免得日志里
+  全是 `\033[...m`。AusBoss 是无条件上色，这里刻意比它稳一点。
+- **版本一致性检查**：横幅顺便比对 `pyproject.toml` 的 `version` 与 `__version__`，
+  不一致就黄字打一行 `Version mismatch: pyproject.toml says X`。
+  发版必须同时 bump 两处，这一行就是防漏的。
+- 验证：起 `--port 8199` 看控制台输出；或裸 python 里
+  `importlib.import_module('custom_nodes.ComfyUI-QG-tools')`（会因缺 PromptServer
+  报几个模块加载失败，属于预期，正好能验「Failed to load」那行的排版）。
 
 ## appearance 全局扩展（AusBoss 全局前端层，v0.6.0）
 

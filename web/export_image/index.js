@@ -29,10 +29,16 @@
  */
 
 import { app } from "/scripts/app.js";
-import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102002";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102002";
-import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102002";
-import { zh } from "../shared/zh.mjs?v=2026102002";
+import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102319";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102319";
+import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102319";
+import {
+    detachDomWidget,
+    installModeWatcher,
+    onRenderModeSwitch,
+    vueNodesEnabled,
+} from "../shared/vue_mode.mjs?v=2026102319";
+import { zh } from "../shared/zh.mjs?v=2026102319";
 
 const NODE_TYPE = "QG_ExportImage";
 const CSS_ID = "qgtools-export-css";
@@ -110,6 +116,9 @@ function normalize(node) {
         alpha.value = FLAT_WHITE;
         alpha.callback?.(FLAT_WHITE, app.canvas, node, [0, 0], null);
     }
+    // 🔴 Vue（Nodes 2.0）下概要画在 DOM widget 里：setDirtyCanvas 只管 canvas，
+    //    改完值必须显式刷新，否则「面板里改了格式、概要还是旧的」。
+    node.__qgExpDom?.refresh?.();
 }
 
 function isUnused(node, name) {
@@ -265,6 +274,8 @@ function ensureCss() {
   .qgtools-exp-row select:focus, .qgtools-exp-row input:focus { border-color: ${BRAND}; }
   .qgtools-exp-row select:disabled, .qgtools-exp-row input:disabled {
     opacity: .45; cursor: default; }
+  /* 概要行是纯展示，只有齿轮有悬停反馈（经典模式的齿轮 hover 在 onMouseMove 里标） */
+  .qgtools-export-dom button:hover { background: #2c3238; color: #fff; }
   .qgtools-exp-sep { height: 1px; background: #2c3238; margin: 6px 0 2px; }
   .qgtools-exp-foot { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
     border-top: 1px solid #2c3238; }
@@ -432,9 +443,12 @@ function openPanel(node, anchor) {
         "pointerdown",
         (event) => {
             if (pop.contains(event.target)) return;
-            // 点在齿轮 / 概要上时别先关：那一下由 onMouseDown 当开关处理，
+            // 点齿轮时别先关：那一下交给按钮自己的 click 当开关处理，
             // 这里再关就会变成「关掉又立刻打开」，看着像点不动。
             if (hitZone(node, clientToLocal(node, event))) return;
+            // Vue 下齿轮是 DOM 元素，hitZone 的画布坐标口径判不到它 —— 用 DOM 归属补一刀。
+            // 只豁免齿轮：概要文字是纯展示，点它按「点别处」处理（关面板）。
+            if (event.target.closest?.(`.${EXP_DOM_CLASS} button`)) return;
             closePanel();
         },
         {capture: true, signal: abort.signal},
@@ -538,14 +552,13 @@ function clientToLocal(node, event) {
     ];
 }
 
-// 齿轮和概要行都是「开关面板」的入口，命中判定合成一处，鼠标和 pointerdown 都用它
+// 只有齿轮是「开关面板」的入口（概要行纯展示，点了没反应）。
+// 鼠标和 pointerdown 都用这一处判定。
 function hitZone(node, pos) {
     if (!pos) return null;
     // 四角的缩放手柄必须先让开，见 inResizeCorner 的注释
     if (inResizeCorner(node, pos)) return null;
     if (gearShown(node) && hitsGear(pos, node.size[0])) return "gear";
-    const height = node.size?.[1] ?? 0;
-    if (pos[1] >= height - SUMMARY_HEIGHT && pos[1] <= height) return "summary";
     return null;
 }
 
@@ -563,6 +576,12 @@ function inResizeCorner(node, pos) {
     return nearX && nearY;
 }
 
+// DOM 元素的屏幕矩形 → 面板锚点（与 gearAnchor 同构：left/top/bottom/width）
+function domAnchor(el) {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, bottom: r.bottom, width: r.width };
+}
+
 function togglePanel(node) {
     // 面板 DOM 有可能被别处收走（切标签页、扩展清理），此时 panelNode 还指着它，
     // 光看 panelNode 会判成「已开」→ 只执行关闭 → 用户看到的就是「点了没反应」。
@@ -570,7 +589,165 @@ function togglePanel(node) {
         closePanel();
         return;
     }
-    openPanel(node, gearAnchor(node));
+    // Vue 下齿轮画在概要行里（DOM），按它的真实屏幕位置展开面板；
+    // gearAnchor 是 canvas 世界坐标换算，对 DOM 元素是错位的。
+    const anchor = node.__qgExpDom?.gear?.isConnected
+        ? domAnchor(node.__qgExpDom.gear)
+        : gearAnchor(node);
+    openPanel(node, anchor);
+}
+
+// ------------------------------------------------------- Nodes 2.0（Vue 渲染）
+//
+// Vue 模式下 onDrawForeground / onMouseDown 全停：标题栏齿轮、概要行、
+// 点概要开面板三样全失效 —— 参数面板直接没了入口（实测 shell 里只剩
+// 标题和「图像」槽，探针 probe_export_vue.py）。DOM 分支把「概要行 + 齿轮」
+// 画成一个 DOM widget：
+//   - 齿轮从标题栏挪到概要行右侧（Vue 标题栏没有注入点，帮助徽章 ? 同样灭）
+//   - 面板本身是挂 document.body 的浮层，与渲染模式无关，直接复用
+//   - 不走 label_dom_base 的 createLabelDomDriver：那是给纯展示节点设计的
+//     （全区域指针穿透 + 双击编辑），这个节点要的是「行内可点、其余穿透」，
+//     穿透状态机对它反而是负担 —— 自己挂，只借用 detachDomWidget 收尾。
+const EXP_DOM_CLASS = "qgtools-export-dom";
+const EXP_WIDGET_NAME = "__qgExportSummary";
+const SLOT_GAP = 8; // 概要文字离槽名留的空
+
+// 概要行抬到第一条输入槽那一行 —— Vue 每多一行就多一份节点高度，而槽右侧
+// 本来是空的。靠负 margin 顶上去：父容器是 flex 列，负 margin 会把它这行的
+// 布局高度一起吃掉，所以节点真会矮一行，而不只是看着上移（实测 103 → 84px）。
+// 🔴 量的都是屏幕像素（外壳带 transform 缩放，90% 很常见），要除回 CSS 像素
+//    才能写进样式；而且 root 的 rect 已经被上一轮的 marginTop 顶上去了，
+//    每次都得先复位再量，否则位移会越叠越多。
+function alignSummaryRow(node) {
+    const root = node.__qgExpDom?.root;
+    if (!root?.isConnected) return;
+    const shell = root.closest(".lg-node");
+    const slot = shell?.querySelector(".lg-slot--input");
+    if (!shell || !slot) return;
+    root.style.marginTop = "0px";
+    const scale = shell.offsetWidth ? shell.getBoundingClientRect().width / shell.offsetWidth : 1;
+    if (!scale) return;
+    const rr = root.getBoundingClientRect();
+    const sr = slot.getBoundingClientRect();
+    const dy = Math.round((sr.top + (sr.height - rr.height) / 2 - rr.top) / scale);
+    const padLeft = Math.max(0, Math.round((sr.right - rr.left) / scale + SLOT_GAP));
+    // 最多上移 3 行：万一拿到的槽行是别人家的（class 改名、DOM 结构变），
+    // 宁可保持现在这行，也别把概要甩到节点外面去。
+    if (Number.isFinite(dy) && dy < 0 && dy > -3 * SUMMARY_HEIGHT) {
+        root.style.marginTop = dy + "px";
+    }
+    root.style.paddingLeft = padLeft + "px";
+}
+
+function refreshExportDom(node) {
+    const state = node.__qgExpDom;
+    if (!state?.textEl) return;
+    const text = summaryOf(node);
+    if (state.textEl.textContent !== text) state.textEl.textContent = text;
+    // 顺手对一次位置：Vue 重排（改字号、切主题、面板改值）后槽行可能挪了。
+    // 幂等且同步完成，不会看见中间态。
+    alignSummaryRow(node);
+}
+
+function mountExportDom(node) {
+    if (node.__qgExpDom) {
+        refreshExportDom(node);
+        return;
+    }
+    const root = document.createElement("div");
+    root.className = EXP_DOM_CLASS;
+    // root 自身穿透，行内两样各自 pointer-events:auto 把点击收回来。
+    // （注：上游 WidgetDOM 的包装 div 带 @pointerdown.stop，这一行本来也不会
+    //  冒泡去拖节点，所以空白处按下没有反应是正常的。）
+    // flex:none —— 包装 div 是 `flex flex-col *:flex-1`，会把本行拉伸：
+    // 节点拉高时 22px 的行高会变成几十像素。
+    // 右 padding 只留 6px：齿轮要贴着节点右边，跟标题栏图标对齐。
+    // margin-right:-11px 抵消上游 WidgetGrid 的 `pr-3`（12px）—— 那是给普通
+    // widget 控件留的右留白，齿轮要贴边就得跨出去（实测靠它从 16px 收到 5px）。
+    // 左 padding 由 alignSummaryRow 按槽名宽度动态写。
+    root.style.cssText = "display:flex;align-items:center;gap:10px;height:22px;flex:none;"
+        + "padding:0 6px 0 15px;margin-right:-11px;pointer-events:none;user-select:none;";
+
+    const textEl = document.createElement("span");
+    textEl.textContent = summaryOf(node);
+    // 居中：左边界已经让开槽名、右边是齿轮，居中点正好落在这段的中间。
+    // 纯展示（点它不弹面板，只有齿轮开）→ 整段穿透，连 hover 都不做。
+    textEl.style.cssText = "flex:1 1 auto;min-width:0;overflow:hidden;"
+        + "text-overflow:ellipsis;white-space:nowrap;text-align:center;"
+        + "pointer-events:none;"
+        + "font:" + SUMMARY_FONT + ";color:#9ba2aa;line-height:22px;";
+
+    const gear = document.createElement("button");
+    gear.type = "button";
+    gear.title = zh("Export settings");
+    gear.innerHTML = gearIconSvg();
+    gear.style.cssText = "flex:none;width:22px;height:22px;display:flex;align-items:center;"
+        + "justify-content:center;border:none;border-radius:5px;background:transparent;"
+        + "color:#9ba2aa;cursor:pointer;pointer-events:auto;padding:0;";
+    const svg = gear.querySelector("svg");
+    if (svg) {
+        svg.setAttribute("width", "14");
+        svg.setAttribute("height", "14");
+    }
+
+    // 🔴 pointerdown 停止冒泡：不让这一下变成拖节点 —— 与经典模式
+    //    onMouseDown 命中后 return true 吃掉点击的行为对齐。
+    gear.addEventListener("pointerdown", (event) => event.stopPropagation());
+    gear.addEventListener("click", () => togglePanel(node));
+    root.append(textEl, gear);
+
+    const widget = node.addDOMWidget(EXP_WIDGET_NAME, "qg_export_summary", root, {
+        serialize: false,
+        hideOnZoom: false,
+        margin: 0,
+    });
+    widget.serialize = false;
+    // Vue 布局按它给 widget 留高度；经典模式不挂这个 widget，不受影响。
+    // DOM widget 排在 6 个参数 widget 之后（addDOMWidget 尾插）且 serialize:false，
+    // 不会打乱 widgets_values 的顺序 —— 多出来的槽位读档时被丢弃，参数照常对位。
+    widget.computeSize = () => [node.size?.[0] ?? MIN_WIDTH, SUMMARY_HEIGHT];
+    if (widget.options) widget.options.minNodeSize = [MIN_WIDTH, SUMMARY_HEIGHT];
+
+    // 🔴 Vue 下概要不会自己重绘（经典模式靠每帧 draw 天然刷新）。
+    //    任何改值的路径都要把概要刷一遍 —— 面板的 write() 走 normalize()，
+    //    但外部直接改 widget.value + callback 的路径不走，这里再包一层兜住，
+    //    否则「改了格式、画布上还是旧概要」。
+    for (const name of FOLDED) {
+        const w = widgetOf(node, name);
+        if (!w || w.__qgExpWatched) continue;
+        w.__qgExpWatched = true;
+        const cb = w.callback;
+        w.callback = function (...args) {
+            const out = typeof cb === "function" ? cb.apply(this, args) : undefined;
+            refreshExportDom(node);
+            return out;
+        };
+    }
+
+    node.__qgExpDom = { root, widget, textEl, gear, refresh: () => refreshExportDom(node) };
+    // 预览 widget 出现后要跟概要共用底行；这里先认一次（幂等），
+    // 执行后预览才出现，真正的协调仍靠 shareBottomRow 被再次调到。
+    shareBottomRow(node);
+    ensureCss();
+    // Vue 的槽行要等它自己这一轮渲染完才有几何，这里先对一次、稍后再兜一次
+    // （挂载时 shell 往往还没插进 DOM，第一次会直接 return）。
+    requestAnimationFrame(() => alignSummaryRow(node));
+    setTimeout(() => alignSummaryRow(node), 300);
+}
+
+function unmountExportDom(node) {
+    const state = node.__qgExpDom;
+    if (!state) return;
+    node.__qgExpDom = null;
+    detachDomWidget(node, state.widget, state.root);
+}
+
+function syncExportMode(node) {
+    const vue = (() => {
+        try { return vueNodesEnabled(); } catch { return false; }
+    })();
+    if (vue) mountExportDom(node);
+    else unmountExportDom(node);
 }
 
 // ---------------------------------------------------------------- 挂载
@@ -590,6 +767,7 @@ function hookNode(node) {
     if (node.__qgFoldHooked) {
         foldAll(node);
         normalize(node);
+        syncExportMode(node);
         return;
     }
     node.__qgFoldHooked = true;
@@ -639,7 +817,7 @@ function hookNode(node) {
         return onMouseLeave?.apply(this, arguments);
     };
 
-    // 齿轮和概要行都是面板开关（同一个点第二次 = 关）
+    // 齿轮是唯一的开关（同一个点第二次 = 关）；概要行纯展示，点它照常拖节点
     const onMouseDown = node.onMouseDown;
     node.onMouseDown = function (event, localPos, canvas) {
         if (hitZone(this, localPos)) {
@@ -661,6 +839,10 @@ function hookNode(node) {
 
     foldAll(node);
     normalize(node);
+    // Vue 模式挂 DOM 概要行，经典模式走上面的 canvas hook。
+    // __qgSyncMode 是 installModeWatcher 约定的迁移入口（切渲染模式时被调）。
+    node.__qgSyncMode = () => syncExportMode(node);
+    syncExportMode(node);
 }
 
 app.registerExtension({
@@ -675,9 +857,19 @@ app.registerExtension({
         };
     },
     async setup() {
+        // 切渲染模式：面板按旧模式的定位基准摆，切完必然错位，先收掉；
+        // 各节点随后由 installModeWatcher 调节点上的 __qgSyncMode 就地迁移。
+        onRenderModeSwitch(() => { try { closePanel(); } catch { /* 忽略 */ } });
+        installModeWatcher((node) => {
+            if (!isExportNode(node) || !node.__qgFoldHooked) return null;
+            if (typeof node.__qgSyncMode !== "function") {
+                node.__qgSyncMode = () => syncExportMode(node);
+            }
+            return node.__qgSyncMode;
+        });
         // 排查用：控制台 __qgExportImage 一看就知道扩展装没装
         window.__qgExportImage = {
-            version: 8,
+            version: 9,
             summary: summaryOf,
             open: openPanel,
             close: closePanel,

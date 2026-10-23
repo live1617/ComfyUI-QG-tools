@@ -24,8 +24,8 @@
 // at 1 goes 8, 16, 24 instead of 9, 17, 25, and back down to its minimum.
 // Shift's fine step and typed values are never snapped.
 
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102002";
-import { zh } from "./zh.mjs?v=2026102002";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102319";
+import { zh } from "./zh.mjs?v=2026102319";
 
 // Keep in sync with BRAND in shared/index.mjs - importing it would pull
 // /scripts/app.js into node:test, and this module's math must stay testable.
@@ -125,6 +125,10 @@ export function makeScrubInput(options = {}) {
     unit: "", unitWidth: 0,
     allowEmpty: false, emptyStart: 0, placeholder: "",
     snap: false,
+    // Drop trailing zeros after the point: 12.00 reads "12", 12.50 reads
+    // "12.5". A box that can hold either a whole number or a decimal (a value
+    // whose step changes with a mode) then needs one decimals setting, not two.
+    trimZeros: false,
     ...options,
   };
   const isEmpty = (value) => opts.allowEmpty && (value === null || value === undefined || value === "");
@@ -152,7 +156,13 @@ export function makeScrubInput(options = {}) {
   // into their own static title string.
   if (opts.title) input.title = opts.title;
 
-  const format = (value) => (value === null ? "" : value.toFixed(Math.max(0, opts.decimals)));
+  // Only zeros *after* the point are trailing zeros ("120" keeps its zero).
+  const format = (value) => {
+    if (value === null) return "";
+    const text = value.toFixed(Math.max(0, opts.decimals));
+    if (!opts.trimZeros || !text.includes(".")) return text;
+    return text.replace(/0+$/, "").replace(/\.$/, "");
+  };
   input.value = format(current);
 
   const commit = (value) => {
@@ -320,5 +330,15 @@ export function makeScrubInput(options = {}) {
     // For a value whose valid steps change with another setting (a frame
     // count under a snap rule steps by 8, not 1).
     setStep: (step, fineStep = null) => { opts.step = step; opts.fineStep = fineStep; },
+    // The same setting can also change how many decimals the box shows (a
+    // number that is a whole one mode and a decimal the next). Redraws at
+    // once so the box never trails the mode.
+    setDecimals: (decimals) => {
+      opts.decimals = Math.max(0, Number(decimals) || 0);
+      if (input.readOnly) input.value = format(current);
+    },
+    // Read back what the box is showing on: a probe can then assert the mode
+    // took hold rather than inferring it from the rendered text.
+    getDecimals: () => opts.decimals,
   };
 }

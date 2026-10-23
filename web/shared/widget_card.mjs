@@ -30,20 +30,20 @@
 // Pure decisions (which rows show, how tall the card is, how a number
 // scrubs, where a socket sits) live in widget_card_math.mjs for node:test;
 // this file is the DOM.
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026102002";
-import { zh } from "./zh.mjs?v=2026102002";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102002";
-import { createMediaPicker } from "./media_picker.mjs?v=2026102002";
-import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026102002";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102002";
-import { hideWidget } from "./widget_visibility.mjs?v=2026102002";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026102319";
+import { zh } from "./zh.mjs?v=2026102319";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102319";
+import { createMediaPicker } from "./media_picker.mjs?v=2026102319";
+import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026102319";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102319";
+import { hideWidget } from "./widget_visibility.mjs?v=2026102319";
 import {
   CARD_PADDING, GROUP_HEIGHT, ROW_GAP, ROW_HEIGHT, SECTION_HEIGHT, SLOT_OFFSET, UNIT_SLOT_WIDTH,
   cardHeight, commitWidgetValue, comboValues, rowHeight, rowKind, rowMuted, rowTops, scrubSteps, socketWidgetY, visibleRows,
   widgetTooltip,
-} from "./widget_card_math.mjs?v=2026102002";
+} from "./widget_card_math.mjs?v=2026102319";
 
-export * from "./widget_card_math.mjs?v=2026102002";
+export * from "./widget_card_math.mjs?v=2026102319";
 
 const CSS_ID = "qgtools-widget-card-css";
 export const CARD_WIDGET = "qg_widget_card";
@@ -169,7 +169,10 @@ function isFloatWidget(widget) {
 //                                            unless the row is a pixel size
 //                                            (`suffix: "px"` or `pixels`),
 //                                            which steps by 8, or names
-//                                            its own `step`
+//                                            its own `step`. `decimals` and
+//                                            `trimZeros` fix how a number
+//                                            reads (2 + trimZeros shows
+//                                            12.50 as "12.5")
 //   { widget, kind: "textarea", placeholder?, height, grow? }  - a multiline
 //                                             string; `grow` takes the node's
 //                                             spare height
@@ -189,7 +192,7 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
   ensureCardCss();
   const root = el("div", "qgtools-card");
   const managed = [];
-  const state = { node, root, rows: [], groups: {}, height: 0, widget: null, rowTop: new Map(), rowSpan: new Map(), socketed: [], pickers: [] };
+  const state = { node, root, rows: [], groups: {}, height: 0, widget: null, rowTop: new Map(), rowSpan: new Map(), socketed: [], pickers: [], controls: new Map() };
   node.__qgCard = state;
 
   const values = () => Object.fromEntries((node.widgets ?? []).map((widget) => [widget.name, widget.value]));
@@ -228,6 +231,7 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
       step: row.step ?? steps.step,
       fineStep: steps.fineStep,
       decimals: row.decimals ?? steps.decimals,
+      trimZeros: Boolean(row.trimZeros),
       title: row.title ?? widgetTooltip(node, name, widget),
       unit: row.suffix ?? "",
       // Single fields share one unit slot so their numbers line up down
@@ -238,6 +242,10 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
       onSettle: () => notifyQgChange(),
     });
     into.append(control.root);
+    // Kept so a node whose other settings change this field's step or
+    // decimals can retune the live control (scrub.setStep / setDecimals)
+    // instead of rebuilding the card.
+    state.controls.set(name, control);
     return (vals) => control.set(Number(vals[name]) || 0);
   };
 
