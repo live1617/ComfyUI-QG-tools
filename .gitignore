@@ -24,3 +24,4 @@ Thumbs.db
 # 开发期临时产物
 .jscheck/
 *.bak
+.backup/

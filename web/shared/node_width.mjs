@@ -12,7 +12,7 @@
  *   4. **只影响新建**：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026102319";
+import { chainCallback } from "./index.mjs?v=2026102418";
 
 export const DEFAULT_WIDTH = 270;
 
@@ -21,6 +21,7 @@ export const SKIP = new Set([
     "QG_AnySwitch",          // 240：胶囊开关，宽度跟内容走
     "QG_BoolToggle",         // 320x100：整张节点就是一枚开关，前端自己按比例管尺寸
     "QG_Number",             // 卡片 260：一行「值」+ 一个可拖数字框（minWidth 自己管）
+    "QG_Slider",             // 320：经典模式 canvas 自绘（恒 320×58，跟布尔开关同尺寸）；Nodes 2.0 走 DOM 卡片
     "QG_Math",               // 卡片 300：表达式行 + 两行变量（minWidth 自己管）
     "QG_CanvasLabel",        // 自由尺寸的文字块
     "QG_MarkdownNote",       // 同上

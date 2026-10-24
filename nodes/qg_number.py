@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from ._qg_combo_legacy import combo_legacy
 """QG 数值 — 一个数字，可以当整数用，也可以当浮点数用。
 
 ComfyUI 自带的 primitive 把字符串、整数、浮点塞在同一个节点里；这里的取舍是
@@ -18,16 +19,17 @@ ComfyUI 自带的 primitive 把字符串、整数、浮点塞在同一个节点�
 只用核心模块，没有新依赖。
 """
 
-KIND_INT = "\u6574\u6570"      # 整数
-KIND_FLOAT = "\u6d6e\u70b9\u6570"  # 浮点数
+KIND_INT = "integer"
+KIND_FLOAT = "float"
 KINDS = [KIND_INT, KIND_FLOAT]
 
 INT32_MIN = -2147483648
 INT32_MAX = 2147483647
 
 
+@combo_legacy("QG_Number")
 class QGNumber:
-    CATEGORY = "QG-tools/\u903b\u8f91"
+    CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "One number, either an integer or a decimal. The card shows a label "
         "and a number box you can drag, click and type in; the gear in the "
@@ -37,13 +39,19 @@ class QGNumber:
     )
 
     @classmethod
+    def VALIDATE_INPUTS(cls, kind=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "kind": (KINDS, {
                     "default": KIND_INT,
-                    "tooltip": "这个数字是整数还是浮点数。在标题栏 `?` 左边的齿轮里"
-                               "切换；换成整数时小数部分会被四舍五入掉。",
+                    "tooltip": "Whether this number is an integer or a decimal. Switch it in the gear left of the ? in the title bar; in integer mode the decimals are rounded away.",
                 }),
                 # 存小数：整数模式只是显示 / 输出时取整，控件本身始终是 FLOAT，
                 # 这样从整数切回浮点不用换控件，存档结构也不会变。
@@ -54,8 +62,7 @@ class QGNumber:
                     "min": -1e12,
                     "max": 1e12,
                     "step": 0.01,
-                    "tooltip": "数值。左右拖动改，单击可以直接输入，右边的上下箭头"
-                               "按步进调（按住 Shift 是细步进）；整数模式下按 1 走。",
+                    "tooltip": "The value. Drag sideways to scrub, click to type, and use the arrows to step (hold Shift for fine steps); integer mode steps by 1.",
                 }),
             }
         }
@@ -77,6 +84,6 @@ class QGNumber:
 
 
 NODE_CLASS_MAPPINGS = {"QG_Number": QGNumber}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_Number": "\u6570\u503c"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_Number": "Number"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

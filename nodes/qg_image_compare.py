@@ -10,6 +10,10 @@
 
 橡皮擦存的不是画好的位图，而是**笔画**，保存时由这里按原图尺寸重画
 （见 _qg_compare_helpers）。浏览器只知道一个随机键，不指名读写任何文件。
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 from __future__ import annotations
@@ -188,9 +192,11 @@ def _register_save_route() -> None:
 class QGImageCompare:
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
-        "A/B 对比：一块面板看两张图。滑动看差异，或按住 A / B 单独看；"
-        "橡皮擦用画笔把上面那张擦掉一块、露出底下那张，并能把混合图存成 PNG"
-        "（可选带图层 PSD 和遮罩）。image_a 原样送出，节点可以夹在流程中间。"
+        "A/B compare: two images in one panel. Slide to see the difference, or hold A "
+        "or B to view one alone; the eraser paints away part of the top image to "
+        "reveal the one beneath, and the blend can be saved as a PNG, optionally with "
+        "a layered PSD and a mask. image_a is passed straight through, so the node "
+        "can sit in the middle of a graph."
     )
     SEARCH_ALIASES = [
         "image compare", "compare", "a/b", "before after", "slider", "diff",
@@ -210,7 +216,8 @@ class QGImageCompare:
                     "IMAGE",
                     {
                         "tooltip": (
-                            "基准批次。取第一帧作为预览 A，整批原样从输出送出。"
+                            "The reference batch. The first frame becomes preview A and the "
+                            "whole batch goes out through the output untouched."
                         ),
                     },
                 ),
@@ -218,8 +225,8 @@ class QGImageCompare:
                     "IMAGE",
                     {
                         "tooltip": (
-                            "对比批次。取第一帧作为预览 B，在面板上滑过、切到 B，"
-                            "或用橡皮擦擦开时露出。"
+                            "The comparison batch. The first frame becomes preview B, revealed "
+                            "by sliding across the panel, switching to B, or erasing."
                         ),
                     },
                 ),
@@ -230,8 +237,9 @@ class QGImageCompare:
                     {
                         "forceInput": True,
                         "tooltip": (
-                            "可选。橡皮擦保存时的文件名，比如源图的文件名；目录和扩展名"
-                            "会被去掉。不接的话用节点上打的名字。"
+                            "Optional. The filename used when saving the eraser result, "
+                            "typically the source image's name; any directory and extension are "
+                            "stripped. Unwired, the name typed on the node is used."
                         ),
                     },
                 ),
@@ -241,7 +249,8 @@ class QGImageCompare:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("IMAGE",)
     OUTPUT_TOOLTIPS = (
-        "输入 A 的一批图，原样送出，方便接在流程中间。",
+        "The batch fed into A, passed straight through so the node can sit "
+        "mid-graph.",
     )
     OUTPUT_NODE = True
     FUNCTION = "compare"
@@ -271,6 +280,6 @@ class QGImageCompare:
 _register_save_route()
 
 NODE_CLASS_MAPPINGS = {NODE_NAME: QGImageCompare}
-NODE_DISPLAY_NAME_MAPPINGS = {NODE_NAME: "图像对比"}
+NODE_DISPLAY_NAME_MAPPINGS = {NODE_NAME: "Image Compare"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

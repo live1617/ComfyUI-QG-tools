@@ -94,7 +94,7 @@ def _resolve_file(value: str, getter) -> str:
 
 
 class QGTripleLoader:
-    CATEGORY = "QG-tools/加载器"
+    CATEGORY = "QG-tools/Loaders"
     DESCRIPTION = (
         "Loads the diffusion model, the text encoder and the VAE in one node. "
         "The three stock loaders (UNET Loader / Load CLIP / Load VAE) are "
@@ -114,36 +114,36 @@ class QGTripleLoader:
             "required": {
                 "unet_name": (
                     _unet_files(),
-                    {"tooltip": "UNET / 扩散模型（列表显示完整路径，节点上显示短文件名）"},
+                    {"tooltip": "UNET or diffusion model. The list shows full paths and the node shows the short filename."},
                 ),
                 "weight_dtype": (
                     _unet_dtypes,
                     {
-                        "tooltip": "UNET 权重数据类型，显存紧张可选 fp8_e4m3fn",
+                        "tooltip": "Data type for the UNET weights; pick fp8_e4m3fn when VRAM is tight.",
                         "default": "default",
                     },
                 ),
                 "clip_name": (
                     _clip_files(),
-                    {"tooltip": "CLIP / 文本编码器（列表显示完整路径，节点上显示短文件名）"},
+                    {"tooltip": "CLIP or text encoder. The list shows full paths and the node shows the short filename."},
                 ),
                 "clip_type": (
                     _clip_types,
                     {
-                        "tooltip": "文本编码器类型，按模型选择（默认与 ComfyUI 原生 CLIPLoader 一致，取列表第一项）",
+                        "tooltip": "Text encoder type, chosen to match the model. The default matches ComfyUI's own CLIPLoader and takes the first entry in the list.",
                         "default": _clip_types[0],
                     },
                 ),
                 "device": (
                     _clip_devices,
                     {
-                        "tooltip": "文本编码器加载设备，选 cpu 可省显存（速度变慢）",
+                        "tooltip": "Where the text encoder is loaded. cpu saves VRAM at the cost of speed.",
                         "default": "default",
                     },
                 ),
                 "vae_name": (
                     _vae_files(),
-                    {"tooltip": "VAE（列表显示完整路径，节点上显示短文件名）"},
+                    {"tooltip": "VAE. The list shows full paths and the node shows the short filename."},
                 ),
             }
         }
@@ -164,6 +164,6 @@ class QGTripleLoader:
 
 
 NODE_CLASS_MAPPINGS = {"QG_TripleLoader": QGTripleLoader}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TripleLoader": "模型加载器"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TripleLoader": "Triple Loader"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

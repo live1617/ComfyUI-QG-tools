@@ -7,10 +7,10 @@
 //    + 原型守卫；拆成两个入口各自 import，一旦 ?v= 版本串不一致就会出现两份
 //    模块实例 → 后注册的那个节点不走自定义绘制，静默退化成默认外观且不报错。
 import { app } from "/scripts/app.js";
-import { zh } from "../shared/zh.mjs?v=2026102319";
-import { QGCanvasLabel } from "../shared/canvas_label_node.mjs?v=2026102319";
-import { QGMarkdownNote, openMarkdownEditor } from "../shared/markdown_node.mjs?v=2026102319";
-import { openLabelEditor, registerLabelCanvasHooks, killStaleFloating } from "../shared/label_common.mjs?v=2026102319";
+import { zh } from "../shared/zh.mjs?v=2026102418";
+import { QGCanvasLabel } from "../shared/canvas_label_node.mjs?v=2026102418";
+import { QGMarkdownNote, openMarkdownEditor } from "../shared/markdown_node.mjs?v=2026102418";
+import { openLabelEditor, registerLabelCanvasHooks, killStaleFloating } from "../shared/label_common.mjs?v=2026102418";
 import {
     clearPointerPassthrough,
     installModeWatcher,
@@ -19,9 +19,9 @@ import {
     unwatchPointerPassthrough,
     vueNodesEnabled,
     watchPointerPassthrough,
-} from "../shared/vue_mode.mjs?v=2026102319";
-import { syncCanvasLabelMode } from "../shared/canvas_label_dom.mjs?v=2026102319";
-import { syncMarkdownNoteMode } from "../shared/markdown_dom.mjs?v=2026102319";
+} from "../shared/vue_mode.mjs?v=2026102418";
+import { syncCanvasLabelMode } from "../shared/canvas_label_dom.mjs?v=2026102418";
+import { syncMarkdownNoteMode } from "../shared/markdown_dom.mjs?v=2026102418";
 
 const TYPES = [
     ["QG_CanvasLabel", QGCanvasLabel],
@@ -42,7 +42,7 @@ function registerAll() {
     registerAll.__done = true;
     for (const [type, cls] of TYPES) LiteGraph.registerNodeType(type, cls);
     // 注册后 litegraph 可能改写 category，这里重新钉住
-    for (const [, cls] of TYPES) cls.category = "QG-tools/标注";
+    for (const [, cls] of TYPES) cls.category = "QG-tools/Annotation";
 }
 
 function isCanvasLabel(node) {

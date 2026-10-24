@@ -15,7 +15,7 @@ from __future__ import annotations
 
 
 class QGCanvasLabel:
-    CATEGORY = "QG-tools/标注"
+    CATEGORY = "QG-tools/Annotation"
     DESCRIPTION = (
         "A plain text label you drop anywhere on the canvas: section titles, "
         "reminders, a note next to a group. No wires, no execution. Double "
@@ -54,6 +54,6 @@ class QGCanvasLabel:
 
 
 NODE_CLASS_MAPPINGS = {"QG_CanvasLabel": QGCanvasLabel}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_CanvasLabel": "画布标签"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_CanvasLabel": "Canvas Label"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

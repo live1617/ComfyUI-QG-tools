@@ -1,4 +1,9 @@
-"""Image Crop + Rotate + Pad (ported from ComfyUI-AusBoss)."""
+"""Image Crop + Rotate + Pad (ported from ComfyUI-AusBoss).
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
+"""
 
 from __future__ import annotations
 

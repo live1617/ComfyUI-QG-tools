@@ -30,20 +30,20 @@
 // Pure decisions (which rows show, how tall the card is, how a number
 // scrubs, where a socket sits) live in widget_card_math.mjs for node:test;
 // this file is the DOM.
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026102319";
-import { zh } from "./zh.mjs?v=2026102319";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102319";
-import { createMediaPicker } from "./media_picker.mjs?v=2026102319";
-import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026102319";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102319";
-import { hideWidget } from "./widget_visibility.mjs?v=2026102319";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026102418";
+import { zh } from "./zh.mjs?v=2026102418";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102418";
+import { createMediaPicker } from "./media_picker.mjs?v=2026102418";
+import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026102418";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102418";
+import { hideWidget } from "./widget_visibility.mjs?v=2026102418";
 import {
   CARD_PADDING, GROUP_HEIGHT, ROW_GAP, ROW_HEIGHT, SECTION_HEIGHT, SLOT_OFFSET, UNIT_SLOT_WIDTH,
   cardHeight, commitWidgetValue, comboValues, rowHeight, rowKind, rowMuted, rowTops, scrubSteps, socketWidgetY, visibleRows,
   widgetTooltip,
-} from "./widget_card_math.mjs?v=2026102319";
+} from "./widget_card_math.mjs?v=2026102418";
 
-export * from "./widget_card_math.mjs?v=2026102319";
+export * from "./widget_card_math.mjs?v=2026102418";
 
 const CSS_ID = "qgtools-widget-card-css";
 export const CARD_WIDGET = "qg_widget_card";
@@ -73,6 +73,10 @@ export function ensureCardCss() {
 .qgtools-card-row.muted .qgtools-card-control{opacity:.35;pointer-events:none}
 .qgtools-card-row.muted .qgtools-card-label{color:#566b69}
 .qgtools-card.has-corner .qgtools-card-control{margin-right:var(--qgtools-card-corner,0px)}
+/* A slider row has no .qgtools-card-control to push around (the track is the
+   row), so it keeps the corner clear on its own — otherwise a one-row card
+   would run the track right under the gear. */
+.qgtools-card.has-corner .qgtools-card-row.slider{padding-right:6px}
 .qgtools-card-corner{position:absolute;top:${CARD_PADDING}px;right:8px;height:${ROW_HEIGHT}px;display:flex;align-items:center;justify-content:flex-end;gap:5px;pointer-events:auto}
 .qgtools-card-gear{width:24px;height:24px;flex:none;display:grid;place-items:center;padding:0;border:1px solid #2a3437;border-radius:6px;background:#0f1516;color:#8ba3a1;cursor:pointer}
 .qgtools-card-gear:hover{border-color:${BRAND};color:${BRAND}}
@@ -113,6 +117,28 @@ export function ensureCardCss() {
 .qgtools-card-swatch::-webkit-color-swatch{border:none;border-radius:3px}
 .qgtools-card-btn{flex:none;height:${ROW_HEIGHT}px;padding:0 10px;border:1px solid #2a3437;border-radius:6px;background:#16201f;color:#d8ecea;font:600 11px/1 ${FONT};cursor:pointer;white-space:nowrap}
 .qgtools-card-btn:hover{border-color:${BRAND};color:#fff}
+.qgtools-card-row.slider{grid-template-columns:1fr}
+.qgtools-slider{flex:1 1 0;display:flex;align-items:center;gap:6px;min-width:0;width:100%;height:100%}
+.qgtools-slider.disabled{opacity:.35;pointer-events:none}
+/* The input fills its row rather than fixing ${ROW_HEIGHT}: a slider row may
+   ask for a shorter line (the knob is 20, the row can be 22), and a 26px input
+   inside a 22px row overflows by 1px and breaks the card's height. */
+.qgtools-slider input{-webkit-appearance:none;appearance:none;flex:1 1 0;min-width:0;height:100%;margin:0;background:transparent;cursor:pointer}
+.qgtools-slider input:focus-visible{outline:none}
+.qgtools-slider input::-webkit-slider-runnable-track{height:12px;border-radius:6px;background:linear-gradient(90deg,${BRAND} var(--qgtools-slider-fill,0%),#2e3d3c var(--qgtools-slider-fill,0%))}
+.qgtools-slider input::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;margin-top:-4px;border:1px solid #0b0f10;border-radius:50%;background:#d8ecea;box-shadow:0 0 0 1px rgba(0,180,170,.45)}
+.qgtools-slider input:hover::-webkit-slider-thumb{background:#fff}
+.qgtools-slider input::-moz-range-track{height:12px;border-radius:6px;background:#2e3d3c}
+.qgtools-slider input::-moz-range-progress{height:12px;border-radius:6px;background:${BRAND}}
+.qgtools-slider input::-moz-range-thumb{width:20px;height:20px;border:1px solid #0b0f10;border-radius:50%;background:#d8ecea}
+/* The readout is as wide as the range's widest number and no more (the caller
+   passes readoutWidth; 22px is the floor). Width follows the range, never the
+   value, so the number does not shift while the thumb moves — and every pixel
+   it does not take goes to the track, which is the point of a slider.
+   .editable marks a readout that opens an inline editor on click. */
+.qgtools-slider-readout{flex:none;box-sizing:border-box;width:auto;min-width:22px;text-align:right;color:#d8ecea;font:600 11.5px ${FONT};font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qgtools-slider-readout.editable{cursor:pointer;border-radius:3px;transition:background .12s}
+.qgtools-slider-readout.editable:hover{background:rgba(0,180,170,.18)}
 `;
   document.head.append(style);
 }
@@ -179,6 +205,23 @@ function isFloatWidget(widget) {
 //   { pair: [name, name, ...], label, sep?, when?, group?, suffix?, top? }
 //                                          - `top` lifts the widgets' sockets
 //                                            into the node's slot column
+//   { slider: { value, min, max, step?, format?, readoutWidth?, onEdit? },
+//     height?, title?, editTitle? }
+//                                          - a range input across the whole
+//                                            row that drives the `value`
+//                                            widget; `min` / `max` name the
+//                                            widgets holding the ends, and
+//                                            `step` / `format` / `readoutWidth`
+//                                            may be functions of the values (a
+//                                            node that switches between whole and
+//                                            decimal numbers). `readoutWidth`
+//                                            returns the readout's px width
+//                                            (range-driven, so the number never
+//                                            shifts); `onEdit(readoutEl)` makes
+//                                            the readout a button that opens
+//                                            whatever inline editor the caller
+//                                            wants. Holds no widget of its own,
+//                                            so it never links.
 //   { section: "Caption" }
 //   { group: "advanced", label: "More" }   - a disclosure; later rows with
 //                                             group: "advanced" sit under it
@@ -187,10 +230,29 @@ function isFloatWidget(widget) {
 // hover hint (a setting the current mode does not use).
 // Options: minWidth (node floor), first (place the card ahead of the node's
 // other DOM widgets), hide (extra widgets to hide), corner (small tools in
-// the card's top-right corner, see below).
-export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hide = [], corner = null } = {}) {
+// the card's top-right corner, see below), topPad (pixels to lift the card
+// into the gap above it — a one-row card otherwise leaves a wide empty band
+// between the title bar and the card).
+export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hide = [], corner = null, topPad = 0 } = {}) {
   ensureCardCss();
   const root = el("div", "qgtools-card");
+  // The wrapper keeps its own inset; a negative top margin moves the card up
+  // inside it, and every height below loses the same pixels so the node does
+  // not keep the empty band at the bottom instead.
+  //
+  // 🔴 The card is `height:100%`, so the shorter declared height would also
+  //    shave the same pixels off its bottom edge (the last row gets clipped by
+  //    overflow:hidden). Give the padding back — half at the top, half at the
+  //    bottom — so the content keeps its exact height and the frame still looks
+  //    even; only the card's own top edge moves up.
+  const lift = Math.max(0, Math.min(CARD_PADDING * 2, Math.round(Number(topPad) || 0)));
+  const topInset = WRAPPER_TOP - lift;
+  if (lift) {
+    const pad = (CARD_PADDING * 2 - lift) / 2;
+    root.style.marginTop = `${-lift}px`;
+    root.style.paddingTop = `${pad}px`;
+    root.style.paddingBottom = `${pad}px`;
+  }
   const managed = [];
   const state = { node, root, rows: [], groups: {}, height: 0, widget: null, rowTop: new Map(), rowSpan: new Map(), socketed: [], pickers: [], controls: new Map() };
   node.__qgCard = state;
@@ -247,6 +309,74 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
     // instead of rebuilding the card.
     state.controls.set(name, control);
     return (vals) => control.set(Number(vals[name]) || 0);
+  };
+
+  // A slider row drives one widget from a range input across the whole row.
+  // It owns no widget of its own — `row.slider` names the one it drives and
+  // says where the floor, ceiling and step come from — so it takes no part in
+  // linking: the driven widget keeps its own row above, and the link state
+  // lives there. `step` and `format` may be functions of the current values,
+  // which is how a node changes the granularity with its own mode switch
+  // without the card knowing what a mode is.
+  const buildSlider = (row) => {
+    const spec = row.slider;
+    const host = el("div", "qgtools-slider");
+    const input = document.createElement("input");
+    input.type = "range";
+    input.title = row.title ?? widgetTooltip(node, spec.value, findWidget(node, spec.value));
+    const readout = el("span", "qgtools-slider-readout", "");
+    // `onEdit` turns the readout into a button that opens an inline editor —
+    // the card knows nothing about the editor, it just hands over the element.
+    if (typeof spec.onEdit === "function") {
+      readout.classList.add("editable");
+      readout.title = row.editTitle ?? "点击直接输入数值";
+      readout.addEventListener("click", (event) => {
+        event.stopPropagation();
+        spec.onEdit(readout, event);
+      });
+    }
+    host.append(input, readout);
+
+    const num = (vals, name, fallback) => {
+      const value = Number(vals?.[name]);
+      return Number.isFinite(value) ? value : fallback;
+    };
+    const write = (next, settle) => {
+      if (widgetLinked(node, spec.value)) return;
+      setWidget(spec.value, next, { settle });
+    };
+    input.addEventListener("input", () => write(Number(input.value) || 0, false));
+    input.addEventListener("change", () => {
+      write(Number(input.value) || 0, true);
+      notifyQgChange();
+    });
+
+    const sync = (vals) => {
+      let low = num(vals, spec.min, 0);
+      let high = num(vals, spec.max, 100);
+      if (high < low) [low, high] = [high, low];
+      const step = Math.max(1e-9, Number(typeof spec.step === "function" ? spec.step(vals) : spec.step) || 1e-9);
+      // A zero-width range would snap the thumb from one end to the other, so
+      // give it one step of travel and keep the floor where the person put it.
+      const span = high > low ? high - low : step;
+      input.min = String(low);
+      input.max = String(low + span);
+      input.step = String(step);
+      const raw = num(vals, spec.value, low);
+      input.value = String(Math.min(low + span, Math.max(low, raw)));
+      const filled = ((Number(input.value) - low) / span) * 100;
+      host.style.setProperty("--qgtools-slider-fill", `${Math.max(0, Math.min(100, filled))}%`);
+      readout.textContent = spec.format ? spec.format(raw, vals) : String(raw);
+      // The readout's width comes from the caller when it knows what the widest
+      // number can be (range-driven): narrower means a longer track.
+      if (typeof spec.readoutWidth === "function") {
+        const px = Math.round(Number(spec.readoutWidth(vals)));
+        const want = Number.isFinite(px) && px > 0 ? `${px}px` : "";
+        if (want && readout.style.width !== want) readout.style.width = want;
+      }
+      host.classList.toggle("disabled", widgetLinked(node, spec.value));
+    };
+    return { element: host, sync };
   };
 
   const buildSegment = (name, row, into) => {
@@ -419,6 +549,17 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
       state.rows.push({ row, element: header, header: true, syncs: [] });
       root.append(header); continue;
     }
+    if (row.slider) {
+      const line = el("div", "qgtools-card-row slider");
+      line.style.height = `${rowHeight(row)}px`;
+      const control = el("div", "qgtools-card-control");
+      const slider = buildSlider(row);
+      control.append(slider.element);
+      line.append(control);
+      state.rows.push({ row: { ...row, inGroup: row.group ?? null }, element: line, names: [], syncs: [slider.sync] });
+      root.append(line);
+      continue;
+    }
     const names = row.pair ?? [row.widget];
     for (const name of names) { const widget = findWidget(node, name); if (widget) { hideWidget(widget); managed.push(name); } }
     const line = el("div", "qgtools-card-row");
@@ -475,7 +616,7 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
   const widget = node.addDOMWidget(CARD_WIDGET, CARD_WIDGET, root, {
     serialize: false,
     hideOnZoom: false,
-    getMinHeight: () => state.height + WRAPPER_INSET,
+    getMinHeight: () => state.height + WRAPPER_INSET - lift,
   });
   keepDomWidgetWidthAuto(widget);
   // The card is not a value, so it is not saved with the workflow either.
@@ -490,14 +631,14 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
     // takes the node's spare height, the textarea flexing to fill it.
     fillNodeHeight(widget, {
       minWidth,
-      minHeight: () => state.height + WRAPPER_INSET,
+      minHeight: () => state.height + WRAPPER_INSET - lift,
       minNodeSize: [minWidth, 60],
       exactMinWidth: true,
     });
   } else {
     // A constant-height card, pinned on purpose (tests/panel_guards.test.mjs,
     // fixedByDesign): its height is the sum of its rows, not a viewport.
-    widget.computeSize = (width) => [Math.max(minWidth, Number(width || node.size?.[0] || minWidth)), state.height + WRAPPER_INSET];
+    widget.computeSize = (width) => [Math.max(minWidth, Number(width || node.size?.[0] || minWidth)), state.height + WRAPPER_INSET - lift];
     // Pinned in Nodes 2.0 as well, so a picture panel under the card takes
     // the node's spare height there too.
     pinVuePanelHeight(widget);
@@ -526,8 +667,8 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
     if (!Number.isFinite(cardY)) return null;
     const top = state.rowTop.get(name);
     const span = state.rowSpan.get(name);
-    if (top === undefined) return cardY + WRAPPER_TOP - SLOT_OFFSET;
-    return socketWidgetY(cardY, WRAPPER_TOP, top, span ?? ROW_HEIGHT);
+    if (top === undefined) return cardY + topInset - SLOT_OFFSET;
+    return socketWidgetY(cardY, topInset, top, span ?? ROW_HEIGHT);
   };
   for (const name of new Set(managed)) {
     if (topNames.has(name)) continue;
@@ -552,7 +693,7 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
   const rowWidgetAt = (canvasX, canvasY, { lifted = false } = {}) => {
     const cardY = Number(state.widget?.y);
     if (!Number.isFinite(cardY)) return null;
-    const localY = canvasY - node.pos[1] - cardY - WRAPPER_TOP;
+    const localY = canvasY - node.pos[1] - cardY - topInset;
     for (const entry of state.rows) {
       if (!entry.names?.length || Boolean(entry.row.top) !== lifted) continue;
       const top = state.rowTop.get(entry.names[0]);

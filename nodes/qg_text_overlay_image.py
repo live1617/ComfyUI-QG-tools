@@ -15,6 +15,10 @@ MIT licensed, authored by Muye. QG changes:
 
 The node draws a white-on-black text mask, colours the text, and returns both the
 composited image and the mask, so the text can be reused downstream.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten; behaviour changes are
+listed above. Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import os
@@ -23,14 +27,15 @@ import platform
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
+from ._qg_combo_legacy import combo_legacy
 
 COLOR_MAP = {
-    "黑": (0, 0, 0),
-    "白": (255, 255, 255),
-    "灰": (128, 128, 128),
-    "红": (255, 0, 0),
-    "绿": (0, 255, 0),
-    "蓝": (0, 0, 255),
+    "black": (0, 0, 0),
+    "white": (255, 255, 255),
+    "gray": (128, 128, 128),
+    "red": (255, 0, 0),
+    "green": (0, 255, 0),
+    "blue": (0, 0, 255),
 }
 
 _FONT_DIRS = None
@@ -78,8 +83,9 @@ def _font_choices():
     return names or ["Arial"]
 
 
+@combo_legacy("QG_TextOverlayImage")
 class QGTextOverlayImage:
-    CATEGORY = "QG-tools/文本"
+    CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Draws text on an image and also returns the text as a mask. Pick a "
         "system font, size, colour and horizontal or vertical layout; the text "
@@ -91,35 +97,42 @@ class QGTextOverlayImage:
     ]
 
     @classmethod
+    def VALIDATE_INPUTS(cls, color_name=None, layout=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         fonts = _font_choices()
         default_font = "NotoSansSC-VF" if "NotoSansSC-VF" in fonts else fonts[0]
         return {
             "required": {
-                "image": ("IMAGE", {"tooltip": "底图（批次时每一帧都画同样的字）"}),
+                "image": ("IMAGE", {"tooltip": "The base images. A batch gets the same text drawn on every frame."}),
                 "text": (
                     "STRING",
                     {
                         "default": "",
                         "multiline": True,
-                        "tooltip": "要画的文字；换行会被保留，纵向排版时逐字换行",
+                        "tooltip": "The text to draw. Line breaks are kept, and in vertical layout every character goes on its own line.",
                     },
                 ),
                 "font": (
                     fonts,
-                    {"default": default_font, "tooltip": "系统字体（读的是操作系统字体目录）"},
+                    {"default": default_font, "tooltip": "A system font, read from the operating system's font folder."},
                 ),
                 "font_size": (
                     "INT",
-                    {"default": 128, "min": 1, "max": 1024, "step": 1, "tooltip": "字号（像素）"},
+                    {"default": 128, "min": 1, "max": 1024, "step": 1, "tooltip": "Font size in pixels."},
                 ),
                 "color_name": (
                     list(COLOR_MAP.keys()),
-                    {"default": "白", "tooltip": "文字颜色；接了「自定义 RGB」时以它为准"},
+                    {"default": "white", "tooltip": "Text colour. When a custom RGB is wired in, that one wins."},
                 ),
                 "layout": (
-                    ["横向", "纵向"],
-                    {"default": "横向", "tooltip": "横向逐行排；纵向把每个字拆成一行"},
+                    ["horizontal", "vertical"],
+                    {"default": "horizontal", "tooltip": "Horizontal lays the text out line by line; vertical puts every character on its own line."},
                 ),
                 "x": (
                     "INT",
@@ -128,7 +141,7 @@ class QGTextOverlayImage:
                         "min": -8192,
                         "max": 16384,
                         "step": 1,
-                        "tooltip": "文字中心点的横坐标（像素）",
+                        "tooltip": "X of the text's centre, in pixels.",
                     },
                 ),
                 "y": (
@@ -138,7 +151,7 @@ class QGTextOverlayImage:
                         "min": -8192,
                         "max": 16384,
                         "step": 1,
-                        "tooltip": "文字中心点的纵坐标（像素）",
+                        "tooltip": "Y of the text's centre, in pixels.",
                     },
                 ),
             },
@@ -147,8 +160,8 @@ class QGTextOverlayImage:
                     "*",
                     {
                         "tooltip": (
-                            "可选自定义颜色：接 [R, G, B] 三元组（0-255 或 0-1），"
-                            "接了就不看上面的内置颜色"
+                            "Optional custom colour: wire an [R, G, B] triple (0-255 or 0-1) "
+                            "and the built-in colour above is ignored."
                         )
                     },
                 ),
@@ -158,8 +171,9 @@ class QGTextOverlayImage:
     RETURN_TYPES = ("IMAGE", "MASK")
     RETURN_NAMES = ("IMAGE", "MASK")
     OUTPUT_TOOLTIPS = (
-        "画好字的图像。",
-        "文字形状的遮罩（白=有字，黑=空白）。",
+        "The images with the text drawn on.",
+        "A mask shaped like the text: white where there is text, black "
+        "elsewhere.",
     )
     FUNCTION = "overlay"
 
@@ -188,7 +202,7 @@ class QGTextOverlayImage:
             pil_font = ImageFont.load_default()
 
         body = text or ""
-        if layout == "纵向":
+        if layout == "vertical":
             body = "\n".join(list(body.replace("\n", "")))
 
         frames = []
@@ -223,6 +237,6 @@ class QGTextOverlayImage:
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextOverlayImage": QGTextOverlayImage}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextOverlayImage": "文字叠加图像"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextOverlayImage": "Text Overlay"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

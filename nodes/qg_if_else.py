@@ -6,6 +6,10 @@ Outputs `on_true` when the boolean is true, otherwise `on_false`. Both inputs
 are lazy: the branch that is not taken is never evaluated, which matters for
 expensive branches (or loops that would error when executed).
 Only core modules are used -- no new dependency.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 
@@ -48,7 +52,7 @@ class QGIfElse:
     RETURN_TYPES = (ANY,)
     RETURN_NAMES = ("any",)
     FUNCTION = "execute"
-    CATEGORY = "QG-tools/\u903b\u8f91"
+    CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "Boolean if/else branch. Passes the on_true input through when the "
         "condition is true, otherwise the on_false input. Untaken branches are "
@@ -72,4 +76,4 @@ class QGIfElse:
 
 
 NODE_CLASS_MAPPINGS = {"QG_IfElse": QGIfElse}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_IfElse": "是否判断"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_IfElse": "If / Else"}

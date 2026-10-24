@@ -5,7 +5,7 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { zh } from "../shared/zh.mjs?v=2026102319";
+import { zh } from "../shared/zh.mjs?v=2026102418";
 
 const findWidget = (node, name, attr = "name", func = "find") =>
   node.widgets[func]((w) => w[attr] === name);

@@ -10,29 +10,30 @@
 //   · `kind` 藏得更彻底，改由卡片右上角那枚齿轮的开菜单来切换 ——
 //     一个整数/浮点的二选一，占一整行下拉太浪费，也容易被动到
 //
-// 切模式的四件事（applyKind）：
+// 切模式的三件事（applyKind）：
 //   1. 原生控件的 step / precision 跟着换（存档里那一闪、以及 scrub 的初值都看它）
 //   2. 卡片上数字框的步进 / 细步进 / 小数位跟着换（scrub.setStep / setDecimals）
 //   3. 切到整数时把挂着的小数四舍五入（不然框里显示 3.7、输出却是 4）
-//   4. 输出槽的**显示**类型跟着改成 INT / FLOAT
 //
-// 🔴 第 4 条改的只是显示。后端 RETURN_TYPES 是类级静态声明，运行时改不了，所以
-//    它声明的是 `*`（任意类型），真正的类型由 execute 的返回值决定。前端改
-//    outputs[0].type 是为了连线时能按当前类型校验、也方便一眼看出来给的是哪种。
+// 🔴 **输出槽类型永远 `*`，不跟着模式改**。后端 RETURN_TYPES 是类级静态声明
+//    （`*`），真正的类型由 execute 的返回值决定。前端把 outputs[0].type 改成
+//    `INT` 图个「一眼看出类型」，代价是**整数模式接不进 FLOAT 输入**：litegraph
+//    的 connect() 遇到 INT → FLOAT 不抛错也不建线（静默失败），而 LoRA 强度正是
+//    FLOAT（2026-10-23 实测：`*` / `FLOAT` / `INT,FLOAT` 都通，只有 `INT` 失败）。
 
 import { app } from "/scripts/app.js";
-import { chainCallback, notifyQgChange } from "../shared/index.mjs?v=2026102319";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026102319";
+import { chainCallback, notifyQgChange } from "../shared/index.mjs?v=2026102418";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026102418";
 import {
     closeSettingsMenu,
     gearIconSvg,
     openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102319";
+} from "../shared/settings_menu.mjs?v=2026102418";
 
 const NODE_CLASS = "QG_Number";
 // kind 的两个取值，必须和 nodes/qg_number.py 的 KINDS 逐字一致。
-const KIND_INT = "整数";
-const KIND_FLOAT = "浮点数";
+const KIND_INT = "integer";
+const KIND_FLOAT = "float";
 // 每种模式的三件套：粗步进 / Shift 细步进 / 小数位。
 // 整数模式的细步进也必须是 1，否则 Shift 拖出来的 0.5 会被小数位 0 吃掉。
 const MODES = {
@@ -93,8 +94,9 @@ function applyKind(node, kind) {
     }
   }
 
+  // 输出槽恒 `*`（见文件头）。主动兜一次：老存档里可能是 INT / FLOAT。
   const out = node.outputs?.[0];
-  if (out) out.type = isFloat ? "FLOAT" : "INT";
+  if (out && out.type !== "*") out.type = "*";
 
   node.setDirtyCanvas?.(true, true);
 }

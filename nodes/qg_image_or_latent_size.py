@@ -6,6 +6,10 @@ RgthreeImageOrLatentSize), MIT licensed, authored by rgthree. The input is a
 wildcard ("*") so it accepts an IMAGE, a MASK or a LATENT; a Latent's samples
 are (batch, 4, height, width) so the dimensions are multiplied back by 8.
 Renamed to the QG_ prefix.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import torch
@@ -26,7 +30,7 @@ class QGImageOrLatentSize:
             "required": {},
             "optional": {
                 "input": ("*", {
-                    "tooltip": "接入图像（IMAGE）、遮罩（MASK）或 Latent，节点输出其宽度和高度。",
+                    "tooltip": "Connect an IMAGE, a MASK or a LATENT; the node outputs its width and height.",
                 }),
             },
         }
@@ -34,8 +38,8 @@ class QGImageOrLatentSize:
     RETURN_TYPES = ("INT", "INT")
     RETURN_NAMES = ("WIDTH", "HEIGHT")
     OUTPUT_TOOLTIPS = (
-        "接入内容的宽度（Latent 已自动 ×8）。",
-        "接入内容的高度（Latent 已自动 ×8）。",
+        "Width of what you connected (a Latent is already scaled by 8).",
+        "Height of what you connected (a Latent is already scaled by 8).",
     )
     FUNCTION = "main"
 
@@ -64,4 +68,4 @@ class QGImageOrLatentSize:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageOrLatentSize": QGImageOrLatentSize}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageOrLatentSize": "图像或 Latent 尺寸"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageOrLatentSize": "Image or Latent Size"}

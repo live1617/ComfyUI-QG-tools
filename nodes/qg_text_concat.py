@@ -14,11 +14,15 @@ Deliberate QG changes:
   * The dead ``show_help`` output is removed. Upstream declares two outputs but
     ``concat_text`` only returns a one-item tuple, so that second socket could
     never carry a value.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten; behaviour changes are
+listed above. Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 
 class QGTextConcat:
-    CATEGORY = "QG-tools/文本"
+    CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Joins two texts with a separator: text1 + separator + text2. Both "
         "texts are input slots and must be connected; the separator is a "
@@ -40,7 +44,7 @@ class QGTextConcat:
                         "multiline": False,
                         "default": "",
                         "forceInput": True,
-                        "tooltip": "第一段文本，从上游连过来。",
+                        "tooltip": "The first text, wired from upstream.",
                     },
                 ),
                 "text2": (
@@ -49,7 +53,7 @@ class QGTextConcat:
                         "multiline": False,
                         "default": "",
                         "forceInput": True,
-                        "tooltip": "第二段文本，从上游连过来。",
+                        "tooltip": "The second text, wired from upstream.",
                     },
                 ),
                 "separator": (
@@ -57,7 +61,7 @@ class QGTextConcat:
                     {
                         "multiline": False,
                         "default": "",
-                        "tooltip": "两段文本之间的分隔符，原样插入（想用空格或换行就填什么）",
+                        "tooltip": "Inserted verbatim between the two texts; type a space or a newline if that is what you want.",
                     },
                 ),
             },
@@ -65,7 +69,9 @@ class QGTextConcat:
 
     RETURN_TYPES = ("*",)
     RETURN_NAMES = ("STRING",)
-    OUTPUT_TOOLTIPS = ("text1 + 分隔符 + text2 的结果，不做任何去空格处理。",)
+    OUTPUT_TOOLTIPS = (
+        "text1 + separator + text2, with nothing trimmed.",
+    )
     FUNCTION = "concat_text"
 
     def concat_text(self, text1="", text2="", separator=""):
@@ -73,6 +79,6 @@ class QGTextConcat:
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextConcat": QGTextConcat}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextConcat": "文本合并"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextConcat": "Text Concat"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

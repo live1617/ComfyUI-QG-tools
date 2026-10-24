@@ -1,8 +1,9 @@
 // QG 节点的英文搜索别名。
 //
-// 为什么需要这层：汉化之后节点标题是中文（「图像对比」），而 ComfyUI 的节点搜索
-// 只按三个字段建 Fuse 索引 —— name（节点 ID）/ display_name / search_aliases。
-// 中文标题里没有英文，用户搜 "compare"、"watermark" 就什么都搜不到。
+// 为什么需要这层：节点标题是英文（「Image Compare」），中文界面下由语言包翻成
+// 「图像对比」，但 ComfyUI 的节点搜索只按三个字段建 Fuse 索引 —— name（节点 ID）/
+// display_name / search_aliases。光靠 ID 搜不到 "compare"、"watermark" 这类口语词，
+// 中文界面下更要靠这层把英文叫法留住。
 //
 // 这里给每个节点配一组英文叫法，由 web/node_aliases/index.js 在
 // beforeRegisterVueAppNodeDefs 阶段写进节点定义的 search_aliases。
@@ -61,6 +62,17 @@ export const NODE_ALIASES = {
         "if else", "ifelse", "conditional", "condition", "branch",
         "if then else",
     ],
+    QG_Exists: [
+        "exists", "exist", "existence", "has value", "hasvalue", "presence",
+        "is none", "not none", "none", "null", "nil", "empty", "is empty",
+        "missing", "optional", "passthrough", "pass through", "check",
+        "is connected", "connected",
+    ],
+    QG_RouteBlocker: [
+        "route blocker", "routeblocker", "block", "blocker", "blocked",
+        "mute", "muted", "gate", "bypass", "cut", "skip", "stop",
+        "disable branch", "silence", "execution blocker", "switch off",
+    ],
     QG_BoolToggle: [
         "bool switch", "boolswitch", "boolean switch", "boolean", "bool",
         "toggle", "switch", "on off", "master switch", "flag", "gate",
@@ -70,6 +82,12 @@ export const NODE_ALIASES = {
         "number", "value", "constant", "primitive", "int", "integer",
         "float", "decimal", "whole number", "double", "steps", "seed",
         "cfg", "strength", "denoise", "scale",
+    ],
+    QG_Slider: [
+        "slider", "range", "range slider", "sliders", "number slider",
+        "numberslider", "value slider", "valueslider", "slide",
+        "number", "value", "constant", "int", "integer", "float", "decimal",
+        "steps", "cfg", "strength", "denoise", "scale", "weight",
     ],
     QG_Math: [
         "math", "maths", "mathematics", "calculate", "calculator", "calculation",
@@ -118,6 +136,23 @@ export const NODE_ALIASES = {
         "outpaint", "canvas", "straighten", "deskew",
         "image",
     ],
+    QG_ColorCorrect: [
+        "color correct", "colour correct", "color corrector", "color correction",
+        "colour correction", "colorcorrection", "color grade", "colour grade",
+        "color grading", "grading", "color adjust", "color balance",
+        "temperature", "white balance", "tint", "hue", "hue rotate", "brightness",
+        "contrast", "saturation", "desaturate", "gamma", "exposure",
+        "image",
+    ],
+    QG_ColorMatch: [
+        "color match", "colour match", "color matching", "colour matching",
+        "color transfer", "colour transfer", "colortransfer", "match color",
+        "match colour", "match reference color", "recolor", "recolour",
+        "palette transfer", "color harmonization", "colour harmonization",
+        "color harmonisation", "reinhard", "mkl", "histogram match", "hist match",
+        "reference color", "color palette",
+        "image", "color",
+    ],
     QG_ImageResize: [
         "image resize", "imageresize", "resize", "scale image", "image scale",
         "upscale",
@@ -143,6 +178,14 @@ export const NODE_ALIASES = {
         "size picker", "megapixel", "megapixels", "mp",
         "preset ratio", "adopt ratio", "ratio preset", "ratio",
         "size",
+    ],
+    QG_EmptyLatentResolution: [
+        "empty latent", "emptylatent", "empty latent resolution", "emptylatentresolution",
+        "empty latent image", "latent", "latent resolution", "resolution",
+        "resolution selector", "resolutions", "aspect ratio", "ratio", "preset ratio",
+        "megapixel", "megapixels", "mp", "width height", "dimensions",
+        "batch size", "multiple",
+        "size", "image",
     ],
     QG_ImageCompare: [
         "image compare", "imagecompare", "compare", "ab compare",

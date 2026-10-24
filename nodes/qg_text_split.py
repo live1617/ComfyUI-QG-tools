@@ -16,13 +16,19 @@ Outputs:
   ALL       every non-empty segment from every input text
   LIST      the full split of one chosen input text (list_index)
   SEGMENT   one segment (segment_index) of the total list or of LIST
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten; behaviour changes are
+listed above. Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import re
+from ._qg_combo_legacy import combo_legacy
 
 
+@combo_legacy("QG_TextSplit")
 class QGTextSplit:
-    CATEGORY = "QG-tools/文本"
+    CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Splits text (typed in, or a list from upstream) by a delimiter, plain "
         "or regular expression, and exposes three outputs: every segment from "
@@ -35,33 +41,40 @@ class QGTextSplit:
     ]
 
     @classmethod
+    def VALIDATE_INPUTS(cls, input_source=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "input_source": (
-                    ["文本框", "外部列表"],
-                    {"default": "文本框", "tooltip": "文本框：用下面的单段文本；外部列表：用接进来的 texts"},
+                    ["text-field", "external-list"],
+                    {"default": "text-field", "tooltip": "text-field uses the single block of text below; external-list uses the texts wired in."},
                 ),
                 "text": (
                     "STRING",
                     {
                         "default": "",
                         "multiline": True,
-                        "tooltip": "要分割的多行文本（仅在「文本框」模式下使用）",
+                        "tooltip": "The multi-line text to split, used in text-field mode only.",
                     },
                 ),
                 "delimiter": (
                     "STRING",
                     {
                         "default": "<think>",
-                        "tooltip": "分隔符；打开「使用正则」后按正则解释（默认值适合切掉模型的思考块）",
+                        "tooltip": "The delimiter. With use_regex on it is read as a regular expression; the default suits cutting out a model's thinking block.",
                     },
                 ),
                 "use_regex": (
                     "BOOLEAN",
                     {
                         "default": False,
-                        "tooltip": "开：分隔符按正则表达式处理；关：按普通字符串切",
+                        "tooltip": "On: the delimiter is a regular expression. Off: it is split as a plain string.",
                     },
                 ),
                 "segment_index": (
@@ -71,7 +84,7 @@ class QGTextSplit:
                         "min": 0,
                         "max": 100,
                         "step": 1,
-                        "tooltip": "SEGMENT 输出取第几段（从 1 开始；0 = 输出空字符串）",
+                        "tooltip": "Which segment the SEGMENT output returns, counting from 1; 0 returns an empty string.",
                     },
                 ),
                 "list_index": (
@@ -81,7 +94,7 @@ class QGTextSplit:
                         "min": 0,
                         "max": 100,
                         "step": 1,
-                        "tooltip": "LIST 输出取第几条输入文本的完整分割（从 1 开始；0 = 输出空列表）",
+                        "tooltip": "Which input text's full split the LIST output returns, counting from 1; 0 returns an empty list.",
                     },
                 ),
                 "total_index": (
@@ -91,7 +104,7 @@ class QGTextSplit:
                         "min": 0,
                         "max": 100,
                         "step": 1,
-                        "tooltip": "ALL 输出：0 = 列出所有段落；N = 每条文本只取第 N 段",
+                        "tooltip": "ALL output: 0 lists every segment, and N takes only segment N from each text.",
                     },
                 ),
             },
@@ -101,7 +114,7 @@ class QGTextSplit:
                     {
                         "forceInput": True,
                         "is_list": True,
-                        "tooltip": "外部文本列表（仅在「外部列表」模式下使用）",
+                        "tooltip": "The external list of texts, used in external-list mode only.",
                     },
                 ),
             },
@@ -110,9 +123,10 @@ class QGTextSplit:
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("ALL", "LIST", "SEGMENT")
     OUTPUT_TOOLTIPS = (
-        "所有输入文本分割后的段落合集（受 total_index 影响）。",
-        "选定那条输入文本的完整分割结果（受 list_index 影响）。",
-        "选定的单个段落（受 segment_index 影响）。",
+        "Every segment from every input, concatenated (governed by "
+        "total_index).",
+        "The full split of the chosen input text (governed by list_index).",
+        "The single segment chosen (governed by segment_index).",
     )
     OUTPUT_IS_LIST = (True, True, False)
     FUNCTION = "split_text"
@@ -126,7 +140,7 @@ class QGTextSplit:
         if not delimiter:
             return ([], [], "")
 
-        if input_source == "文本框":
+        if input_source == "text-field":
             if not text:
                 return ([], [], "")
             sources = [text]
@@ -163,6 +177,6 @@ class QGTextSplit:
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextSplit": QGTextSplit}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextSplit": "文本按分隔符分割"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextSplit": "Text Split"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

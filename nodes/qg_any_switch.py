@@ -10,6 +10,10 @@ The backend keeps Goohai's robust behaviour:
     of renaming connected slots (e.g. "图像_1") never changes input priority
     or drops a connected value.
 Only `torch` is used, which is part of ComfyUI core -- no new dependency.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import re
@@ -46,7 +50,7 @@ class QGAnySwitch:
     RETURN_TYPES = (ANY,)
     RETURN_NAMES = ("any",)
     FUNCTION = "switch"
-    CATEGORY = "QG-tools/\u903b\u8f91"
+    CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "Merge several inputs of the same type into one. The node outputs the "
         "first connected, non-empty value, so you can wire fallbacks (e.g. a "
@@ -107,4 +111,4 @@ class QGAnySwitch:
 
 
 NODE_CLASS_MAPPINGS = {"QG_AnySwitch": QGAnySwitch}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_AnySwitch": "任意切换"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_AnySwitch": "Any Switch"}

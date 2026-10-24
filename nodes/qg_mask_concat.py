@@ -11,10 +11,15 @@ MIT licensed, authored by Muye. QG changes:
   * ``match_size`` stretches the smaller mask to the larger one's size (bilinear);
     when off, masks keep their size and are placed at the origin of a canvas
     sized to hold both - no stretching, the empty area stays 0.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten; behaviour changes are
+listed above. Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import torch
 import torch.nn.functional as F
+from ._qg_combo_legacy import combo_legacy
 
 
 def _to_2d(mask):
@@ -35,8 +40,9 @@ def _resize(mask, height, width):
     return small.squeeze(0).squeeze(0)
 
 
+@combo_legacy("QG_MaskConcat")
 class QGMaskConcat:
-    CATEGORY = "QG-tools/遮罩"
+    CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
         "Joins two masks into one, either left-right or top-bottom. Turn on "
         "match_size to stretch the smaller mask to the bigger one's size; leave "
@@ -46,28 +52,37 @@ class QGMaskConcat:
     SEARCH_ALIASES = ["mask", "concat", "join", "遮罩", "拼接", "合并", "qg"]
 
     @classmethod
+    def VALIDATE_INPUTS(cls, direction=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "mask1": ("MASK", {"tooltip": "第一张遮罩"}),
-                "mask2": ("MASK", {"tooltip": "第二张遮罩"}),
+                "mask1": ("MASK", {"tooltip": "The first mask."}),
+                "mask2": ("MASK", {"tooltip": "The second mask."}),
                 "match_size": (
                     "BOOLEAN",
                     {
                         "default": False,
-                        "tooltip": "开：把较小的遮罩拉伸到较大遮罩的尺寸；关：各保持原尺寸",
+                        "tooltip": "On: stretch the smaller mask to the bigger one's size. Off: both keep their own size.",
                     },
                 ),
                 "direction": (
-                    ["左右", "上下"],
-                    {"default": "左右", "tooltip": "左右：沿横向拼；上下：沿纵向拼"},
+                    ["left-right", "top-bottom"],
+                    {"default": "left-right", "tooltip": "Left-right joins them side by side; top-bottom stacks them vertically."},
                 ),
             },
         }
 
     RETURN_TYPES = ("MASK",)
     RETURN_NAMES = ("MASK",)
-    OUTPUT_TOOLTIPS = ("拼好的遮罩（1, H, W）。",)
+    OUTPUT_TOOLTIPS = (
+        "The joined mask as (1, H, W).",
+    )
     FUNCTION = "concatenate"
 
     def concatenate(self, mask1, mask2, match_size, direction):
@@ -87,13 +102,13 @@ class QGMaskConcat:
                 mask1 = _resize(mask1, height2, width2)
                 height1, width1 = height2, width2
 
-        if direction == "上下":
+        if direction == "top-bottom":
             out_h, out_w = height1 + height2, max(width1, width2)
         else:
             out_h, out_w = max(height1, height2), width1 + width2
 
         output = torch.zeros(out_h, out_w, device=mask1.device, dtype=mask1.dtype)
-        if direction == "左右":
+        if direction == "left-right":
             output[:height1, :width1] = mask1
             output[:height2, width1:width1 + width2] = mask2
         else:
@@ -103,6 +118,6 @@ class QGMaskConcat:
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskConcat": QGMaskConcat}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_MaskConcat": "遮罩拼接"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_MaskConcat": "Mask Concat"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

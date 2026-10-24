@@ -17,6 +17,10 @@ MIT licensed, authored by Muye. Rewritten to the QG conventions:
 Scope of the operation stays what it was: scale the watermark (or not), place
 it by anchor + offset, optionally rotate it, apply opacity and an optional
 mask, then paste it onto every frame of the base image.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import numpy as np
@@ -25,6 +29,7 @@ from PIL import Image, ImageOps
 
 import comfy.utils
 import nodes
+from ._qg_combo_legacy import combo_legacy
 
 
 def _tensor_to_pil(image: torch.Tensor) -> Image.Image:
@@ -36,6 +41,7 @@ def _pil_to_tensor(image: Image.Image) -> torch.Tensor:
     return torch.from_numpy(np.array(image).astype(np.float32) / 255.0)
 
 
+@combo_legacy("QG_ImageWatermark")
 class QGImageWatermark:
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
@@ -49,24 +55,32 @@ class QGImageWatermark:
     ]
 
     @classmethod
+    def VALIDATE_INPUTS(cls, scale_mode=None, position=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "base_image": (
                     "IMAGE",
-                    {"tooltip": "底图（可以是批次，水印会贴到每一帧上）"},
+                    {"tooltip": "The base images. A batch is fine, the watermark lands on every frame."},
                 ),
                 "watermark_image": (
                     "IMAGE",
-                    {"tooltip": "水印图；接批次时只用第一帧"},
+                    {"tooltip": "The watermark image; from a batch only the first frame is used."},
                 ),
                 "scale_mode": (
-                    ["不缩放", "等比适配", "按倍数缩放", "按指定宽高缩放"],
+                    ["none", "fit", "factor", "width-height"],
                     {
-                        "default": "不缩放",
+                        "default": "none",
                         "tooltip": (
-                            "不缩放：保持原尺寸；等比适配：缩到能放进底图；"
-                            "按倍数缩放：原尺寸乘以倍数；按指定宽高缩放：直接用下面填的宽高"
+                            "none keeps the original size; fit shrinks it until it fits the "
+                            "base image; factor multiplies the original size by the factor; "
+                            "width-height uses the width and height filled in below."
                         ),
                     },
                 ),
@@ -74,7 +88,7 @@ class QGImageWatermark:
                     nodes.ImageScale.upscale_methods,
                     {
                         "default": "bilinear",
-                        "tooltip": "缩放水印图用的重采样方法（不缩放时无效果）",
+                        "tooltip": "Resampling method used to scale the watermark, with no effect under none.",
                     },
                 ),
                 "scale_factor": (
@@ -84,7 +98,7 @@ class QGImageWatermark:
                         "min": 0.01,
                         "max": 16.0,
                         "step": 0.1,
-                        "tooltip": "缩放模式选「按倍数缩放」时生效",
+                        "tooltip": "Used when the scale mode is set to factor.",
                     },
                 ),
                 "target_width": (
@@ -94,7 +108,7 @@ class QGImageWatermark:
                         "min": 0,
                         "max": nodes.MAX_RESOLUTION,
                         "step": 1,
-                        "tooltip": "缩放模式选「按指定宽高缩放」时的宽度",
+                        "tooltip": "Width used when the scale mode is set to width-height.",
                     },
                 ),
                 "target_height": (
@@ -104,14 +118,17 @@ class QGImageWatermark:
                         "min": 0,
                         "max": nodes.MAX_RESOLUTION,
                         "step": 1,
-                        "tooltip": "缩放模式选「按指定宽高缩放」时的高度",
+                        "tooltip": "Height used when the scale mode is set to width-height.",
                     },
                 ),
                 "position": (
-                    ["居中", "上", "下", "左", "右", "左上", "右上", "左下", "右下"],
+                    [
+                        "center", "top", "bottom", "left", "right",
+                        "top-left", "top-right", "bottom-left", "bottom-right",
+                    ],
                     {
-                        "default": "右下",
-                        "tooltip": "水印在底图上的锚点位置",
+                        "default": "bottom-right",
+                        "tooltip": "Anchor point of the watermark on the base image.",
                     },
                 ),
                 "offset_x": (
@@ -121,7 +138,7 @@ class QGImageWatermark:
                         "min": -48000,
                         "max": 48000,
                         "step": 1,
-                        "tooltip": "在锚点基础上的横向像素偏移（正数往右）",
+                        "tooltip": "Horizontal pixel offset from the anchor, positive moves right.",
                     },
                 ),
                 "offset_y": (
@@ -131,7 +148,7 @@ class QGImageWatermark:
                         "min": -48000,
                         "max": 48000,
                         "step": 1,
-                        "tooltip": "在锚点基础上的纵向像素偏移（正数往下）",
+                        "tooltip": "Vertical pixel offset from the anchor, positive moves down.",
                     },
                 ),
                 "rotation": (
@@ -141,7 +158,7 @@ class QGImageWatermark:
                         "min": -180,
                         "max": 180,
                         "step": 1,
-                        "tooltip": "旋转角度（顺时针为正），画布会随旋转扩大",
+                        "tooltip": "Rotation in degrees, clockwise positive; the canvas grows to fit.",
                     },
                 ),
                 "opacity": (
@@ -152,7 +169,7 @@ class QGImageWatermark:
                         "max": 100.0,
                         "step": 5.0,
                         "display": "slider",
-                        "tooltip": "0 = 完全不透明，100 = 完全透明",
+                        "tooltip": "0 is fully opaque and 100 is fully transparent.",
                     },
                 ),
             },
@@ -160,7 +177,7 @@ class QGImageWatermark:
                 "mask": (
                     "MASK",
                     {
-                        "tooltip": "可选遮罩：白色区域不透出水印，黑色区域正常显示",
+                        "tooltip": "Optional mask: white areas hide the watermark, black areas show it as usual.",
                     },
                 ),
             },
@@ -168,19 +185,21 @@ class QGImageWatermark:
 
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("IMAGE",)
-    OUTPUT_TOOLTIPS = ("贴好水印的图像（与底图同样张数）。",)
+    OUTPUT_TOOLTIPS = (
+        "The images with the watermark applied, as many as went in.",
+    )
     FUNCTION = "apply_watermark"
 
     def _resize_watermark(self, watermark, scale_mode, scale_method, scale_factor,
                           target_width, target_height, base_w, base_h):
-        if scale_mode == "不缩放":
+        if scale_mode == "none":
             return watermark
         wm_w = watermark.shape[2]
         wm_h = watermark.shape[1]
-        if scale_mode == "等比适配":
+        if scale_mode == "fit":
             ratio = min(base_w / wm_w, base_h / wm_h)
             new_w, new_h = max(1, round(wm_w * ratio)), max(1, round(wm_h * ratio))
-        elif scale_mode == "按倍数缩放":
+        elif scale_mode == "factor":
             new_w, new_h = max(1, round(wm_w * scale_factor)), max(1, round(wm_h * scale_factor))
         else:
             new_w, new_h = max(1, int(target_width)), max(1, int(target_height))
@@ -233,15 +252,15 @@ class QGImageWatermark:
 
         wm_w, wm_h = wm_pil.size
         anchors = {
-            "居中": ((base_w - wm_w) / 2, (base_h - wm_h) / 2),
-            "上": ((base_w - wm_w) / 2, 0),
-            "下": ((base_w - wm_w) / 2, base_h - wm_h),
-            "左": (0, (base_h - wm_h) / 2),
-            "右": (base_w - wm_w, (base_h - wm_h) / 2),
-            "左上": (0, 0),
-            "右上": (base_w - wm_w, 0),
-            "左下": (0, base_h - wm_h),
-            "右下": (base_w - wm_w, base_h - wm_h),
+            "center": ((base_w - wm_w) / 2, (base_h - wm_h) / 2),
+            "top": ((base_w - wm_w) / 2, 0),
+            "bottom": ((base_w - wm_w) / 2, base_h - wm_h),
+            "left": (0, (base_h - wm_h) / 2),
+            "right": (base_w - wm_w, (base_h - wm_h) / 2),
+            "top-left": (0, 0),
+            "top-right": (base_w - wm_w, 0),
+            "bottom-left": (0, base_h - wm_h),
+            "bottom-right": (base_w - wm_w, base_h - wm_h),
         }
         anchor_x, anchor_y = anchors.get(position, anchors["居中"])
         location = (int(anchor_x + offset_x), int(anchor_y + offset_y))
@@ -261,6 +280,6 @@ class QGImageWatermark:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageWatermark": QGImageWatermark}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageWatermark": "图像水印"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageWatermark": "Image Watermark"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

@@ -13,23 +13,29 @@ MIT licensed, authored by Muye. QG changes:
 
 Useful for visualising a segmentation mask or for burning a flat colour into a
 region before inpainting.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten; behaviour changes are
+listed above. Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import numpy as np
 import torch
+from ._qg_combo_legacy import combo_legacy
 
 COLOR_MAP = {
-    "黑": (0, 0, 0),
-    "白": (255, 255, 255),
-    "灰": (128, 128, 128),
-    "红": (255, 0, 0),
-    "绿": (0, 255, 0),
-    "蓝": (0, 0, 255),
+    "black": (0, 0, 0),
+    "white": (255, 255, 255),
+    "gray": (128, 128, 128),
+    "red": (255, 0, 0),
+    "green": (0, 255, 0),
+    "blue": (0, 0, 255),
 }
 
 
+@combo_legacy("QG_MaskColorize")
 class QGMaskColorize:
-    CATEGORY = "QG-tools/遮罩"
+    CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
         "Paints a flat colour into the masked area of an image. Pick one of six "
         "built-in colours or feed an RGB triple; the mask is thresholded at 0.5 "
@@ -39,29 +45,36 @@ class QGMaskColorize:
     SEARCH_ALIASES = ["mask", "colorize", "paint", "遮罩", "上色", "涂色", "qg"]
 
     @classmethod
+    def VALIDATE_INPUTS(cls, color_name=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "image": ("IMAGE", {"tooltip": "底图（批次时每帧都上色）"}),
+                "image": ("IMAGE", {"tooltip": "The base image; every frame of a batch is painted."}),
                 "mask": (
                     "MASK",
                     {
                         "tooltip": (
-                            "遮罩：白色（>0.5）区域涂色，黑色区域保留原图；"
-                            "接单张遮罩时会应用到批次里每一帧"
+                            "The mask: white areas (above 0.5) take the color, black areas keep "
+                            "the image. A single mask applies to every frame of the batch."
                         )
                     },
                 ),
                 "color_name": (
                     list(COLOR_MAP.keys()),
-                    {"default": "白", "tooltip": "内置颜色；接了「自定义 RGB」时以它为准"},
+                    {"default": "white", "tooltip": "One of the built-in colors; a wired custom RGB triple wins over it."},
                 ),
             },
             "optional": {
                 "color_rgb": (
                     "*",
                     {
-                        "tooltip": "可选自定义颜色：接 [R, G, B] 三元组（0-255 或 0-1）",
+                        "tooltip": "Optional custom color: wire an [R, G, B] triple (0-255 or 0-1).",
                     },
                 ),
             },
@@ -69,7 +82,9 @@ class QGMaskColorize:
 
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("IMAGE",)
-    OUTPUT_TOOLTIPS = ("上色后的图像。",)
+    OUTPUT_TOOLTIPS = (
+        "The image with the masked area painted.",
+    )
     FUNCTION = "colorize"
 
     @staticmethod
@@ -110,6 +125,6 @@ class QGMaskColorize:
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskColorize": QGMaskColorize}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_MaskColorize": "遮罩上色"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_MaskColorize": "Mask Colorize"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

@@ -7,13 +7,17 @@ list, so it can feed any downstream text input. No model, no dependencies.
 
 Source node ID was "MuyeTextEditOutput" (display "文本"); renamed to the QG_
 prefix and given an English display name per this plugin's conventions.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 from __future__ import annotations
 
 
 class QGTextEditOutput:
-    CATEGORY = "QG-tools/文本"
+    CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "A manual text box that outputs its content as a one-element STRING "
         "list. Type a prompt or a note on the canvas, then pipe it into any "

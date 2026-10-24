@@ -13,13 +13,17 @@
 （v0.8.4 那版是 rgthree 的哨兵模型：-1/-2/-3 由前端包装 queuePrompt 改写。
 新模型里种子永远是非负整数，老工作流里的哨兵值由前端在加载时翻译成「模式 +
 具体种子」，所以这里不再有 IS_CHANGED 的随机兜底。）
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 MAX_SEED = 0xFFFFFFFFFFFFFFFF
 
 
 class QGSeed:
-    CATEGORY = "QG-tools/逻辑"
+    CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "One seed on its own INT wire, so several samplers share a number and a "
         "shared workflow can pin the exact seed that made its result. The card "
@@ -46,9 +50,9 @@ class QGSeed:
                         # 前端把它藏起来，改由卡片上的「随机值 / 固定 / Step」驱动。
                         "control_after_generate": True,
                         "tooltip": (
-                            "发给下游的种子。卡片上的「随机值 / 固定 / Step」"
-                            "决定每次排队之后它怎么变：随机值重新抽一个、固定不动、"
-                            "Step 每次 +1 或 -1。"
+                            "The seed sent downstream. The card's Random / Fixed / Step switch "
+                            "decides what happens after each queue: Random draws a new one, "
+                            "Fixed keeps it, Step adds or subtracts 1."
                         ),
                     },
                 ),
@@ -57,7 +61,9 @@ class QGSeed:
 
     RETURN_TYPES = ("INT",)
     RETURN_NAMES = ("SEED",)
-    OUTPUT_TOOLTIPS = ("本次实际使用的种子值。",)
+    OUTPUT_TOOLTIPS = (
+        "The seed this run actually used.",
+    )
     FUNCTION = "emit"
 
     def emit(self, seed):
@@ -67,4 +73,4 @@ class QGSeed:
 
 
 NODE_CLASS_MAPPINGS = {"QG_Seed": QGSeed}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_Seed": "种子"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_Seed": "Seed"}

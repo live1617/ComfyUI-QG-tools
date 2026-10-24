@@ -8,10 +8,10 @@
 //                        title: "LoRA Loader settings",
 //                        onChange: (values, key) => rerender(values) });
 
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102319";
-import { BRAND } from "./index.mjs?v=2026102319";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026102319";
-import { zh } from "./zh.mjs?v=2026102319";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102418";
+import { BRAND } from "./index.mjs?v=2026102418";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026102418";
+import { zh } from "./zh.mjs?v=2026102418";
 import {
   isOverrideActive,
   isOverrideEntry,
@@ -19,7 +19,7 @@ import {
   overrideEnableValue,
   overrideIsCustom,
   schemaDefaults,
-} from "./node_settings.mjs?v=2026102319";
+} from "./node_settings.mjs?v=2026102418";
 
 const CSS_ID = "qgtools-settings-css";
 
@@ -221,6 +221,9 @@ function buildControl(entry, values, commit) {
     const control = makeScrubInput({
       value: values[entry.key], min: entry.min, max: entry.max,
       step: entry.step ?? 1, fineStep: entry.fineStep ?? entry.step ?? 1, decimals: entry.decimals ?? 0,
+      // A range can be whole numbers on one node and a fraction on the next;
+      // trimming keeps "0 / 100" readable without giving up 0.25.
+      trimZeros: entry.trimZeros ?? false,
       title: entry.hint ?? entry.label,
       onChange: (value) => commit(entry, value),
     });

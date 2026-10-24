@@ -1,5 +1,9 @@
 """Workflow Note — the card that makes a shared workflow self-explanatory.
 
+Ported from ComfyUI-AusBoss (nodes/node_workflow_note.py + the matching
+frontend), MIT licensed. Renamed to the QG_ prefix,
+category moved under ``QG-tools/工作流``, UI text translated to Chinese.
+
 The whole node is a presentation surface: a title banner, a short how-to in
 Markdown, the models it needs with download buttons and the folder each one
 goes in, the node packs it depends on, and the author's links. The frontend
@@ -10,13 +14,17 @@ is left to do before the first run.
 The backend keeps one hidden STRING widget holding the card as JSON, so
 save/load, undo and the API format all ride LiteGraph's default path. Nothing
 executes: the node has no outputs and is never part of the prompt graph.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 from __future__ import annotations
 
 
 class QGWorkflowNote:
-    CATEGORY = "QG-tools/工作流"
+    CATEGORY = "QG-tools/Workflow"
     DESCRIPTION = (
         "A workflow card for sharing: a big title, a Markdown how-to, the "
         "models the workflow needs with download buttons and the folder "

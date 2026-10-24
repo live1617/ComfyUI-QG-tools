@@ -9,7 +9,7 @@
  * 为什么用面板而不是画布控件：
  *   - ComfyUI 1.55 的 `options.advanced` 在 canvas 模式下**不生效**（实测给参数打了 advanced 之后
  *     `computeSize` 纹丝不动，画布上也不会冒出「高级」按钮），原生折叠这条路是堵的。
- *   - 面板里用原生 `<select>` / `<input>`：长选项（`4:4:4（最高画质）`、`保留透明（PNG / WEBP）`）
+ *   - 面板里用原生 `<select>` / `<input>`：长选项（`4:4:4`、`keep-alpha`）
  *     各自成行不溢出；「当前格式用不到」的参数直接用原生 `disabled` 灰掉。于是 canvas 上那套补丁
  *     （暗纱 + onPointerDown 拦点击 + 改 tooltip + MutationObserver 改下拉项）全部删掉了。
  *
@@ -29,16 +29,16 @@
  */
 
 import { app } from "/scripts/app.js";
-import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102319";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102319";
-import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102319";
+import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102418";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102418";
+import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102418";
 import {
     detachDomWidget,
     installModeWatcher,
     onRenderModeSwitch,
     vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026102319";
-import { zh } from "../shared/zh.mjs?v=2026102319";
+} from "../shared/vue_mode.mjs?v=2026102418";
+import { zh, wantsChinese } from "../shared/zh.mjs?v=2026102418";
 
 const NODE_TYPE = "QG_ExportImage";
 const CSS_ID = "qgtools-export-css";
@@ -48,9 +48,9 @@ const SUMMARY_HEIGHT = 22;
 // 藏掉控件后节点宽度会从 270 掉到 210 —— 预览按节点宽度缩放，窄了预览就更小，
 // 正好和这次的诉求相反，所以把原来的宽度守住。
 const MIN_WIDTH = 270;
-const KEEP_ALPHA = "保留透明（PNG / WEBP）";
-const FLAT_WHITE = "合成白底";
-const FLAT_BLACK = "合成黑底";
+const KEEP_ALPHA = "keep-alpha";
+const FLAT_WHITE = "on-white";
+const FLAT_BLACK = "on-black";
 
 // 文件名前缀的默认值跟 ComfyUI 原生 SaveImage 一致（后端 INPUT_TYPES 里也是 "ComfyUI"）。
 // 老工作流的存档里写的还是这个节点从前的默认值 "QG"，下面做一次一次性迁移。
@@ -141,10 +141,16 @@ function migratePrefix(node) {
 
 // ---------------------------------------------------------------- 概要行
 
+// 概要行里的短标签。选项值本身是英文（存进存档的），这里只决定显示成什么。
+const ALPHA_SHORT = {
+    [KEEP_ALPHA]: { en: "alpha", zh: "透明" },
+    [FLAT_WHITE]: { en: "white", zh: "白底" },
+    [FLAT_BLACK]: { en: "black", zh: "黑底" },
+};
+
 function shortAlpha(value) {
-    if (value === KEEP_ALPHA) return "透明";
-    if (value === FLAT_WHITE) return "白底";
-    if (value === FLAT_BLACK) return "黑底";
+    const hit = ALPHA_SHORT[value];
+    if (hit) return wantsChinese() ? hit.zh : hit.en;
     return String(value ?? "");
 }
 
@@ -367,9 +373,13 @@ function openPanel(node, anchor) {
         const values = widget.options?.values;
         if (Array.isArray(values) && values.length) {
             control = element("select");
+            // 选项标签走控件的 getOptionLabel（shared/combo_zh.mjs 在中文界面挂的），
+            // 直接 String(option) 的话中文界面会露出 "on-white" 这种英文值。
+            const label = widget.options?.getOptionLabel;
             for (const option of values) {
-                const item = element("option", "", String(option));
-                item.value = String(option);
+                const raw = String(option);
+                const item = element("option", "", label ? label(raw) : raw);
+                item.value = raw;
                 control.append(item);
             }
             control.value = String(widget.value);

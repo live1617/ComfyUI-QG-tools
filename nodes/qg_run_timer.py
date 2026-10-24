@@ -11,13 +11,17 @@ node is the readout, painted by the frontend.
 Ported from ComfyUI-AusBoss #31 (node_run_timer.py); the timer's decision
 logic lives in web/shared/run_timer.mjs and the drawing in
 web/run_timer/index.js.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 from __future__ import annotations
 
 
 class QGRunTimer:
-    CATEGORY = "QG-tools/展示"
+    CATEGORY = "QG-tools/Display"
     DESCRIPTION = (
         "A stopwatch for the whole run. It starts when a queued prompt "
         "begins executing, ticks on the node while it runs, and holds the "

@@ -1,4 +1,14 @@
-"""QG LoRA Loader."""
+"""QG LoRA Loader.
+
+Ported from ComfyUI-AusBoss (nodes/node_lora_loader.py + js/node_lora_loader/),
+MIT licensed. Renamed to the QG_ prefix, category moved
+under ``QG-tools/加载器``, UI text translated to Chinese; the six HTTP routes
+(list / thumb / info / hash / civitai / triggers) are kept as-is.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +26,7 @@ from ._qg_lora_helpers import (
 
 
 class QGLoraLoader:
-    CATEGORY = "QG-tools/加载器"
+    CATEGORY = "QG-tools/Loaders"
     DESCRIPTION = (
         "Applies a stack of LoRAs to a model and CLIP from one compact node. "
         "Each row has an enable toggle, a searchable LoRA picker, "

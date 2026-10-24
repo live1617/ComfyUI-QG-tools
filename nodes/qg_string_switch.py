@@ -18,7 +18,7 @@ Only core modules are used -- no new dependency.
 
 
 class QGStringSwitch:
-    CATEGORY = "QG-tools/\u903b\u8f91"
+    CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "Picks between two inline text branches with a boolean: true outputs "
         "the top text, false outputs the bottom one. Both boxes can still be "
@@ -33,21 +33,21 @@ class QGStringSwitch:
             "required": {
                 "boolean": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "条件。为真输出「真时文本」，为假输出「假时文本」。",
+                    "tooltip": "The condition. True outputs the top text, false outputs the bottom one.",
                 }),
                 "on_true": ("STRING", {
                     "default": "",
                     "multiline": True,
                     "rows": 3,
                     "lazy": True,
-                    "tooltip": "条件为真时输出的文本。可以直接在这里打字，也可以连上游覆盖。",
+                    "tooltip": "Text output when the condition is true. Type it here, or wire an upstream STRING to override it.",
                 }),
                 "on_false": ("STRING", {
                     "default": "",
                     "multiline": True,
                     "rows": 3,
                     "lazy": True,
-                    "tooltip": "条件为假时输出的文本。可以直接在这里打字，也可以连上游覆盖。",
+                    "tooltip": "Text output when the condition is false. Type it here, or wire an upstream STRING to override it.",
                 }),
             }
         }
@@ -72,6 +72,6 @@ class QGStringSwitch:
 
 
 NODE_CLASS_MAPPINGS = {"QG_StringSwitch": QGStringSwitch}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_StringSwitch": "\u5b57\u7b26\u4e32\u5207\u6362"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_StringSwitch": "String Switch"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

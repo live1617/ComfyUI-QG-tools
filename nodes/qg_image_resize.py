@@ -6,6 +6,10 @@ MIT licensed, authored by rgthree. Reuses ComfyUI's stock upscale routine
 (comfy.utils.common_upscale) so it tracks whatever resampling methods the
 installed ComfyUI exposes. Renamed to the QG_ prefix and output names kept in
 Chinese to match the rest of the pack.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import torch
@@ -37,8 +41,9 @@ class QGImageResize:
                         "max": nodes.MAX_RESOLUTION,
                         "step": 1,
                         "tooltip": (
-                            "目标宽度：度量选「像素」时为像素值，选「百分比」时为"
-                            "相对原图的缩放百分比；填 0 表示由高度按比例推算。"
+                            "Target width: pixels when the measurement is pixels, a percentage "
+                            "of the source when it is percentage; 0 derives it from the height, "
+                            "keeping the aspect ratio."
                         ),
                     },
                 ),
@@ -50,8 +55,9 @@ class QGImageResize:
                         "max": nodes.MAX_RESOLUTION,
                         "step": 1,
                         "tooltip": (
-                            "目标高度：度量选「像素」时为像素值，选「百分比」时为"
-                            "相对原图的缩放百分比；填 0 表示由宽度按比例推算。"
+                            "Target height: pixels when the measurement is pixels, a percentage "
+                            "of the source when it is percentage; 0 derives it from the width, "
+                            "keeping the aspect ratio."
                         ),
                     },
                 ),
@@ -59,10 +65,14 @@ class QGImageResize:
                     ["crop", "pad", "contain"],
                     {
                         "tooltip": (
-                            "crop：放大铺满目标框后居中裁掉多余部分，输出恰为目标尺寸。\n"
-                            "pad：缩放到完全放进目标框后居中补齐空缺，输出恰为目标尺寸。\n"
-                            "contain：缩放到完全放进目标框即返回，某一侧可能小于目标尺寸。\n\n"
-                            "宽或高任一为 0 时，实际按 contain 处理。"
+                            "crop: scale up to fill the target box, then trim the overflow "
+                            "evenly so the output is exactly the target size.\n"
+                            "pad: scale to fit inside the target box, then pad the gaps evenly "
+                            "so the output is exactly the target size.\n"
+                            "contain: scale to fit inside the target box and stop there, so one "
+                            "side may end up smaller than the target.\n"
+                            "\n"
+                            "When either width or height is 0, contain is what runs."
                         )
                     },
                 ),
@@ -73,9 +83,9 @@ class QGImageResize:
     RETURN_TYPES = ("IMAGE", "INT", "INT")
     RETURN_NAMES = ("IMAGE", "WIDTH", "HEIGHT")
     OUTPUT_TOOLTIPS = (
-        "缩放后的图像。",
-        "输出图像的实际宽度。",
-        "输出图像的实际高度。",
+        "The resized images.",
+        "The actual width of the output image.",
+        "The actual height of the output image.",
     )
     FUNCTION = "main"
 
@@ -139,4 +149,4 @@ class QGImageResize:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageResize": QGImageResize}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageResize": "图像缩放"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageResize": "Image Resize"}

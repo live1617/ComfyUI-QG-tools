@@ -21,17 +21,23 @@ Deliberate QG changes:
     pattern that does not compile raises instead of silently degrading to a
     literal match - a silent fallback is exactly how subtle text corruption
     goes unnoticed.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten; behaviour changes are
+listed above. Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import re
+from ._qg_combo_legacy import combo_legacy
 
-LITERAL = "字面"
-REGEX = "正则"
+LITERAL = "literal"
+REGEX = "regex"
 MODES = [LITERAL, REGEX]
 
 
+@combo_legacy("QG_TextReplace")
 class QGTextReplace:
-    CATEGORY = "QG-tools/文本"
+    CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Runs up to three find/replace rules on a string, in order. Mode "
         "'literal' matches plain text, so brackets, dots and pipes are safe in "
@@ -45,6 +51,13 @@ class QGTextReplace:
     ]
 
     @classmethod
+    def VALIDATE_INPUTS(cls, mode=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
@@ -54,49 +67,50 @@ class QGTextReplace:
                         "multiline": True,
                         "default": "",
                         "forceInput": True,
-                        "tooltip": "要改的文本，从上游连过来。",
+                        "tooltip": "The text to edit, wired in from upstream.",
                     },
                 ),
                 "mode": (
                     MODES,
                     {
                         "default": LITERAL,
-                        "tooltip": "字面：查找内容按普通字符匹配（提示词里的括号、点号不会被当正则）；"
-                                   "正则：按正则表达式处理，替换内容可用 \\1 反向引用，写错了直接报错",
+                        "tooltip": "Literal: the search string matches plain characters, so brackets and dots in a prompt are not read as regex. Regex: everything is treated as a regular expression, the replacement may back-reference with \\1, and a bad pattern raises an error.",
                     },
                 ),
             },
             "optional": {
                 "find1": (
                     "STRING",
-                    {"default": "", "tooltip": "规则 1 的查找内容（留空跳过）"},
+                    {"default": "", "tooltip": "Search text for rule 1 (leave empty to skip)."},
                 ),
                 "replace1": (
                     "STRING",
-                    {"default": "", "tooltip": "规则 1 的替换内容"},
+                    {"default": "", "tooltip": "Replacement text for rule 1."},
                 ),
                 "find2": (
                     "STRING",
-                    {"default": "", "tooltip": "规则 2 的查找内容（留空跳过）"},
+                    {"default": "", "tooltip": "Search text for rule 2 (leave empty to skip)."},
                 ),
                 "replace2": (
                     "STRING",
-                    {"default": "", "tooltip": "规则 2 的替换内容"},
+                    {"default": "", "tooltip": "Replacement text for rule 2."},
                 ),
                 "find3": (
                     "STRING",
-                    {"default": "", "tooltip": "规则 3 的查找内容（留空跳过）"},
+                    {"default": "", "tooltip": "Search text for rule 3 (leave empty to skip)."},
                 ),
                 "replace3": (
                     "STRING",
-                    {"default": "", "tooltip": "规则 3 的替换内容"},
+                    {"default": "", "tooltip": "Replacement text for rule 3."},
                 ),
             },
         }
 
     RETURN_TYPES = ("*",)
     RETURN_NAMES = ("STRING",)
-    OUTPUT_TOOLTIPS = ("替换后的文本，规则按 1 → 2 → 3 顺序生效。",)
+    OUTPUT_TOOLTIPS = (
+        "The text after replacement, with the rules applied in order 1, 2, 3.",
+    )
     FUNCTION = "replace_text"
 
     def replace_text(self, text, mode=LITERAL, find1="", replace1="", find2="",
@@ -121,13 +135,13 @@ class QGTextReplace:
             pattern = re.compile(find)
         except re.error as exc:
             raise ValueError(
-                "[QG-tools] 文本替换：模式选了「正则」，但查找内容不是合法正则 —— "
+                "[QG-tools] 文本替换：模式选了 regex，但查找内容不是合法正则 —— "
                 "%r（%s）" % (find, exc)
             )
         return pattern.sub(replace, text)
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextReplace": QGTextReplace}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextReplace": "文本替换"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_TextReplace": "Text Replace"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

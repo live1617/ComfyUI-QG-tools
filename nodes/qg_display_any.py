@@ -8,6 +8,10 @@ downstream connection it executes as a passive dependency; when it has none it
 promotes itself to an execution target so the preview still updates.
 Only core modules are used (torch / numpy / PIL / folder_paths) -- no new
 dependency.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import logging
@@ -183,7 +187,7 @@ class QGDisplayAny:
     RETURN_TYPES = (ANY,)
     RETURN_NAMES = ("Any",)
     FUNCTION = "display"
-    CATEGORY = "QG-tools/\u5c55\u793a"
+    CATEGORY = "QG-tools/Display"
     OUTPUT_NODE = True
     DESCRIPTION = (
         "Display a rich preview of any input (text, image, mask, audio or video) "
@@ -239,6 +243,6 @@ class QGDisplayAny:
 
 
 NODE_CLASS_MAPPINGS = {NODE_TYPE: QGDisplayAny}
-NODE_DISPLAY_NAME_MAPPINGS = {NODE_TYPE: "展示任意"}
+NODE_DISPLAY_NAME_MAPPINGS = {NODE_TYPE: "Display Any"}
 
 PromptServer.instance.add_on_prompt_handler(select_display_targets)

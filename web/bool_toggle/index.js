@@ -18,14 +18,14 @@ import {
   keepDomWidgetWidthAuto,
   notifyQgChange,
   zh,
-} from "../shared/index.mjs?v=2026102319";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102319";
+} from "../shared/index.mjs?v=2026102418";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102418";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
-} from "../shared/vue_mode.mjs?v=2026102319";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102319";
+} from "../shared/vue_mode.mjs?v=2026102418";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102418";
 
 const NODE_CLASS = "QG_BoolToggle";
 const WIDGET_NAME = "qg_bool_toggle_panel";

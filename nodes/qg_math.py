@@ -49,7 +49,7 @@ _EXPRESSION_HELP = (
 
 
 class QGMath:
-    CATEGORY = "QG-tools/\u903b\u8f91"
+    CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "One arithmetic expression over variables a to z. Type a formula such as "
         "round(a / b * 2, 2) on the card. Variables a, b, c\u2026 are wire-only inputs: "
@@ -73,10 +73,7 @@ class QGMath:
                     "multiline": False,
                     # 🔴 变量怎么接、常数写哪里统一放 DESCRIPTION（帮助卡第一段），
                     #    这里只讲「算式能写什么」。两边都写 = 帮助卡里两段重复的蓝字。
-                    "tooltip": "算式，例如 round(a / b * 2, 2)。\n"
-                               "常量 pi、e、tau；支持 + - * / // % **、比较、and/or/not、"
-                               "三元表达式，以及 sqrt、round、min、max、log、sin 等 30 多个函数，"
-                               "逐个用法见 docs/math.md。留空时输出 0。",
+                    "tooltip": "The expression, for example round(a / b * 2, 2).\nConstants pi, e and tau; operators + - * / // % **, comparisons, and/or/not and the ternary form; plus over thirty functions including sqrt, round, min, max, log and sin, each documented in docs/math.md. Empty evaluates to 0.",
                 }),
             },
             "optional": {
@@ -89,18 +86,19 @@ class QGMath:
                 #    再给变量单独留一排数字框。
                 name: ("INT,FLOAT,BOOLEAN", {
                     "default": 0,
-                    "tooltip": "变量 %s" % name,
+                    "tooltip": "Variable %s" % name,
                 })
                 for name in VARIABLES
             },
         }
 
     RETURN_TYPES = ("FLOAT", "INT", "BOOLEAN")
-    RETURN_NAMES = ("\u6570\u503c", "\u6574\u6570", "\u5e03\u5c14")
+    RETURN_NAMES = ("value", "integer", "boolean")
     OUTPUT_TOOLTIPS = (
-        "算式的结果，原样输出（小数）。",
-        "同一个结果四舍五入成整数，夹在 INT32 范围内。",
-        "同一个结果是否为非零。写比较表达式（如 a > b）时直接当条件用。",
+        "The result of the expression, as a decimal.",
+        "The same result rounded to an integer and clamped to the INT32 range.",
+        "Whether the same result is non-zero. With a comparison such as a > b "
+        "it works as a condition directly.",
     )
     FUNCTION = "execute"
 
@@ -122,6 +120,6 @@ class QGMath:
 
 
 NODE_CLASS_MAPPINGS = {"QG_Math": QGMath}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_Math": "\u6570\u5b66\u8fd0\u7b97"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_Math": "Math Expression"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

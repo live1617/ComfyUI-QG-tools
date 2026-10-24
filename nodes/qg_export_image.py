@@ -35,17 +35,18 @@ import torch
 from PIL import Image
 
 import folder_paths
+from ._qg_combo_legacy import combo_legacy
 
 FORMATS = ["JPEG", "PNG", "WEBP"]
 FORMAT_EXT = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
 
 SUBSAMPLING = {
-    "4:4:4（最高画质）": 0,
-    "4:2:2（均衡）": 1,
-    "4:2:0（最省体积）": 2,
+    "4:4:4": 0,
+    "4:2:2": 1,
+    "4:2:0": 2,
 }
 
-ALPHA_MODES = ["合成白底", "合成黑底", "保留透明（PNG / WEBP）"]
+ALPHA_MODES = ["on-white", "on-black", "keep-alpha"]
 
 # 与 ComfyUI 原生 SaveImage 的默认文件名前缀一致（nodes.py: filename_prefix default "ComfyUI"）
 DEFAULT_PREFIX = "ComfyUI"
@@ -237,7 +238,7 @@ def _to_pil(image, alpha_mode, allow_alpha):
         canvas.putalpha(mask)
         return canvas
 
-    # 只有明确选"合成黑底"才用黑；JPEG 收到"保留透明"时退化成白底
+    # 只有明确选 "on-black" 才用黑；JPEG 收到 "keep-alpha" 时退化成白底
     fill = (0, 0, 0) if alpha_mode == ALPHA_MODES[1] else (255, 255, 255)
     backdrop = Image.new("RGB", canvas.size, fill)
     backdrop.paste(canvas, mask=mask)
@@ -258,6 +259,7 @@ def _save_options(image_format, quality, subsampling):
     return {"format": "WEBP", "quality": int(quality), "method": 2}
 
 
+@combo_legacy("QG_ExportImage")
 class QGExportImage:
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
@@ -292,6 +294,13 @@ class QGExportImage:
     OUTPUT_NODE = True
 
     @classmethod
+    def VALIDATE_INPUTS(cls, subsampling=None, alpha_mode=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
@@ -299,14 +308,14 @@ class QGExportImage:
                     "IMAGE",
                     {
                         "forceInput": True,
-                        "tooltip": "要导出的图像批次；批次里每张都会单独存成一个文件",
+                        "tooltip": "The images to export. Every frame in a batch is written out as its own file.",
                     },
                 ),
                 "format": (
                     FORMATS,
                     {
                         "default": "JPEG",
-                        "tooltip": "JPEG 有损、体积最小；PNG 无损、体积大；WEBP 兼顾两者并支持透明",
+                        "tooltip": "JPEG is lossy and the smallest; PNG is lossless and bulky; WEBP sits between the two and keeps transparency.",
                     },
                 ),
                 "quality": (
@@ -317,30 +326,34 @@ class QGExportImage:
                         "max": 100,
                         "step": 1,
                         "tooltip": (
-                            "编码质量，只对 JPEG 和 WEBP 生效（PNG 无损，填了也没用）。"
-                            "90 是肉眼无损的常用档；想明显省体积降到 85，"
-                            "再往下画质开始看得出来"
+                            "Encoding quality, used by JPEG and WEBP only, since PNG is "
+                            "lossless and ignores it. 90 is the usual visually lossless "
+                            "setting; drop to 85 to save real space, and below that the loss "
+                            "starts to show."
                         ),
                     },
                 ),
                 "subsampling": (
                     list(SUBSAMPLING.keys()),
                     {
-                        "default": "4:4:4（最高画质）",
+                        "default": "4:4:4",
                         "tooltip": (
-                            "色度采样，只对 JPEG 生效。4:4:4 保留全部彩色细节；"
-                            "4:2:2 省约 15% 体积、红橙边缘开始发软；"
-                            "4:2:0 再省一些，缩小到一半看才明显"
+                            "Chroma subsampling, JPEG only. 4:4:4 keeps every bit of colour "
+                            "detail; 4:2:2 saves around 15% and softens red and orange edges; "
+                            "4:2:0 saves a little more and only shows when you view at half "
+                            "size."
                         ),
                     },
                 ),
                 "alpha_mode": (
                     ALPHA_MODES,
                     {
-                        "default": "合成白底",
+                        "default": "on-white",
                         "tooltip": (
-                            "输入带透明通道时怎么处理：合成到白底或黑底后存成不透明图；"
-                            "或者原样保留透明（只有 PNG / WEBP 支持，选 JPEG 时会自动改成白底）"
+                            "What to do with a transparency channel on the input: composite "
+                            "onto white or black and save an opaque image, or keep the "
+                            "transparency as it is. Only PNG and WEBP support it, and choosing "
+                            "JPEG falls back to white."
                         ),
                     },
                 ),
@@ -350,11 +363,14 @@ class QGExportImage:
                         # 跟 ComfyUI 原生 SaveImage 同一个默认值，两边的出图能并排放
                         "default": DEFAULT_PREFIX,
                         "tooltip": (
-                            "文件名前缀（只写文件名，不要写目录）。命名规则和 ComfyUI 原生保存节点完全一致："
-                            "成品形如 ComfyUI_00001_.png，5 位递增计数，自动跳过目录里已有的编号。"
-                            "可用变量：%date:yyyyMMdd% 日期、%time:HHmmss% 时间、"
-                            "%INDEX% 批次内序号、%BATCH% 批次总数；也认原生那套 "
-                            "%width% %height% %year% %month% %day% %hour% %minute% %second% %batch_num%"
+                            "Filename prefix -- the name only, no directory. Naming matches "
+                            "ComfyUI's own Save Image node exactly: the output looks like "
+                            "ComfyUI_00001_.png, a five digit counter that skips numbers "
+                            "already taken in the folder. Variables: %date:yyyyMMdd% for the "
+                            "date, %time:HHmmss% for the time, %INDEX% for the position in the "
+                            "batch, %BATCH% for the batch size; the native set %width% %height% "
+                            "%year% %month% %day% %hour% %minute% %second% %batch_num% works "
+                            "too."
                         ),
                     },
                 ),
@@ -365,10 +381,12 @@ class QGExportImage:
                     {
                         "default": "",
                         "tooltip": (
-                            "留空写 ComfyUI 的 output 目录。也可以填：子目录名（auto 图/2026）、"
-                            "完整绝对路径（D:\\出图\\今天）、网络共享（\\\\NAS\\共享\\图）、"
-                            "带环境变量（%USERPROFILE%\\Desktop\\图）或用 ~ 开头（~\\Desktop\\图）。"
-                            "系统目录、盘符根目录、只写一个盘符（如 D:）都会被拒绝"
+                            "Leave empty to write into ComfyUI's output folder. You can also "
+                            "give a subfolder name such as auto/2026, a full absolute path "
+                            "(D:\\pics\\today), a network share (\\\\NAS\\share\\pics), a path "
+                            "holding environment variables (%USERPROFILE%\\Desktop\\pics), or one "
+                            "starting with a tilde (~\\Desktop\\pics). System folders, drive "
+                            "roots and a bare drive letter such as D: are all refused."
                         ),
                     },
                 ),
@@ -380,8 +398,8 @@ class QGExportImage:
         images,
         format="JPEG",
         quality=90,
-        subsampling="4:4:4（最高画质）",
-        alpha_mode="合成白底",
+        subsampling="4:4:4",
+        alpha_mode="on-white",
         filename_prefix=DEFAULT_PREFIX,
         save_path="",
     ):
@@ -473,6 +491,6 @@ class QGExportImage:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ExportImage": QGExportImage}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ExportImage": "导出图像"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ExportImage": "Export Image"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

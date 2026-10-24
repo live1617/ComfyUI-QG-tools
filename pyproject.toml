@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-qg-tools"
-description = "A ComfyUI custom node pack by QG: 32 nodes under QG-tools - LoRA Loader (searchable rows, drag strengths, trigger words, templates), a 3-in-1 Checkpoint/UNET + CLIP + VAE loader, canvas Image Crop + Rotate + Pad with video timeline, Image Compare (slide / A / B / erase, layered PSD), Image Export (JPEG / PNG / WEBP with quality), Canvas Label and Markdown Note (free text on the canvas, never executed), Workflow Note card, Workflow Switches, Run Timer, Resize, Size, Seed history, Text, Markdown Reader, Translate, Any Switch, Display Any, If/Else, Watermark, Text Overlay, Grid, Mask Colorize, Mask Concat, Text Concat, Text Replace, Text Split, Size Selector, Math (one expression over variables a-z). All answer to English search aliases."
-version = "0.9.4"
+description = "A ComfyUI custom node pack by QG: 38 nodes under QG-tools - LoRA Loader (searchable rows, drag strengths, trigger words, templates), a 3-in-1 Checkpoint/UNET + CLIP + VAE loader, Empty Latent Resolution (ratio + megapixels), canvas Image Crop + Rotate + Pad with video timeline, Image Compare (slide / A / B / erase), Image Export (JPEG / PNG / WEBP with quality), Canvas Label and Markdown Note (free text, never executed), Workflow Note card, Workflow Switches, Run Timer, Resize, Size, Number Slider (own range), Seed history, Text, Markdown Reader, Translate, Any Switch, Display Any, If/Else, Watermark, Text Overlay, Grid, Mask Colorize, Mask Concat, Text Concat, Text Replace, Text Split, Size Selector, Math (one expression over variables a-z). All answer to English search aliases."
+version = "0.9.5"
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.9"

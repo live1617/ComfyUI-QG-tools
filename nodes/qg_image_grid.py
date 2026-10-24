@@ -14,6 +14,10 @@ MIT licensed, authored by Muye. QG changes:
 
 The node is an output node (it renders a preview) but still returns the grid as
 a normal IMAGE, so it can sit in the middle of a graph.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten; behaviour changes are
+listed above. Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import math
@@ -26,6 +30,7 @@ from PIL import Image
 from torch.nn.functional import interpolate
 
 import folder_paths
+from ._qg_combo_legacy import combo_legacy
 
 MAX_IMAGES = 16
 MAX_COLS = 4
@@ -93,7 +98,7 @@ def _make_grid(images, cols, rows, match_size, gap, background):
 
     canvas_w = sum(col_widths) + (cols - 1) * gap
     canvas_h = sum(row_heights) + (rows - 1) * gap
-    fill = 0.0 if background == "黑色" else 1.0
+    fill = 0.0 if background == "black" else 1.0
     canvas = torch.full((1, canvas_h, canvas_w, 3), fill, dtype=torch.float32)
 
     xs, x = [], 0
@@ -115,6 +120,7 @@ def _make_grid(images, cols, rows, match_size, gap, background):
     return canvas
 
 
+@combo_legacy("QG_ImageGrid")
 class QGImageGrid:
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
@@ -129,6 +135,13 @@ class QGImageGrid:
     ]
 
     @classmethod
+    def VALIDATE_INPUTS(cls, background=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
@@ -136,14 +149,14 @@ class QGImageGrid:
                     "IMAGE",
                     {
                         "forceInput": True,
-                        "tooltip": "接批次张量或张量列表；最多取前 16 张",
+                        "tooltip": "A batch or a list of tensors; only the first 16 are used.",
                     },
                 ),
                 "match_size": (
                     "BOOLEAN",
                     {
                         "default": True,
-                        "tooltip": "开：所有格子统一成第一张的尺寸（图在格内等比居中，不裁剪）；关：各图保持原尺寸",
+                        "tooltip": "On: every cell takes the first image's size, each picture fitted inside it without cropping. Off: every picture keeps its own size.",
                     },
                 ),
                 "drop_black": (
@@ -151,8 +164,8 @@ class QGImageGrid:
                     {
                         "default": True,
                         "tooltip": (
-                            "开：丢掉全黑帧（上游批次节点常给未接输入补黑图占位）；"
-                            "关：全黑帧也照常拼进去"
+                            "On: drop fully black frames (batch nodes often pad unwired inputs "
+                            "with black). Off: they are tiled like any other frame."
                         ),
                     },
                 ),
@@ -163,23 +176,25 @@ class QGImageGrid:
                         "min": 0,
                         "max": 1000,
                         "step": 1,
-                        "tooltip": "格子之间的像素间隙",
+                        "tooltip": "Gap between cells, in pixels.",
                     },
                 ),
                 "background": (
-                    ["黑色", "白色"],
-                    {"default": "黑色", "tooltip": "间隙与留白填充的颜色"},
+                    ["black", "white"],
+                    {"default": "black", "tooltip": "Color behind the gaps and the empty space."},
                 ),
             },
         }
 
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("IMAGE",)
-    OUTPUT_TOOLTIPS = ("拼好的宫格图。",)
+    OUTPUT_TOOLTIPS = (
+        "The tiled grid image.",
+    )
     FUNCTION = "run"
     OUTPUT_NODE = True
 
-    def run(self, images, match_size=True, drop_black=True, gap=0, background="黑色"):
+    def run(self, images, match_size=True, drop_black=True, gap=0, background="black"):
         if isinstance(images, torch.Tensor):
             if images.ndim == 4:
                 items = [images[i] for i in range(images.shape[0])]
@@ -217,6 +232,6 @@ class QGImageGrid:
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageGrid": QGImageGrid}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageGrid": "宫格图像拼接"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_ImageGrid": "Image Grid"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

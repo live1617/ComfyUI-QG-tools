@@ -21,7 +21,7 @@ register_md_routes()
 
 
 class QGMarkdownReader:
-    CATEGORY = "QG-tools/文本"
+    CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Reads a Markdown file and outputs its text. The output is a STRING, so "
         "it feeds any text input — a prompt box, a CLIP Text Encode, a note. "
@@ -50,7 +50,6 @@ class QGMarkdownReader:
                 "custom_path": ("STRING", {
                     "default": "",
                     "multiline": False,
-                    "placeholder": "Optional: an absolute path to read instead of the list above",
                     "tooltip": "Leave empty to use the list. Filled in, it wins over the list.",
                 }),
             },
@@ -84,6 +83,6 @@ class QGMarkdownReader:
 
 
 NODE_CLASS_MAPPINGS = {"QG_MDReader": QGMarkdownReader}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_MDReader": "加载文档"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_MDReader": "Load Document"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

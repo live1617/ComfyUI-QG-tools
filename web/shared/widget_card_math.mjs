@@ -40,20 +40,29 @@ export function rowMuted(row, values) {
 // height a textarea row asks for.
 export function rowHeight(row) {
   if (row.section !== undefined) return SECTION_HEIGHT;
-  if (row.widget === undefined && row.pair === undefined) return GROUP_HEIGHT;
+  // A slider row holds no widget of its own, but it is a control row all the
+  // same — without this it falls through to the group-header height (22) and
+  // the card comes out 4px short, clipping its last row.
+  if (row.widget === undefined && row.pair === undefined && !row.slider) return GROUP_HEIGHT;
   return Number(row.height) > 0 ? Number(row.height) : ROW_HEIGHT;
 }
+
+// The card is drawn with a 1px border on each side and `box-sizing:
+// border-box`, so its content box is two pixels shorter than its height —
+// without counting the border here the last row gets clipped by 2px.
+export const CARD_BORDER = 1;
 
 // Card height for a list of visible rows: rows, section captions and group
 // headers each add their own height plus the gap between them.
 export function cardHeight(rows) {
-  if (!rows.length) return CARD_PADDING * 2;
-  return CARD_PADDING * 2 + rows.reduce((sum, row) => sum + rowHeight(row), 0) + ROW_GAP * (rows.length - 1);
+  if (!rows.length) return CARD_PADDING * 2 + CARD_BORDER * 2;
+  return CARD_PADDING * 2 + CARD_BORDER * 2 + rows.reduce((sum, row) => sum + rowHeight(row), 0) + ROW_GAP * (rows.length - 1);
 }
 
-// Where each visible row starts, measured from the card's top edge.
+// Where each visible row starts, measured from the card's top edge
+// (border + padding, so the number matches where the row really is).
 export function rowTops(rows) {
-  let y = CARD_PADDING;
+  let y = CARD_PADDING + CARD_BORDER;
   return rows.map((row) => {
     const top = y;
     y += rowHeight(row) + ROW_GAP;

@@ -4,7 +4,7 @@
 // 同时保持经典模式行为不变。本模块提供判断、迁移、拆卸、宽度补偿等通用能力。
 
 import { app } from "/scripts/app.js";
-import { chainCallback } from "./index.mjs?v=2026102319";
+import { chainCallback } from "./index.mjs?v=2026102418";
 
 const FLOORS = Symbol("qg.widthFloors");
 

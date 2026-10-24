@@ -15,7 +15,7 @@ from __future__ import annotations
 
 
 class QGMarkdownNote:
-    CATEGORY = "QG-tools/标注"
+    CATEGORY = "QG-tools/Annotation"
     DESCRIPTION = (
         "A Markdown sticky note on the canvas: headings, bold and italic, "
         "lists, quotes, tables, code blocks and inline colour. A self "
@@ -54,6 +54,6 @@ class QGMarkdownNote:
 
 
 NODE_CLASS_MAPPINGS = {"QG_MarkdownNote": QGMarkdownNote}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_MarkdownNote": "Markdown 便签"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_MarkdownNote": "Markdown Note"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

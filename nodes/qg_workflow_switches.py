@@ -1,5 +1,9 @@
 """Workflow Switches — switch parts of a workflow off and on from one card.
 
+Ported from ComfyUI-AusBoss (nodes/node_workflow_switches.py + the matching
+frontend), MIT licensed. Renamed to the QG_ prefix,
+category moved under ``QG-tools/工作流``, UI text translated to Chinese.
+
 The whole node is a frontend panel: one row per switch, each with an
 off | on pill. A switch holds the nodes that were picked for it (a box and
 its Save, say), and every group can have a row of its own. Off bypasses those
@@ -15,13 +19,17 @@ it. The frontend marks it virtual, so it never enters a prompt. Should an API
 prompt name it anyway, it is harmless: it has no inputs and no outputs, it is
 not an output node and nothing can depend on it, so ComfyUI accepts the
 prompt and never runs it.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 from __future__ import annotations
 
 
 class QGWorkflowSwitches:
-    CATEGORY = "QG-tools/工作流"
+    CATEGORY = "QG-tools/Workflow"
     DESCRIPTION = (
         "Switch parts of a workflow off and on from one small card. Select "
         "the nodes that make up a part, such as a box and its Save, and "

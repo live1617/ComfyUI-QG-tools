@@ -17,7 +17,7 @@ Only core modules are used -- no new dependency.
 
 
 class QGBoolToggle:
-    CATEGORY = "QG-tools/\u903b\u8f91"
+    CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "A single on/off switch drawn as one big card: click the pill to flip "
         "it, and every node wired to the output follows. The front end paints "
@@ -33,7 +33,7 @@ class QGBoolToggle:
                 # widgets_values 里，存档 / 撤销 / API 都不需要特殊处理。
                 "boolean": ("BOOLEAN", {
                     "default": False,
-                    "tooltip": "开关状态。点节点上的胶囊切换；输出接到下游的布尔条件上。",
+                    "tooltip": "The switch state. Click the pill on the card to flip it; wire the output into any downstream boolean condition.",
                 }),
                 # 卡片上的大字。留空就显示「开 / 关」；填了名字（比如「美颜」）
                 # 就显示名字，状态只靠胶囊颜色区分。存在控件里是为了跟着工作流
@@ -41,7 +41,7 @@ class QGBoolToggle:
                 "label": ("STRING", {
                     "default": "",
                     "multiline": False,
-                    "tooltip": "卡片上显示的名字，比如「美颜」。留空则显示「开 / 关」。双击卡片可改。",
+                    "tooltip": "The name shown on the card, e.g. \"Beauty\". Leave it empty to show on / off. Double-click the card to rename it.",
                 }),
             }
         }
@@ -57,6 +57,6 @@ class QGBoolToggle:
 
 
 NODE_CLASS_MAPPINGS = {"QG_BoolToggle": QGBoolToggle}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_BoolToggle": "\u5e03\u5c14\u5f00\u5173"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_BoolToggle": "Boolean Toggle"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

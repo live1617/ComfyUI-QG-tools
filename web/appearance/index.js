@@ -10,17 +10,18 @@ import {
   shouldRecolor,
   titleInk,
   wearsLegacyScheme,
-} from "../shared/appearance.mjs?v=2026102319";
-import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026102319";
+} from "../shared/appearance.mjs?v=2026102418";
+import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026102418";
 import {
   BADGE_RADIUS,
   badgeCenter,
   helpSections,
   hitsBadge,
   showBadge,
-} from "../shared/help_badge.mjs?v=2026102319";
-import { openInfoCard } from "../shared/settings_menu.mjs?v=2026102319";
-import { zh, zhOn, zhReady } from "../shared/zh.mjs?v=2026102319";
+} from "../shared/help_badge.mjs?v=2026102418";
+import { mountHelpBadge, unmountHelpBadge } from "../shared/help_badge_dom.mjs?v=2026102418";
+import { closeSettingsMenu, openInfoCard } from "../shared/settings_menu.mjs?v=2026102418";
+import { zh, zhOn, zhReady } from "../shared/zh.mjs?v=2026102418";
 
 const SETTING_ID = "QG.Appearance.NodeColor";
 const CUSTOM_SETTING_ID = "QG.Appearance.CustomColor";
@@ -247,11 +248,29 @@ function openHelpCard(node, event) {
         }
       : {}),
   }));
-  openInfoCard({
+  const handle = openInfoCard({
     anchor: { left: clientX - 150, top: clientY, bottom: clientY + 6 },
     title: node.title || zh(nodeData?.display_name) || "About this node",
     sections,
   });
+  // 记一笔「最上面这张是帮助卡」：DOM 徽章再点一次要靠它判断该不该收起来。
+  const pops = document.querySelectorAll(".qgtools-set-pop");
+  const pop = pops[pops.length - 1];
+  if (pop) pop.__qgHelpCard = true;
+  return handle;
+}
+
+// 点第二下收起卡片。DOM 徽章带着 data-qgtools-menu-toggle，帮助卡的
+// 「点别处关闭」会放过它，所以这里必须自己判断 —— 否则表现成「点了没反应，
+// 只是关了又开一次」。
+function toggleHelpCard(node, event) {
+  const pops = document.querySelectorAll(".qgtools-set-pop");
+  const top = pops[pops.length - 1];
+  if (top?.__qgHelpCard) {
+    closeSettingsMenu();
+    return null;
+  }
+  return openHelpCard(node, event);
 }
 
 // Every QG node gets a quiet "?" in the title bar; clicking it opens a
@@ -261,6 +280,7 @@ function installHelpBadge(node) {
   // A title-less node (Run Timer) has no bar to hang the badge on; its
   // card opens from the node's context menu instead.
   if (isTitleless(node)) return;
+  // Classic canvas: drawn in onDrawForeground, clicks caught in onMouseDown.
   chainCallback(node, "onDrawForeground", function (ctx) {
     if (!showBadge(this.size?.[0] ?? 0, this.flags?.collapsed)) return;
     const [x, y] = badgeCenter(this.size[0]);
@@ -283,4 +303,12 @@ function installHelpBadge(node) {
     openHelpCard(this, event);
     return true; // consume the click so it does not start a drag
   });
+  // Nodes 2.0: neither hook above ever fires — the canvas is not drawing the
+  // node any more. Same badge, re-hung as a real button in the DOM title bar
+  // (the module decides per render mode; classic simply never mounts it).
+  mountHelpBadge(node, {
+    label: zh("About this node"),
+    onOpen: (event) => toggleHelpCard(node, event),
+  });
+  chainCallback(node, "onRemoved", () => unmountHelpBadge(node));
 }

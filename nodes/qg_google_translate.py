@@ -16,6 +16,10 @@ stack (so a user-configured proxy still applies), then again on a direct
 no-proxy session -- this covers machines whose configured proxy cannot reach
 Google as well as flaky direct routes. On failure the node returns the original
 text, so a prompt pipeline never breaks silently.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten.
+Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import os
@@ -242,7 +246,7 @@ class QGGoogleTranslateText:
                 ),
                 "text": (
                     "STRING",
-                    {"multiline": True, "placeholder": "Input prompt",
+                    {"multiline": True,
                      "tooltip": "The text to translate."},
                 ),
             }
@@ -252,7 +256,7 @@ class QGGoogleTranslateText:
     RETURN_NAMES = ("text",)
     FUNCTION = "translate_text"
     OUTPUT_TOOLTIPS = ("The translated text.",)
-    CATEGORY = "QG-tools/\u6587\u672c"
+    CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Translate a text prompt into another language using Google Translate. "
         "Free, no API key needed (Google may rate-limit it); set the "

@@ -1,19 +1,19 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026102319";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102319";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026102319";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026102418";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102418";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026102418";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102319";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026102319";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102319";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026102319";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026102319";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026102319";
+} from "../shared/settings_menu.mjs?v=2026102418";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026102418";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102418";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026102418";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026102418";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026102418";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -69,8 +69,8 @@ import {
   loraFolders,
   loraPickerEntries,
   loraStackKeyAction,
-} from "../shared/lora_stack.mjs?v=2026102319";
-import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026102319";
+} from "../shared/lora_stack.mjs?v=2026102418";
+import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026102418";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where

@@ -44,6 +44,10 @@ v0.9.4 later revision - ``ratio`` became a real dropdown:
     string and wins over the dropdown. Older workflows that stored a custom
     ratio in ``ratio`` are migrated by ``web/size_selector/index.js``
     (onConfigure moves the unknown value here), so nothing breaks.
+
+Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
+display name localized, tooltips and comments rewritten; behaviour changes are
+listed above. Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 import math
@@ -52,6 +56,7 @@ import re
 import torch
 
 import comfy.model_management
+from ._qg_combo_legacy import combo_legacy
 
 MAX_RESOLUTION = 8192
 MIN_RESOLUTION = 64
@@ -114,8 +119,8 @@ PRESETS = (
 #                    但 2304:1280 实际是 9:5，标签才是作者想要的比例；不选它的话
 #                    百万像素 / 长边会按 9:5 算，出来的不是 16:9。
 RATIOS = (
-    "无",
-    "采用比例",
+    "none",
+    "from-preset",
     "1:1",
     "4:3",
     "3:4",
@@ -204,6 +209,7 @@ def _size_for_megapixels(rx, ry, target_mp, step):
     return min(candidates, key=lambda c: abs(c[0] * c[1] - target_px))
 
 
+@combo_legacy("QG_SizeSelector")
 class QGSizeSelector:
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
@@ -223,6 +229,13 @@ class QGSizeSelector:
     ]
 
     @classmethod
+    def VALIDATE_INPUTS(cls, ratio=None):
+        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
+        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
+        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        return True
+
+    @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
@@ -231,14 +244,15 @@ class QGSizeSelector:
                     {
                         "default": "832x1216 - 2:3",
                         "tooltip": (
-                            "预设分辨率与比例；「比例」选「无」用它给的原始像素，"
-                            "选「采用比例」用它在标签里标的比例"
+                            "Preset resolutions and aspect ratios. With ratio set to none you get "
+                            "the preset's raw pixels, with from-preset you get the ratio printed in "
+                            "its label."
                         ),
                     },
                 ),
                 "batch_size": (
                     "INT",
-                    {"default": 1, "min": 1, "max": 4096, "tooltip": "批次大小"},
+                    {"default": 1, "min": 1, "max": 4096, "tooltip": "Batch size."},
                 ),
                 "long_edge": (
                     "INT",
@@ -247,18 +261,19 @@ class QGSizeSelector:
                         "min": 0,
                         "max": MAX_RESOLUTION,
                         "step": 8,
-                        "tooltip": "长边像素；0 = 用预设原始尺寸，非 0 时保持比例缩放长边",
+                        "tooltip": "Long-edge pixels. 0 uses the preset's own size; any other value scales the long "
+                                   "edge to it while keeping the aspect ratio.",
                     },
                 ),
                 "ratio": (
                     list(RATIOS),
                     {
-                        "default": "无",
+                        "default": "none",
                         "tooltip": (
-                            "比例覆盖。「无」= 用预设的原始像素；"
-                            "「采用比例」= 用预设标签里写的那条比例"
-                            "（如 2304x1280 标 16:9，实际像素是 9:5）；"
-                            "也可以直接挑一个固定比例。要填任意比例用下面的「自定义比例」"
+                            "Overrides the aspect ratio. none uses the preset's raw pixels; from-preset "
+                            "uses the ratio printed in the preset's label, so 2304x1280 "
+                            "labelled 16:9 is really 9:5; you can also pick a fixed ratio "
+                            "directly. For an arbitrary ratio use the custom ratio below."
                         ),
                     },
                 ),
@@ -268,7 +283,7 @@ class QGSizeSelector:
                         "default": 0,
                         "min": 0,
                         "max": 1024,
-                        "tooltip": "帧数；0 = 图像模型（无时间维），大于 0 = 视频模型",
+                        "tooltip": "Frame count. 0 is an image model with no time axis, anything above 0 is a video model.",
                     },
                 ),
                 "factor": (
@@ -279,11 +294,12 @@ class QGSizeSelector:
                         "max": 64,
                         "step": 1,
                         "tooltip": (
-                            "把宽高保持比例地贴到这个数的倍数上。"
-                            "0 = 不额外贴，但求解比例时最低仍保证 8 的倍数"
-                            "（latent 就是按 8 展开的）。"
-                            "注意：贴得越粗，比例能选的尺寸跳得越大 —— "
-                            "例如 16:9 在 32 下宽度只能按 512 跳；重视比例时留 0"
+                            "Snaps width and height to a multiple of this number while keeping "
+                            "the aspect ratio. 0 adds no snapping, though solving the ratio "
+                            "still holds a multiple of 8, which is how latents unfold. The "
+                            "coarser the snap, the further apart the sizes a ratio can reach: "
+                            "at 32 a 16:9 frame moves in width steps of 512. Leave 0 when the "
+                            "ratio matters."
                         ),
                     },
                 ),
@@ -291,18 +307,19 @@ class QGSizeSelector:
                     ["4", "16"],
                     {
                         "default": "4",
-                        "tooltip": "潜在通道数：SD 1.5 / SDXL 用 4；Flux / SD3 / 视频模型用 16",
+                        "tooltip": "Latent channels: 4 for SD 1.5 and SDXL, 16 for Flux, SD3 and video models.",
                     },
                 ),
             },
             "optional": {
                 "width": (
                     "*",
-                    {"tooltip": "可选宽度覆盖（任意类型，按数字解析）；接了并大于 0 就优先用宽高"},
+                    {"tooltip": "Optional width override of any type, parsed as a number. Wired in and above 0, "
+                                "it takes priority over the preset."},
                 ),
                 "height": (
                     "*",
-                    {"tooltip": "可选高度覆盖（任意类型，按数字解析）"},
+                    {"tooltip": "Optional height override of any type, parsed as a number."},
                 ),
                 # 必须排在 optional 末尾：LiteGraph 按位置还原 widgets_values，
                 # 插在中间会让老存档整体错位。
@@ -315,8 +332,9 @@ class QGSizeSelector:
                         "step": 0.25,
                         "round": 0.01,
                         "tooltip": (
-                            "百万像素：0 = 不用；给了就用这个面积定尺寸，"
-                            "形状仍由「比例」或预设决定（例：1.0 / 2.0）"
+                            "Megapixels: 0 means unused. Given a value, the size comes from "
+                            "this area while the shape still follows the ratio or the preset, "
+                            "for example 1.0 or 2.0."
                         ),
                     },
                 ),
@@ -327,8 +345,9 @@ class QGSizeSelector:
                     {
                         "default": "",
                         "tooltip": (
-                            "自定义比例，如 2.39:1 / 5 4 / 1.85；"
-                            "填了就优先于上面的「比例」下拉。留空 = 听下拉的"
+                            "Custom aspect ratio such as 2.39:1, 5 4 or 1.85. Filled in, it "
+                            "wins over the ratio dropdown above; empty means the dropdown "
+                            "decides."
                         ),
                     },
                 ),
@@ -338,10 +357,10 @@ class QGSizeSelector:
     RETURN_TYPES = ("LATENT", "INT", "INT", "INT")
     RETURN_NAMES = ("LATENT", "WIDTH", "HEIGHT", "FRAMES")
     OUTPUT_TOOLTIPS = (
-        "空潜在张量。",
-        "实际使用的宽度。",
-        "实际使用的高度。",
-        "实际使用的帧数（0 = 图像模型）。",
+        "The empty latent tensor.",
+        "The width actually used.",
+        "The height actually used.",
+        "The frame count actually used (0 = image model).",
     )
     FUNCTION = "execute"
 
@@ -350,7 +369,7 @@ class QGSizeSelector:
 
     @staticmethod
     def _parse_ratio(ratio_str):
-        if not ratio_str or ratio_str == "无":
+        if not ratio_str or ratio_str == "none":
             return None
         cleaned = re.sub(r"[\s/\\]", ":", ratio_str)
         numbers = re.findall(r"\d*\.?\d+", cleaned)
@@ -381,11 +400,11 @@ class QGSizeSelector:
     def _resolve_ratio(self, ratio, ratio_custom, preset, base_w, base_h):
         """自定义比例 > 下拉（含「采用比例」）> 不覆盖。"""
         custom = str(ratio_custom or "").strip()
-        if custom and custom != "无":
+        if custom and custom != "none":
             parsed = self._parse_ratio(custom)
             if parsed:
                 return parsed
-        if ratio == "采用比例":
+        if ratio == "from-preset":
             return self._ratio_from_preset(preset, base_w, base_h)
         return self._parse_ratio(ratio)
 
@@ -416,7 +435,7 @@ class QGSizeSelector:
         # 求解路径（比例 / 百万像素 / 长边）的网格步长。
         #
         # 至少 8：latent 是按 ``out_w // 8`` 展开的，非 8 的倍数会被截断 ——
-        # 「采用比例」在 factor=0 时曾算出 810x1215，节点报的高度是 1215，
+        # from-preset 在 factor=0 时曾算出 810x1215，节点报的高度是 1215，
         # 实际张量只有 1216-8=1208 那一档，数值对不上图。
         #
         # 只影响求解路径：手填 width/height 覆盖、以及 preset 原样两条老路径
@@ -527,6 +546,6 @@ class QGSizeSelector:
 
 
 NODE_CLASS_MAPPINGS = {"QG_SizeSelector": QGSizeSelector}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_SizeSelector": "尺寸选择器"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_SizeSelector": "Size Selector"}
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

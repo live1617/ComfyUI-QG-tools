@@ -3,9 +3,9 @@
 // Markdown 相关的渲染已拆到独立节点「Markdown 文本」；本节点保持纯文本，不做语法解析。
 // 共用代码：label_common.js（编辑面板 + 画布钩子）
 import { openLabelEditor, registerLabelCanvasHooks, getMeasureCtx, DEFAULT_LABEL_BG,
-         DEFAULT_LABEL_PAD, DEFAULT_LABEL_RADIUS } from "./label_common.mjs?v=2026102319";
-import { syncCanvasLabelMode } from "./canvas_label_dom.mjs?v=2026102319";
-import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102319";
+         DEFAULT_LABEL_PAD, DEFAULT_LABEL_RADIUS } from "./label_common.mjs?v=2026102418";
+import { syncCanvasLabelMode } from "./canvas_label_dom.mjs?v=2026102418";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102418";
 
 const NODE_TYPE = "QG_CanvasLabel";
 
@@ -190,6 +190,6 @@ QGCanvasLabel.type = NODE_TYPE;
 QGCanvasLabel.title = "画布标签";
 QGCanvasLabel.title_mode = LiteGraph.NO_TITLE;
 QGCanvasLabel.collapsable = false;
-QGCanvasLabel.category = "QG-tools/标注";
+QGCanvasLabel.category = "QG-tools/Annotation";
 
 export { QGCanvasLabel };

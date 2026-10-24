@@ -7,6 +7,7 @@
 ```
 ComfyUI-QG-tools/
 ├── __init__.py                        # 只汇总 nodes/ 下所有模块的映射，不写节点逻辑
+├── ORIGINS.json                       # 节点来源清单（机器可读）：原创 / 搬运 + 参考来源
 ├── PORTED.json                        # 搬运清单（机器可读）：每个文件从哪来、改了什么
 ├── README.md                          # 面向使用者
 ├── DEVELOPMENT.md                      # 本文件
@@ -20,9 +21,12 @@ ComfyUI-QG-tools/
 │       └── publish_action.yml         # 改 version 并推送到 main 即自动发布到 Registry
 ├── licenses/
 │   └── ComfyUI-AusBoss-LICENSE.txt    # 被搬运代码的原许可证（MIT，必须保留）
+├── locales/
+│   └── zh/nodeDefs.json               # 中文语言包（标题 / 输入输出 / 提示 / 选项显示名）
 ├── nodes/
 │   ├── __init__.py                    # 占位，不要在这里写节点
 │   ├── _qg_lora_helpers.py            # 被引用，不注册节点（下划线开头 = 不扫）
+│   ├── _qg_combo_legacy.py            # 下拉选项老中文值 → 英文值（全插件唯一的表）
 │   ├── qg_lora_loader.py              # 注册 QG_LoraLoader
 │   ├── qg_workflow_note.py            # 注册 QG_WorkflowNote（纯前端节点，无依赖）
 │   └── qg_workflow_switches.py        # 注册 QG_WorkflowSwitches（纯前端节点，无依赖）
@@ -33,6 +37,10 @@ ComfyUI-QG-tools/
     ├── workflow_switches/index.js     # 工作流开关界面
     └── shared/*.mjs                   # 被上面 import 的共享模块（.mjs = 不会被当扩展加载）
 ```
+
+> 树里的 `nodes/` 与 `web/` 只列了最早期几个做示例，实际数量以目录为准。
+> `shared/combo_zh.mjs` 是**生成物**（`tools/gen_combo_zh.py` 从 `_qg_combo_legacy.py` 产出），
+> 别手改。
 
 `web/shared/` 里有两类模块：本插件节点自己抽出来的（`lora_stack`、`widget_card`、`panel_layout`…），
 以及被它们串起来带进来的通用工具（`transform_geometry`、`media_picker`、`pad_canvas`…）。
@@ -57,7 +65,14 @@ ComfyUI 的节点默认宽度**不在 Python 里**，是前端按控件类型算
 
 - **节点 ID**：`QG_` 前缀
 - **显示名**：**不带** `QG ` 前缀（2026-10-18 起；标题栏只留功能名，分类已经说明归属）
-- **分类**：`QG-tools`（再多就 `QG-tools/子分类`）
+- **分类**：`QG-tools`，二级子分类共八个，**一律英文**：
+  `Loaders` / `Text` / `Logic` / `Display` / `Workflow` / `Mask` / `Annotation` / `Image`。
+  🔴 后端写中文，英文界面的节点菜单里就会冒出中文分组。中文名走**官方通道**
+  `locales/zh/main.json` 的 `nodeCategories`（见「双语与下拉选项值 · 分类」一节），
+  不依赖汉化插件；经典画布的右键「添加节点」菜单官方不管，由
+  `web/shared/category_zh.mjs` 兜（同见那一节）。新增子分类要同时改**四处**：
+  白名单 `verify_categories.py:ALLOWED_SUBS`、`locales/zh/main.json`、
+  汉化插件那份同值冗余映射、以及 `web/shared/category_zh.mjs` 的 `CATEGORY_ZH`。
 - **前端扩展注册名**：`QG.<NodeName>`
 - **后端路由**：`/qg/<功能>/...`
 - **私有 CSS 类名 / style 元素 id**：`qgtools-` 前缀
@@ -73,23 +88,33 @@ ComfyUI 的节点默认宽度**不在 Python 里**，是前端按控件类型算
 
 ```python
 NODE_CLASS_MAPPINGS = {"QG_MyNode": QGMyNode}
-NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "我的节点"}
+NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "My Node"}
 ```
 
-3. 节点类里写 `CATEGORY = "QG-tools"`，菜单里就会归到 QG-tools 下面。
+🔴 **显示名写英文**。后端是英文优先，中文由 `locales/zh/nodeDefs.json` 的
+`display_name` 提供（用户切中文界面时才叠上去）；在 Python 里写中文，英文界面就
+只能看到中文。同一个道理适用于 `DESCRIPTION`、所有 tooltip、`RETURN_NAMES`、
+下拉选项值 —— `tools/verify_bilingual.py` 会把中文残留一条条报出来。
+
+3. 节点类里写 `CATEGORY = "QG-tools/<英文子分类>"`（现有八个见「命名约定」）。
+   **新开子分类**才要动语言包：`locales/zh/main.json` 的 `nodeCategories` 加一条，
+   再跑 `tools/verify_categories.py` —— 它有 `ALLOWED_SUBS` 白名单，漏登记直接 FAIL。
 4. 重启 ComfyUI。`__init__.py` 会自动扫描 `nodes/`，无需手工注册。
-5. 还有五处要一起改 —— 漏了不会崩，但会静默缺中文、搜不到、宽度不对：
+5. 还有六处要一起改 —— 漏了不会崩，但会静默缺中文、搜不到、宽度不对：
 
 | 位置 | 改什么 |
 |---|---|
-| `locales/zh/nodeDefs.json` | 加条目：`display_name` / `description` / `inputs`（带 tooltip）/ `outputs` |
+| `locales/zh/nodeDefs.json` | 加条目：`display_name`（**必填**，后端只有英文）/ `description` / `inputs`（带 tooltip）/ `outputs` |
 | 汉化插件 `zh-CN/Nodes/ComfyUI-QG-tools.json` | 同上但**格式不同**（`title` + 纯字符串 name），两套不可互换 |
 | `web/shared/node_aliases.mjs` | 登记英文别名；`verify_display_names.py` 会检查键不多不少 |
 | `web/shared/node_width.mjs` | 带多行框的加进 `OVERRIDES`；自己有尺寸逻辑的加进 `SKIP` |
 | `tools/sync_translation_pack.py` | 加进 `NODE_ORDER`，否则同步汉化包时报「字典里还有本脚本没列出的键」 |
+| `nodes/_qg_combo_legacy.py` | 有新下拉选项的，把老中文值登记进 `LEGACY`，再跑 `tools/gen_combo_zh.py` |
 
 改完跑 `verify_display_names.py` / `verify_i18n.py` / `verify_i18n_reverse.py` /
-`js_check.py` / `verify_port.py`，再 `sync_translation_pack.py --apply` 刷新分发的汉化包。
+`verify_bilingual.py` / `verify_combo_i18n.py` / `js_check.py` / `verify_port.py`，
+再 `sync_translation_pack.py --apply` 刷新分发的汉化包。嫌麻烦就一次跑
+`python tools/regress.py`（工作区脚本，把上面这些串成一串）。
 
 > 节点总数**不用手改**：`verify_display_names.py` 现在从 `nodes/*.py` 里数出来
 > （两种写法都认：映射块里的字面量键，以及 `{NODE_TYPE: "显示名"}` 这种常量做键）。
@@ -156,14 +181,162 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "我的节点"}
 - 节点 ID 若与已有插件冲突，`__init__.py` 会保留先加载的并在控制台点名，不会静默覆盖。
 - 验证 ComfyUI 前**先确认端口上的进程是谁**（用户可能正开着 8188），验证用 `--port 8199` 起独立实例。
 
+## 双语与下拉选项值
+
+目标口径一句话：**ComfyUI 中文界面显示中文，英文界面显示英文，切换语言不改工作流**。
+
+### 文字类（标题、输入输出名、提示、说明卡）
+
+后端只写英文；中文全部放进 `locales/zh/nodeDefs.json`（结构是
+`{节点ID: {display_name, description, inputs: {参数名: {name, tooltip}}, outputs: {"0": {...}}}}`，
+`outputs` 的键是**索引字符串**）。ComfyUI 的 `build_translations()` 会把每个
+custom_node 的 `locales/<lang>/*.json` 收上来，经 `/i18n` 发给前端，前端用
+`resolveNodeDefSlotText()` 按字段查表覆盖。
+
+- `DESCRIPTION` 讲整体，tooltip 只讲那一个框 —— 同一段话在两处都写，用户会看到
+  蓝字重复两遍（`QG_Math` 因此被打回两次）。
+- 改完必须重启 ComfyUI：`nodeDefs.json` 是后端扫的，刷新页面拿不到新内容。
+- 校验：`tools/verify_bilingual.py`。英文侧不许有中文（节点上真能看见的选项值、
+  `label_on/off` 除外，那些是给用户看的词，允许被英文说明引用）；中文侧必须一条不漏，
+  且不许拿英文原文充数。
+
+### 下拉选项值（COMBO）
+
+**选项值本身必须是英文**，中文只是显示名。三个理由：值要进存档、要进 API 请求体、
+要跟别的插件互通，中文值在这三处都是负担。
+
+中文显示走 **`widget.options.getOptionLabel(value)`** —— 这是前端官方的显示名钩子，
+`ComboWidget._displayValue` 与 Vue 的 `useWidgetSelectItems.ts` 都认它，所以
+canvas 和 Nodes 2.0 两种渲染模式一次覆盖，而且**不动存档里的值**。
+（`locales/*/nodeDefs.json` 里也有 `options` 映射，但那只对 settings 生效，
+翻不了节点下拉 —— 踩过。）
+
+三腿兜底，缺一条都会漏：
+
+| 腿 | 位置 | 兜住什么 |
+|---|---|---|
+| 1 | `web/shared/combo_zh.mjs` | 老存档里的中文值，在 `configure()` **之前**就地换成英文值 |
+| 2 | `nodes/_qg_combo_legacy.py` 的 `combo_legacy` 类装饰器 | 绕过前端的调用（API 直连、脚本批量跑、老图只读不存） |
+| 3 | 各节点的 `VALIDATE_INPUTS` | 让 ComfyUI 跳过「值必须在选项列表里」这道校验，否则第 2 腿根本轮不到 |
+
+🔴 **`VALIDATE_INPUTS` 必须具名收住要放行的参数**（`def VALIDATE_INPUTS(cls, mode=None)`），
+不能用 `**kwargs` —— 后者会让 `validate_inputs` 认为「参数名都认」，把整个节点的
+min/max 之类校验一起关掉。
+
+🔴 **`chainCallback` 的顺序对 `configure` 是反的**：它是「先跑原来的、再跑自己的」，
+而迁移必须抢在 `configure` 塞 `widgets_values` 之前。所以 `combo_zh.mjs` 自己写了
+前置版包装，没有用 `chainCallback`。
+
+🔴 **新增 / 修改选项值必须同步三处**：节点里的列表 → `_qg_combo_legacy.py` 的 `LEGACY`
+（`{节点ID: {输入名: {新英文值: 老中文值}}}`，新值作键，方便前端反查）→
+`python tools/gen_combo_zh.py`（从 LEGACY 生成 `web/shared/combo_zh.mjs`，别手抄）。
+校验 `tools/verify_combo_i18n.py`（选项值全英文 / LEGACY 与列表对得上 / 装饰器与
+`VALIDATE_INPUTS` 到位 / mjs 与 LEGACY 同步 / 同一输入里中文标签唯一 —— 迁移是反查，
+重复就不知道换回哪个）。功能冒烟 `tools/test_combo_migration.py`（真加载 13 个节点，
+拿老中文值和新英文值各跑一遍，结果必须完全一致）。
+
+前端自建的下拉（不是 ComfyUI 原生 combo 控件）也要认这个钩子：
+
+```js
+const label = widget.options?.getOptionLabel;
+for (const option of values) {
+    const raw = String(option);
+    item.value = raw;                                  // 存的是英文值
+    item.textContent = label ? label(raw) : raw;       // 显示的中文
+}
+```
+
+### 分类（nodeCategories）
+
+节点菜单里的分类名**走的是另一条通道**，和 `nodeDefs` 无关：
+
+```ts
+// comfyui_frontend_package .../src/scripts/app.ts  getNodeDefs()
+category: def.category.split('/')
+  .map(c => st(`nodeCategories.${normalizeI18nKey(c)}`, c)).join('/')
+```
+
+三条硬事实（都吃过亏）：
+
+1. **按 `/` 拆段逐段查**，键是**单段**（`Loaders`），写 `QG-tools/Loaders` 整串永远查不到。
+2. `normalizeI18nKey()` 只把 `.` 换成 `_`，**不改大小写**。所以键必须跟
+   `CATEGORY` 里的段名一模一样 —— 写成小写 `loaders` 会静默失效
+   （官方内置中文包里恰好全是小写键，那是给内置小写分类用的，抄不得）。
+3. 语言包放在 **`locales/zh/main.json` 的 `nodeCategories`**，不是 `nodeDefs.json`。
+   `build_translations()` 把 `main.json` 的所有顶层键直接倒进 `/i18n` 的
+   `<lang>` 下；`EXTRA_LOCALE_FILES`（nodeDefs / commands / settings）只是额外三份。
+
+🔴 **所有插件的 `nodeCategories` 合并成一个扁平字典，后加载覆盖先加载**
+（`sorted(glob('*/'))` 字母序 + `merge_json_recursive(base, update)`）。通用词
+（`Loaders` / `Image` / `Text`）会跨插件串味 —— 实测 `ComfyUI-Easy-Use` 声明了
+`Loaders → 模型加载器`，把 QG 的「加载器」吃掉，菜单里冒出个莫名其妙的
+「模型加载器」分组。我们在 `main.json` 里声明同名键才夺回来（`ComfyUI-E` < `ComfyUI-Q`，
+我们后加载）。**反过来，字母序排在我们后面的插件若也声明同名键，就会把我们盖掉** ——
+这个无解，只能改分类名或认了。
+
+装汉化插件时还有一份同值的冗余兜底
+（`ComfyUI-Chinese-Translation/zh-CN/Categories/ComfyUI-QG-tools.json`），
+两处值必须一致，`verify_categories.py` 会比对。
+
+### 经典画布的右键菜单（上面那条管不着，得前端自己改）
+
+`nodeCategories` 只作用在 **nodeDefs** 上（Vue 节点库 / 侧边栏 / 搜索框）。经典画布的
+「右键 → 添加节点」不查 nodeDefs，它直接拿 `LiteGraph.registered_node_types[].category`
+当名字用 —— 分类改成英文之后，中文界面里这一层就一直是 `Logic` / `Annotation`，
+和旁边已经翻好的「画布标签」「Markdown 文本」并排着很扎眼（2026-10-24 用户截图）。
+
+补法：`web/shared/category_zh.mjs` 在中文界面下把 QG 节点 category 的尾段就地换中文
+（`QG-tools/Logic` → `QG-tools/逻辑`），由 `QG.tools.init` 的 `setup()` 装上：
+
+1. 先改一遍现有注册表；
+2. **包住 `LiteGraph.registerNodeType`** —— 实测 `setup()` 跑在**任何节点注册之前**
+   （`__QG_CATEGORY_ZH__.setup` 恒为 0），真正生效的是这层包装，漏了它半张菜单仍是英文；
+3. 开菜单前（`getCanvasMenuOptions`）再补一次兜底，防止有人绕过入口直接写 `category`。
+
+三条约束：
+
+- **只在中文界面动手**（`wantsChinese()`，读 `app.i18n.global.locale`）。英文界面保持
+  后端英文原样，`tools/probe_category_zh_locale.cjs` 有正反两面证据（zh→中文、切 en→英文、切回→中文）。
+- 只改 QG 节点的尾段，别的插件和原生节点一律不碰。
+- 文案的第三份副本在这份 mjs 里，`verify_categories.py` 第 8 节会跟 `main.json` 逐条比对。
+
+验证：`node tools/_test_category_zh.mjs zh|en`（纯逻辑，不需要浏览器）、
+`node tools/probe_category_zh_locale.cjs`（headless Chrome 打开 8199 临时用户目录，中英来回切）。
+
 ## 后端路由
 
 `list` / `thumb` / `info` / `hash` / `civitai`(POST) / `triggers`(POST)，全部挂在 `/qg/lora/` 下。
 
 ## 抽取来源
 
-32 个节点 = **25 搬运** + **1 按思路重写** + **6 原创**。逐文件的 from/to 与每一处
-字符串替换记在 `PORTED.json`（`pack_version` 停在 0.8.0，后面几批以本表为准）。
+38 个节点 = **14 原创**（其中 2 个参考上游思路重写、3 个搬自作者自有旧插件）+ **24 搬运**。
+逐文件的 from/to 与每一处字符串替换记在 `PORTED.json`（`pack_version` 停在 0.8.0，
+后面几批以本表为准）。
+
+🔴 **两档口径：原创看代码是不是自己写的，搬运看是不是整段抄的。**
+
+- `original`（原创）—— 代码自己写：① 从零实现；② 参考上游的用法/思路后换一种写法
+  自己重写（`reference.relation = "idea"`）；③ 把作者自己旧插件里的代码合并进来
+  （`relation = "own"`）。
+- `ported`（搬运）—— 整段照抄上游代码，只改类名 / 节点 ID / 分类 / 显示名 / 中文文案，
+  逻辑一行没动。
+
+判据：**能不能指出某段代码是从上游原样搬来的** —— 指得出就是搬运；指不出、只是照着
+别人的思路自己实现，就是原创。参考对象一律写进 `reference`，算原创不等于隐去出处。
+
+🔴 **谁原创、谁搬的，机器可读清单在 `ORIGINS.json`**（每个节点一条：`origin` =
+`original` / `ported`，搬运的带 `upstream.plugin` / `node` / `license`，原创带参考对象的
+可选写 `reference.plugin` / `node` / `license` / `relation`）。
+README 顶部那张「节点来源」表和各章节标题下的来源徽标都由它生成 —— 别手改 README
+那两个标记块，改完 `ORIGINS.json` 跑：
+
+```bash
+python tools/sync_origin.py --apply    # 重新渲染表格 + 徽标
+python tools/verify_origin.py          # 校验：与注册节点 / README / 文件头出处一致
+```
+
+**新增节点必须同时登记 `ORIGINS.json` + `sections`**（否则 README 上这个节点没有来源标注，
+`verify_origin.py` 会报「注册表里有 X，但 ORIGINS.json 没登记」）。
 
 | 来源插件 | 抽取的节点 | 当前 ID | 说明 |
 |---|---|---|---|
@@ -174,14 +347,19 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "我的节点"}
 | ComfyUI_Comfyroll_CustomNodes（MIT） | 文本合并 / 文本替换 | `QG_TextConcat` / `QG_TextReplace` | v0.9.4。`QG_TextReplace` 原本搬的是 Muye 的 `BatchTextReplace`（v0.8.5 ~ v0.9.3），v0.9.4 换成 Comfyroll 的 `CR_TextReplace`，旧存档由 `web/text_replace/index.js` 自动迁移 |
 | rgthree-comfy（MIT） | 图像缩放 / 图像或 Latent 尺寸 | `QG_ImageResize` / `QG_ImageOrLatentSize` | 复用 ComfyUI 自带的 `common_upscale`，没有额外依赖 |
 | ComfyUI_Custom_Nodes_AlekPet（MIT） | Google 翻译 | `QG_GoogleTranslateText` | 上游依赖 `googletrans`；这里用 `requests` 直连同一批端点，保持「零新增依赖」 |
-| 孤海工具箱（Goohaitools-comfyui，GPL-3.0） | 任意切换 / 展示任意 | `QG_AnySwitch` / `QG_DisplayAny` | 类名与分类改成 QG，GPL 出处标注保留在文件头 |
+| 孤海工具箱（Goohaitools-comfyui，GPL-3.0） | 任意切换 / 展示任意 / 路由阻断 | `QG_AnySwitch` / `QG_DisplayAny` / `QG_RouteBlocker` | 类名与分类改成 QG，GPL 出处标注保留在文件头。`QG_RouteBlocker` 未发布（v0.9.4 之后新增，v0.9.5 仍未发），1:1 搬运自 `GoohaiRouteBlocker`「路由阻断」：`block`(BOOLEAN) + `mode`(combo: `empty` / `cut`，中文界面「仅输出空值」/「中断后续分支」) + `any`(optional, `*`) 进，`any`(`*`) 出一道。阻断时 `empty` 给 `None`（下游照跑）、`cut` 给 ComfyUI 原生的 `ExecutionBlocker(None)`（下游被静默跳过，等于程序化 Ctrl+M）。🔴 唯一改动是给 `any` 加 `forceInput` —— `*` 输入不加的话画布上会多出一个用不了的控件（`QG_Exists` 同款处理）。🔴 它也是 `_qg_combo_legacy.py` 里要登记老值的节点之一，并且 `VALIDATE_INPUTS` 必须具名收 `mode` |
 | ComfyUI-Easy-Use（GPL-3.0） | 是否判断 | `QG_IfElse` | 未选中那一支走 `check_lazy_status` 不执行 |
-| ComfyUI-MD-Reader（**作者自有插件**） | 加载文档 | `QG_MDReader` | 同一作者的旧插件，合并进来，不是第三方搬运 |
-| ComfyUI-TripleLoader（**作者自有插件**） | 模型加载器 | `QG_TripleLoader` | 同上；它在 import 期就实例化内置的 UNET / CLIP / VAE Loader |
-| ComfyUI-Crystools（GPL-3.0） | 字符串切换（**按思路重写，非逐行搬运**） | `QG_StringSwitch` | v0.9.4，见下方「字符串切换」 |
+| ComfyUI-MD-Reader（**作者自有插件**） | 加载文档 | `QG_MDReader` | 同一作者的旧插件，合并进来，算**原创**（本来就不是第三方代码） |
+| ComfyUI-TripleLoader（**作者自有插件**） | 模型加载器 | `QG_TripleLoader` | 同上，算**原创**；它在 import 期就实例化内置的 UNET / CLIP / VAE Loader |
+| ComfyUI-EmptyLatentResolution（**作者自有插件**） | 空 Latent 分辨率 | `QG_EmptyLatentResolution` | v0.9.5。把官方 `ResolutionSelector`（比例 + 百万像素 → 宽高）和 `EmptyLatentImage`（宽高 + 批量 → LATENT）合成一个节点，算**原创**（自己写的旧插件重写并入）。尺寸算法与 `ResolutionSelector` 逐行一致（同样的 `sqrt` 缩放、同样的 multiple 取整），128 组参数实测逐个相同；latent 结构与 `EmptyLatentImage` 一致（4 通道、`intermediate_device()` / `intermediate_dtype()`、`downscale_ratio_spacial=8`）。🔴 原插件是**纯 V3 节点 API**（`io.ComfyNode` + `comfy_entrypoint`），本包走 V1 —— 同时存在 `NODE_CLASS_MAPPINGS` 时 ComfyUI 根本不会调 `comfy_entrypoint`，所以整段改写成 V1 类。🔴 预览控件 `RESOLUTION_PREVIEW` **必须放 optional 段**（`ResolutionPreview.Input` 默认 `optional=True, socketless=True`），三个 `ratio_widget` / `megapixels_widget` / `multiple_widget` 键指向真实输入名；放 required 提交时会缺值。🔴 比例下拉走 `_qg_combo_legacy.py` 登记中文标签（值仍是英文），`VALIDATE_INPUTS` 具名收 `aspect_ratio`。校验：`tools/verify_empty_latent.py`（注册信息 / 输入声明 / 128 组尺寸 / latent 结构 / 与官方 `EmptyLatentImage` 交叉比对） |
+| ComfyUI-Crystools（GPL-3.0） | 字符串切换（**只借思路，算原创**） | `QG_StringSwitch` | v0.9.4，见下方「字符串切换」 |
+| comfyui-art-venture（MIT） | 颜色校正（**只借参数划分，算原创**） | `QG_ColorCorrect` | v0.9.5。只沿用六个滑条的参数划分与作用顺序（色温/色调/明度/对比度/饱和度/伽马，`-100..100` / 伽马 `0.1..5.0`），实现整段自己写：纯 torch、全 float、无 cv2。修掉参考实现三处问题 —— ① 它逐帧转 PIL `uint8` 再转回，两次量化让渐变出色阶；② 它的 `saturation` 改的是 HLS 的 **L（明度）** 通道而非 S，拉到 -100 是发白不是变灰；③ 它的 `temperature` 只乘单个通道，会把画面一并调亮。另外色相走 HSV 旋转 H（纯红 +120° → 纯绿），不用线性 hueRotate 矩阵（那个会把红色转到只有 44% 的绿）。🔴 参数名 `temperature` / `hue` / `brightness` / `contrast` / `saturation` / `gamma` 全小写，`verify_i18n` 的 `NODES` 已登记 |
+| 原创（无上游代码） | 颜色匹配 | `QG_ColorMatch` | v0.9.5。十种方法都是公开算法的自写实现，没搬任何插件代码：Haar 小波 3 层只匹配低频子带、AdaIN 逐通道实例归一化（sRGB 上，**单尺度**）、RBF 核 MMD 拟合仿射映射、逐通道 CDF 分位匹配、Reinhard LAB 逐通道均值/标准差（2001）、LAB 3×3 协方差匹配（Pitié 2007 线性 MKL 的核心：白化再着色）、两种三步串联（直方图-多元高斯-直方图、直方图-MMD-直方图）、Reinhard 的整批 4D 实现、仅匹配均值。参数划分（强度 / 匹配范围 / 遮罩羽化 / 遮罩用途 / 细节回填 / 参考取帧 / 目标统计）是本插件自己的。🔴 出口**不硬裁**：出界像素在 LCh 里缩 chroma（二分 6 次，保色相 + 保 L\*），因为逐通道 clamp 会改三原色比例、也就是改色相（实测饱和色偏 2–8°）。🔴 源侧 σ 有下限 `STD_FLOOR`（归一化 L 的 2%），否则平目标的 σ≈0.005 会被放大几十倍、噪声爆炸（实测同一张近纯色图：无下限偏离 0.12，有下限 0.013）；mvgd 的源协方差同时加了岭项。🔴 `src_mode=whole-batch`（中文界面「目标统计 = 全批统一」）时源侧统计量整批算一次，直方图必须变成「值→值」单调查表（`_hist_lut`/`_hist_map_lut`）才能套用到每一帧，否则帧间会闪 —— 这也是 ComfyUI 内置 ColorTransfer 的 uniform 口径。🔴 对外 10 个方法名，对内是 `CHAINS` 里的步骤组合，链式方法按序依次作用、参考侧统计量各算一次全链复用。🔴 MMD **不能**做成逐像素核回归：E[Y\|X] 的方差上界是 Y 的方差，实测输出 σ 只剩参考的四成、画面发灰 → 改成 12 个参数的仿射映射用 Adam 迭代（60 步）+ 逐通道均值/标准差锚定项（`MMD_ANCHOR`，纯核目标在核宽三倍外的平坦区会乱走）。🔴 AdaIN 曾做多尺度金字塔融合，实测把方差抹平、整体色偏，回退成 sRGB 单尺度。🔴 LAB 归一化尺度 `L/100`、`a,b/128` 是为了让协方差三个维度量纲一致（否则 L 的方差比 a/b 大两个数量级，eigh 出来的变换被 L 主导）。🔴 遮罩有**两个独立用途**，实现上别混：`遮罩` 决定作用区域（结果侧），`mask_use=also-restrict-reference`（中文界面「遮罩用途 = 也限定目标统计」）才让它同时限定**目标侧统计量**（对应 Photoshop 匹配颜色的「使用选区计算颜色」）；参考侧另有 `ref_mask` 单独限定统计区域（对应其「使用来源中的选区」）。`_pool_of()` 是统一入口，遮罩内不足 16 像素就退回全图（几个像素的统计量是噪声）。🔴 `细节回填` 补的是 `_high_freq(原图) - _high_freq(结果)` 的**差额**，不是原图高频本身 —— 后者会把锐度叠两遍；差额再逐通道去均值，保证只动纹理不动明暗（实测 sRGB 通道均值变化 < 1e-4）。🔴 直方图匹配会把低对比素材的噪声一起拉宽（文献里的 grain effect，实测高频能量 0.047→0.086），所以细节回填的方向可能是「压回去」而不是「补回来」。🔴 `_sqrtm` 用 eigh 不用 Cholesky：大面积同色时协方差接近奇异，Cholesky 直接失败，eigh 只是把那个方向压到 EPS。🔴 参考图**不需要**与目标图同尺寸（取统计量），遮罩同样按需插值 |
 | 原创（无上游代码） | 布尔开关 | `QG_BoolToggle` | v0.9.4，见下方「布尔开关」。交互参考孤海「布尔」，卡片绘制 / 等比缩放 / 命中区是自己写的 |
 | 原创（无上游代码） | 数值 | `QG_Number` | v0.9.4，见下方「数值」 |
+| 原创（无上游代码） | 数值滑条 | `QG_Slider` | v0.9.5。一行：滑条 + 读数 + 齿轮；类型 / 范围 / 步长收在齿轮菜单里，五个控件全隐藏、输入槽也摘掉。默认 0–1 / 一格 0.1 / 输出小数（LoRA 强度那一档）。读数**按范围定宽**（默认 22px），轨道一直铺到它左缘前 4px；**点读数就地输入**（`web/slider/` 的 `openValueEditor`，回车提交 / Esc 取消 / 输入法回车放过）。🔴 **经典模式是 canvas 自绘**（和布尔开关同一套模板），节点恒 320×58、和布尔开关同尺寸；Nodes 2.0 走 DOM 卡片（`addDOMWidget` 那条路最低只能到 90，压不到 58）。🔴 输出槽恒 `*`，两种模式都接得进 `FLOAT` 口；`onMouseDown` 必须用 `chainHandler`（`chainCallback` 会丢掉 `return true`，节点会跟着拖动）。🔴 拖拽的 window 监听必须 `{capture:true}`：LiteGraph 在 canvas 的 pointerup 里 stopPropagation，冒泡收不到 → 松手后 `dragging` 一直 true。见 `web/slider/` |
 | 原创（无上游代码） | 数学运算 | `QG_Math` | v0.9.4，见下方「数学运算」 |
+| 原创（无上游代码） | 存在判断 | `QG_Exists` | v0.9.5。纯后端、无前端 JS：`任意`(optional, `*`) 进，`任意`(`*`) + `布尔`(BOOLEAN) 出。🔴 输入必须 optional —— required 的话 ComfyUI 在执行前就报「缺输入」，节点永远没机会输出假。🔴 `_present()` 口径**对齐孤海工具箱 `GoohaiAnyExists`「万能是否存在(GH)」**：`None` / `ExecutionBlocker` / 空 str·bytes·list·tuple·dict·set / **全黑 MASK**（`(H,W)`·`(B,H,W)`，`max ≤ 0.02`）/ **全零 LATENT**（`samples` 同阈值）算没有；**`0`、`False`、全黑 IMAGE**（`(B,H,W,C)`）算有。🔴 与孤海唯一有意的差异：**只判不改** —— 孤海会顺手把 ≤0.02 的遮罩像素抹成 0 再输出，我们原样透传（那节点叫「原样输出」，改值就是 bug）。逐场景对拍过：13 个用例 + `0.03` 边界 / `zeros(1,4,1,1)` / 0 元素张量全部一致。`VALIDATE_INPUTS` 返回 True 放行具体类型（否则接 IMAGE 端口会被判类型不符，照抄 `QG_IfElse`） |
 | 原创（无上游代码） | 画布标注 / Markdown 便签 / 导出图像 | `QG_CanvasLabel` / `QG_MarkdownNote` / `QG_ExportImage` | v0.9.3。前两个是纯前端裸节点，第三个只借了 KOOK / 孤海同类节点「quality 该放在哪」的结论 |
 
 
@@ -783,7 +961,7 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
   + `OUTPUT_NODE = True`，`process_text` 返回 `([text],)` —— **整段作为一个元素传出，
   绝不按换行切分**（上游语义如此；切了就变成多路输出，接下游会炸）。
 - **改名**：`MuyeTextEditOutput` → `QG_TextEditOutput` / `QGTextEditOutput`；
-  display 从中文「文本」改成 `Text`（中文标题「QG 文本」；v0.8.5 期按用户要求去掉「编辑」二字）；CATEGORY 走 `QG-tools/文本`。
+  display 从中文「文本」改成 `Text`（中文标题「QG 文本」；v0.8.5 期按用户要求去掉「编辑」二字）；CATEGORY 走 `QG-tools/Text`（当时是 `QG-tools/文本`，2026-10-24 改英文）。
 - **许可证**：上游 `ComfyUI-Muye-nodes` 是 MIT（copyright 2025 muye_xiuluo），
   全文已落到 `licenses/ComfyUI-Muye-nodes-LICENSE.txt`；README 的许可证段一并列了出处。
 - **i18n**：`locales/zh/nodeDefs.json` 的 `QG_TextEditOutput` 四条（display_name /
@@ -814,7 +992,7 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 | 遮罩拼接 | 返回裸 `(H, W)` | 改成标准 `(1, H, W)` |
 | 文本替换 | 所有输入强制必填连线，单放一个节点点不动 | 全部可选：接 texts 走批量，否则用文本框 |
 | 尺寸选择器 | 潜在通道数写死 16（SD1.5/SDXL 直接错） | 新增 `latent_channels` 下拉 4 / 16 |
-| 尺寸选择器 | `ratio="无"` 时长边同时套到宽高 → 2:3 被压成正方形 | 按原比例换算另一边 |
+| 尺寸选择器 | `ratio="none"` 时长边同时套到宽高 → 2:3 被压成正方形 | 按原比例换算另一边 |
 | 尺寸选择器 ★ | 比例改完再各自向上取整 → **比例漂移**（16:9 @ factor32 算出 1344×768 = 7:4） | 改 `w=rx·k, h=ry·k` 求解，k 走 `lcm(step/gcd(step,rx), step/gcd(step,ry))`，比例精确且两边同时在网格上；拒绝时回退旧算法（`_legacy_shape`） |
 | 尺寸选择器 ★ | LATENT 不带 `downscale_ratio_spacial` → **16 倍下采样的模型出图正好翻倍** | 补 `8`（与核心 `EmptyLatentImage` 一致），其余交给 `comfy.sample.fix_empty_latent_channels` 换算 |
 | 尺寸选择器 ★ | `对齐倍数=0` 时求解器只保证整数 → 出 **810×1215** 这类非 8 倍数尺寸，latent 的 `//8` 把它截断（节点报 1215、图只有 1208） | 求解路径的步长兜底 `max(factor, 8)`；手填宽高覆盖与 preset 原样两条老路径不动 |
@@ -836,15 +1014,18 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 只按像素比算 `mp` / `长边`，出图永远不是标签承诺的那个形状。
 
 - `ratio` 由 `STRING` 改成 `COMBO`：
-  `无 / 采用比例 / 1:1 / 4:3 / 3:4 / 3:2 / 2:3 / 16:9 / 9:16 / 5:4 / 4:5 / 7:4 / 4:7 / 2:1 / 21:9`
-- **`采用比例`** = 用 preset 标签里的比例（`_ratio_from_preset` 正则取 `- 16:9` 那段），
-  取不到就退回像素最简比。`无` 保持老语义（用预设原始像素）。
+  `none` / `from-preset` / `1:1` / `4:3` / `3:4` / `3:2` / `2:3` / `16:9` / `9:16` / `5:4` / `4:5` / `7:4` / `4:7` / `2:1` / `21:9`
+  （中文界面依次显示 `无` / `采用比例` / 比例本身，比例值中英同形不翻译）
+- **`from-preset`（采用比例）** = 用 preset 标签里的比例（`_ratio_from_preset` 正则取 `- 16:9` 那段），
+  取不到就退回像素最简比。`none`（无）保持老语义（用预设原始像素）。
 - 自由文本没丢：新增可选参数 **`ratio_custom`**（`optional` 最末，第 9 格 widget），
   填了优先于下拉，支持 `2.39:1` / `5 4` / `1.85`。
 - 🔴 **老存档可能存着自定义比例**（那时 `ratio` 是文本框），而它**不在 COMBO 选项里** ——
   直接加载会让后端 COMBO 成员校验报错。`web/size_selector/index.js` 的 `onConfigure`
-  负责接住：值不在选项里就搬到 `ratio_custom`、下拉回「无」。
+  负责接住：值不在选项里就搬到 `ratio_custom`、下拉回 `none`。
   探针 `probe_size_selector.py` 的 **2b 段**用 `LEGACY_CUSTOM` 存档断言这条。
+- 🔴 **老存档选项值同样是中文**（`无` / `采用比例`）—— 这一层不归 `web/size_selector`
+  管，统一由 `_qg_combo_legacy.py` + `web/shared/combo_zh.mjs` 处理，见「下拉选项的双语」。
 - 老存档 8 项（含 mp）→ 新 9 项，`ratio_custom` 缺席取默认空串，前面一格格都不会错位。
 
 ### 求解路径的步长兜底到 8
@@ -853,7 +1034,7 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 `out_w // 8` 展开的 —— 非 8 的倍数会被**悄悄截断**：
 
 ```
-采用比例（preset 832x1216 - 2:3, 对齐倍数 0）
+from-preset（preset 832x1216 - 2:3, 对齐倍数 0）
   改前 → 810x1215   （1215 // 8 = 151 → 张量实际 808x1208，节点却报 810x1215）
   改后 → 816x1224   （8 的倍数，张量展开与输出一致）
 ```
@@ -861,7 +1042,7 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 - 改法：`step = max(int(factor), LATENT_SPACIAL_DOWNSCALE)`，同一条兜底也加进
   `_legacy_shape` 的回退路径。
 - **只作用于求解路径**（比例 / 百万像素 / 长边）。两条老路径保持原样：
-  手填 `width`/`height` 覆盖（factor=0 即原样）、`比例=无` 直接用 preset 像素。
+  手填 `width`/`height` 覆盖（factor=0 即原样）、`ratio=none` 直接用 preset 像素。
 - 已知取舍：`factor` 填 1~7 会被抬到 8（低于 8 在 latent 层面没有意义）。
   tooltip 里写的是「0 = 不额外贴，但求解比例时最低仍保证 8 的倍数」。
 
@@ -871,8 +1052,10 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 
 ### 分类
 
-新增子分类 **`QG-tools/遮罩`**（`QG_MaskColorize` / `QG_MaskConcat`）。
-`verify_categories.py` 只断言「以 `QG-tools/` 开头 + 无顶层残留」，不需要改白名单。
+新增子分类 **`QG-tools/Mask`**（`QG_MaskColorize` / `QG_MaskConcat`）。
+（当时后端写的是中文 `遮罩`，2026-10-24 统一改成英文；`verify_categories.py`
+现在有 `ALLOWED_SUBS` 白名单，新增子分类必须登记，漏了直接 FAIL —— 别再看
+老版本「不需要改白名单」那句话。）
 
 ### 汉化（这批的重点）
 
@@ -1059,7 +1242,7 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
 - `format=JPEG` / `quality=90`：肉眼无损的常用档，和社区习惯一致，换过来不用重新学。
 - `subsampling=4:4:4`：先给足画质，想省体积自己降。默认就砍色度的话，
   用户遇到偏色时根本想不到是这个参数。
-- `alpha_mode=合成白底`：JPEG 不支持 alpha，直接丢通道会让透明区变成黑块；
+- `alpha_mode=on-white`（中文界面显示「合成白底」）：JPEG 不支持 alpha，直接丢通道会让透明区变成黑块；
   白底是最不容易出错的默认。
 - `save_path` 留空 = output：绝大多数人只在节点上点开预览，不需要额外配置。
 
@@ -1077,7 +1260,7 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.4  |  32 nodes loaded  |  8 categories
+  QG-tools v0.9.5  |  38 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```
