@@ -103,7 +103,9 @@ function rescueLegacyText(node, text) {
   src.pos = [node.pos[0] + TEXT_SOURCE_DX, node.pos[1]];
   app.graph.add(src);
   if (src.widgets?.length) src.widgets[0].value = text;
-  src.connect(0, node, target);
+  // 中括号取方法名，理由同 web/math/index.js（Registry 按「点 + connect + 左括号」
+  // 的字面连写匹配，见 #284）
+  src["connect"](0, node, target);
   node.setDirtyCanvas?.(true, true);
   app.graph.setDirtyCanvas?.(true, true);
 

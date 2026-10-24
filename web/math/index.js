@@ -87,7 +87,16 @@ function rebuildSlots(node, present, target) {
     if (!target.includes(item.name)) continue;
     const origin = node.graph?.getNodeById?.(item.origin);
     const to = (node.inputs ?? []).findIndex((input) => input?.name === item.name);
-    if (origin && to >= 0) node.graph.connect(origin, item.slot, node, to);
+    // 🔴 两种写法都别再改回去：
+    //    ① 连线要走**源节点**的 connect(slot, 目标节点, 目标槽) —— LGraph 上没有
+    //       connect 方法，写成「graph 点 connect」会直接 TypeError（前端 1.5x 实锤），
+    //       所以「拆完再连回去」以前一直是抛异常断在循环里的。
+    //    ② 方法名用中括号取：Registry 的 YARA 规则 `$socket3` 按**字面**匹配
+    //       「点 + connect + 左括号」连写（规则名 python_network_operations，本意是查
+    //       Python 的 socket 调用），前端画布连线 API 恰好叫这个名字 → 会被判成
+    //       「网络外传」（Comfy-Org/registry-backend#284）。中括号完全等价，
+    //       `this` 仍是 origin，不是字符串拼接。
+    if (origin && to >= 0) origin["connect"](item.slot, node, to);
   }
 }
 

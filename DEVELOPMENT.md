@@ -1292,7 +1292,7 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.6  |  38 nodes loaded  |  8 categories
+  QG-tools v0.9.7  |  38 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

@@ -166,7 +166,7 @@
 - 指针离开后自动停在「结果」那张图上——哪一路是结果按连线判断（B 通常是从 A 改出来的那张）
 - A 原样从输出送出，所以这个节点可以夹在流程中间，不影响下游
 
-- **当前版本**：v0.9.6（支持 Nodes 2.0 / Vue 渲染）
+- **当前版本**：v0.9.7（支持 Nodes 2.0 / Vue 渲染）
 - **节点**：38 个（`LoRA Loader` / `模型加载器` / `Image Crop + Rotate + Pad` / `Workflow Note` /
   `Workflow Switches` / `Run Timer` / `Text` / `加载文档` / `Google 翻译` /
   `任意切换` / `展示任意` / `是否判断` / `存在判断` / `路由阻断` / `字符串切换` / `布尔开关` / `数值` / `数值滑条` / `数学运算` /
@@ -205,7 +205,7 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.6  |  38 nodes loaded  |  8 categories
+  QG-tools v0.9.7  |  38 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```
