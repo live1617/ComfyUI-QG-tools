@@ -11,7 +11,12 @@
 // 写成 searchAliases 前端不认。
 //
 // 每条都带上「连写形式」（imagecompare / watermark 这种），因为节点 ID 里的下划线
-// 在搜索里不一定当分隔符处理，连写更稳。别名只加英文，中文本来就能搜。
+// 在搜索里不一定当分隔符处理，连写更稳。
+//
+// 🔴 中文别名也要加，别以为「中文本来就能搜」：Fuse 只按字面子串比，
+// 中文名里带空格（`空 Latent 分辨率`）时，用户敲 `空latent` 是搜不到的
+// （2026-10-24 实测：`空 latent` 命中，`空latent` / `空Latent` 都不命中）。
+// 所以每个中文名含空格或中英混排的节点，都要补「无空格写法」。
 
 export const NODE_ALIASES = {
     QG_LoraLoader: [
@@ -180,6 +185,10 @@ export const NODE_ALIASES = {
         "size",
     ],
     QG_EmptyLatentResolution: [
+        // 中文名是「空 Latent 分辨率」，中间那个空格会让「空latent」搜不到 ——
+        // 中文用户基本不会敲空格，所以中英文两种写法的无空格变体都要登记
+        "空latent", "空 latent", "空latent分辨率", "空 latent 分辨率",
+        "空latent图像", "宽高比", "百万像素", "出图尺寸",
         "empty latent", "emptylatent", "empty latent resolution", "emptylatentresolution",
         "empty latent image", "latent", "latent resolution", "resolution",
         "resolution selector", "resolutions", "aspect ratio", "ratio", "preset ratio",

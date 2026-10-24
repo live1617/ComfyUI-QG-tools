@@ -150,7 +150,39 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "My Node"}
   Vue（Nodes 2.0）的节点高度是 `renderingSize = max(node.size, DOM 内容高度)`；
   `flex-basis:auto` 会让滚动区按**全文内容**撑开 —— 实测 6,389 字的文档把 360 高的节点
   撑到 721.9，切 Vue 后节点高度失控。经典模式画布尺寸固定，看不出来，所以只在 Vue 复现。
-  `display_any` 一直是 `flex:1;min-height:0` 的正确写法，`md_reader` 曾写成 `auto`。
+  `md_reader` 曾写成 `auto`；`display_any` 这条一直对，但下一条照样栽了。
+- 🔴 **但 `flex:1 1 0` 只保证「滚动区自己肯缩」，面板容器本身还得有高度上限。**
+  Vue 外壳只有 `min-h-(--node-height)`（下限，没有上界）；面板若写 `height:100%`，
+  在行高 `auto` 的父级里（`WidgetDOM.vue` 的 `flex flex-col *:flex-1`）100% 会退化成 auto
+  → 面板跟着内容长 → 外壳再被内容撑长，正反馈没有刹车。实测 `display_any` 30 行文本
+  把节点从 140px 拉到 1420px（经典模式下面板固定高、文本在面板里滚动）。
+  治本：Vue 下给面板写 `max-height: calc(var(--node-height) - Npx)` —— `--node-height`
+  由前端写在外壳上（`LGraphNode.vue`），等于节点应有总高 `size[1] + 标题栏`；
+  N 是面板以外的高度（标题栏 + 输入槽行 + 内边距，本机实测 92px）。
+  **N 别写死**：它随前端版式变，用「外壳高 − 面板高」实测校准 —— 这个差值恒等于面板以外的高度、与面板多高无关，
+  被夹住时同样成立，所以一次就收敛。切回经典模式必须把 `maxHeight` 清空。
+  实现在 `web/shared/vue_panel_fit.mjs`（`pinPanelToNodeHeight` / `watchVueShell`）。
+- 🔴 **面板分两类，对齐方向相反，别一律套 `max-height`。**
+  「外壳高 = size[1] + 30」是唯一目标（Vue 的选中框、槽点、右下角手柄仍读 `node.size`），
+  但怎么达到取决于面板能不能压：
+  - **弹性面板**（有滚动区，或走 `fillNodeHeight` 参与空间分配）：压面板 →
+    `pinPanelToNodeHeight`（`display_any`、`lora_loader`）。
+  - **固定面板**（卡片高度由行数定，压不动）：让 `node.size[1]` 跟上外壳 →
+    `fitNodeToPanelHeight`（`bool_toggle`、`number`、`seed`、`export_image`、`image_crop_rotate_pad`）。
+    前提是面板高**不随 size 变**，否则「size 变大 → 外壳变高 → size 再变大」会自激。
+    `image_crop_rotate_pad` 这类带 `min-height` 地板的弹性面板就必须走这条路 ——
+    夹面板压不过 CSS 的 `min-height`（`min-height` 赢 `max-height`，实测上限 484、地板 521，
+    硬夹无效），而地板卡住时面板不随 size 长，所以反过来跟 size 是收敛的。
+  - `lora_loader` 两手一起：先夹面板上限（面板不超过节点给的空间），再让 size 跟上外壳。
+    Vue 里槽行是独立几行 DOM，比经典版式多占几十像素，只夹面板会剩几像素地板差额。
+  - 别和 `holdVuePanelMinHeight`（`panel_layout.mjs`）抢 `min-height`：它挂在面板的
+    `ResizeObserver` 上，会反复把值写回去，两边互相覆盖就是死循环。
+- 🔴 **切渲染模式是「卸载再装」，`install*` 里别写死宽度。**
+  `bool_toggle` 与 `run_timer` 的 canvas 分支都把整个 `size` 赋成常量
+  （`[BASE_WIDTH, NODE_HEIGHT]`），于是「经典下调好的宽度 → 切 Vue → 切回经典」
+  宽度被打回默认值。宽度是这些节点唯一的把手，用户拉开就是为了放长名字。
+  正确写法：只把高度按回去，宽度取 `node.size[0]`（`run_timer` 用 `__qgKeepWidth`
+  在 `uninstall` 时记住，新建节点才落到默认值）。
 - **面板上的文案：静态串进字典，拼接串/后写的 `title`/画布文字必须走 `zh()`。**
   汉化插件只整串全等匹配、且不监听属性变化，细节与纪律见下方「汉化深度清理」。
 - **前端绝不在页面加载时调用 ComfyUI-Manager 的接口；非要用必须带 `skip_update=true`**。
@@ -1260,7 +1292,7 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.5  |  38 nodes loaded  |  8 categories
+  QG-tools v0.9.6  |  38 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

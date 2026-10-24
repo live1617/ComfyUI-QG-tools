@@ -1,9 +1,10 @@
 /**
- * 英文搜索别名 —— 让中文标题的 QG 节点也能用英文搜到（前端）
+ * 搜索别名 —— 让 QG 节点用中英文口语词都能搜到（前端）
  *
  * 两件事：
  *   1. 节点定义注册进 Vue 应用之前，把 web/shared/node_aliases.mjs 里那张表
  *      写进每个 QG 节点的 search_aliases（搜索索引认这个字段）。
+ *      表里以英文为主，中文名带空格 / 中英混排的节点另补无空格写法（`空latent`）。
  *   2. 包一层 nodeDef store 的 searchNode：别名精确命中的 QG 节点提到最前面。
  *      不这么做的话，搜 `text` 会被几十个原生 `Text xxx` 节点按前缀命中压到
  *      第 159 名，而 UI 只取前 64 条 —— 等于搜不到。
@@ -21,7 +22,7 @@ import {
     applyNodeAliasesToLiteGraph,
     pinExactAliasHits,
     NODE_ALIAS_COUNT,
-} from "../shared/node_aliases.mjs?v=2026102418";
+} from "../shared/node_aliases.mjs?v=2026102420";
 
 // 探针和排障用：扩展脚本到底跑没跑、钩子有没有触发，看一眼这个就知道。
 // 只读标记，不参与任何逻辑。

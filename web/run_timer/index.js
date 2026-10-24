@@ -14,12 +14,12 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, zh } from "../shared/index.mjs?v=2026102418";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102418";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, zh } from "../shared/index.mjs?v=2026102420";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102420";
 import {
   detachDomWidget,
   installModeWatcher,
-} from "../shared/vue_mode.mjs?v=2026102418";
+} from "../shared/vue_mode.mjs?v=2026102420";
 import {
   cachedLayer,
   createTimer,
@@ -28,7 +28,7 @@ import {
   startTimer,
   stopTimer,
   tickTimer,
-} from "../shared/run_timer.mjs?v=2026102418";
+} from "../shared/run_timer.mjs?v=2026102420";
 
 const NODE_CLASS = "QG_RunTimer";
 const CSS_ID = "qgtools-run-timer-css";
@@ -332,7 +332,14 @@ function installCanvasReadout(node) {
   node.__qgOrigComputeSize ??= node.computeSize;
   node.computeSize = () => [MIN_WIDTH, Math.round((MIN_WIDTH * BASE_HEIGHT) / BASE_WIDTH)];
   // A saved workflow overwrites this in onConfigure; a fresh node starts here.
-  node.size = [BASE_WIDTH, BASE_HEIGHT];
+  // 🔴 宽度取「上一次的」：切渲染模式会重新走 install，写死 BASE_WIDTH 会把用户
+  //    拖好的宽度打回默认（布尔开关犯过同样的错）。新建节点没有记忆值，才用默认。
+  const remembered = Number(node.__qgKeepWidth);
+  const width = Number.isFinite(remembered) && remembered > 0
+    ? Math.max(MIN_WIDTH, Math.round(remembered))
+    : BASE_WIDTH;
+  node.__qgKeepWidth = null;
+  node.size = [width, BASE_HEIGHT];
   listen(state);
   resumeTicking(state);
   return state;
@@ -465,6 +472,8 @@ function install(node) {
 function uninstall(node) {
   const state = node.__qgRunTimer;
   if (!state) return;
+  // 记住当前宽度：切回经典时按它恢复，别打回默认值
+  node.__qgKeepWidth = node.size?.[0];
   node.__qgRunTimer = null;
   node.__qgTimerCarry = state.timer;
   stopTicking(state);

@@ -29,16 +29,17 @@
  */
 
 import { app } from "/scripts/app.js";
-import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102418";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102418";
-import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102418";
+import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102420";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102420";
+import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102420";
 import {
     detachDomWidget,
     installModeWatcher,
     onRenderModeSwitch,
     vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026102418";
-import { zh, wantsChinese } from "../shared/zh.mjs?v=2026102418";
+} from "../shared/vue_mode.mjs?v=2026102420";
+import { zh, wantsChinese } from "../shared/zh.mjs?v=2026102420";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102420";
 
 const NODE_TYPE = "QG_ExportImage";
 const CSS_ID = "qgtools-export-css";
@@ -734,7 +735,11 @@ function mountExportDom(node) {
         };
     }
 
-    node.__qgExpDom = { root, widget, textEl, gear, refresh: () => refreshExportDom(node) };
+    node.__qgExpDom = { root, widget, textEl, gear, vueFit: {}, refresh: () => refreshExportDom(node) };
+    // Nodes 2.0：概要是固定一行（SUMMARY_HEIGHT），压不动；Vue 的空外壳会额外
+    // 加槽行与内边距，外壳于是比 size[1] + 30 高一点。让 size 跟上外壳。
+    watchVueShell(node, () => node.__qgExpDom?.root,
+        () => fitNodeToPanelHeight(node, node.__qgExpDom?.root, node.__qgExpDom.vueFit));
     // 预览 widget 出现后要跟概要共用底行；这里先认一次（幂等），
     // 执行后预览才出现，真正的协调仍靠 shareBottomRow 被再次调到。
     shareBottomRow(node);
@@ -748,6 +753,7 @@ function mountExportDom(node) {
 function unmountExportDom(node) {
     const state = node.__qgExpDom;
     if (!state) return;
+    unwatchVueShell(node);
     node.__qgExpDom = null;
     detachDomWidget(node, state.widget, state.root);
 }

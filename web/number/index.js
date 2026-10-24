@@ -22,13 +22,13 @@
 //    FLOAT（2026-10-23 实测：`*` / `FLOAT` / `INT,FLOAT` 都通，只有 `INT` 失败）。
 
 import { app } from "/scripts/app.js";
-import { chainCallback, notifyQgChange } from "../shared/index.mjs?v=2026102418";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026102418";
+import { chainCallback, notifyQgChange } from "../shared/index.mjs?v=2026102420";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026102420";
 import {
     closeSettingsMenu,
     gearIconSvg,
     openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102418";
+} from "../shared/settings_menu.mjs?v=2026102420";
 
 const NODE_CLASS = "QG_Number";
 // kind 的两个取值，必须和 nodes/qg_number.py 的 KINDS 逐字一致。

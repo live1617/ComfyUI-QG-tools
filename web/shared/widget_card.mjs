@@ -30,20 +30,21 @@
 // Pure decisions (which rows show, how tall the card is, how a number
 // scrubs, where a socket sits) live in widget_card_math.mjs for node:test;
 // this file is the DOM.
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026102418";
-import { zh } from "./zh.mjs?v=2026102418";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102418";
-import { createMediaPicker } from "./media_picker.mjs?v=2026102418";
-import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026102418";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102418";
-import { hideWidget } from "./widget_visibility.mjs?v=2026102418";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026102420";
+import { zh } from "./zh.mjs?v=2026102420";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102420";
+import { createMediaPicker } from "./media_picker.mjs?v=2026102420";
+import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026102420";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102420";
+import { hideWidget } from "./widget_visibility.mjs?v=2026102420";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "./vue_panel_fit.mjs?v=2026102420";
 import {
   CARD_PADDING, GROUP_HEIGHT, ROW_GAP, ROW_HEIGHT, SECTION_HEIGHT, SLOT_OFFSET, UNIT_SLOT_WIDTH,
   cardHeight, commitWidgetValue, comboValues, rowHeight, rowKind, rowMuted, rowTops, scrubSteps, socketWidgetY, visibleRows,
   widgetTooltip,
-} from "./widget_card_math.mjs?v=2026102418";
+} from "./widget_card_math.mjs?v=2026102420";
 
-export * from "./widget_card_math.mjs?v=2026102418";
+export * from "./widget_card_math.mjs?v=2026102420";
 
 const CSS_ID = "qgtools-widget-card-css";
 export const CARD_WIDGET = "qg_widget_card";
@@ -635,6 +636,9 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
       minNodeSize: [minWidth, 60],
       exactMinWidth: true,
     });
+    // Nodes 2.0：卡片跟着空间长（textarea 撑满），外壳没有上界，得把上限交给
+    // 节点高度（--node-height）。不夹的话正文越长节点越高，没有刹车。
+    watchVueShell(node, () => root, () => pinPanelToNodeHeight(node, root, (state.vueFit ??= {})));
   } else {
     // A constant-height card, pinned on purpose (tests/panel_guards.test.mjs,
     // fixedByDesign): its height is the sum of its rows, not a viewport.
@@ -646,6 +650,10 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
     // The frontend never reads that width for a pinned widget: the card's
     // number has to be made the node's floor by hand.
     holdNodeMinWidth(widget, minWidth);
+    // Nodes 2.0：卡片高度由行数定、压不动，而 Vue 空外壳会在卡片上下再加
+    // 槽行与内边距 —— 外壳于是比 size[1] + 30 高一截，画布上的选中框、槽点、
+    // 缩放手柄全部对不上。反过来让 size 跟上外壳（面板高恒定，不会自激）。
+    watchVueShell(node, () => root, () => fitNodeToPanelHeight(node, root, (state.vueFit ??= {})));
   }
   if (first && Array.isArray(node.widgets)) {
     const index = node.widgets.indexOf(widget);
@@ -841,6 +849,7 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
   chainCallback(node, "onConnectionsChange", () => queueMicrotask(refresh));
   chainCallback(node, "onRemoved", () => {
     state.disposed = true;
+    unwatchVueShell(node);
     for (const picker of state.pickers) picker.dispose();
     for (const entry of state.socketed) entry.restore();
     if (typeof originalGetWidgetOnPos === "function") delete node.getWidgetOnPos;

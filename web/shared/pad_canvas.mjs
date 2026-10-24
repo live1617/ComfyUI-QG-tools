@@ -3,7 +3,7 @@
 // wiring live in js/shared/pad_panel.mjs and the per-node entries, so this
 // module stays testable under node:test.
 
-import { clamp } from "./transform_geometry.mjs?v=2026102418";
+import { clamp } from "./transform_geometry.mjs?v=2026102420";
 
 // The whole final-rect edge is the handle; this is the grab tolerance on
 // either side of it, in CSS pixels (hit zones stay larger than the drawn

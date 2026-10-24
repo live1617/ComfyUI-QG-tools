@@ -18,14 +18,15 @@ import {
   keepDomWidgetWidthAuto,
   notifyQgChange,
   zh,
-} from "../shared/index.mjs?v=2026102418";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102418";
+} from "../shared/index.mjs?v=2026102420";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102420";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102420";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
-} from "../shared/vue_mode.mjs?v=2026102418";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102418";
+} from "../shared/vue_mode.mjs?v=2026102420";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102420";
 
 const NODE_CLASS = "QG_BoolToggle";
 const WIDGET_NAME = "qg_bool_toggle_panel";
@@ -488,7 +489,11 @@ function installCanvas(node) {
   // 否则 DOM 卡片那条路永远被这个常量尺寸压着。
   node.__qgOrigComputeSize ??= node.computeSize;
   node.computeSize = () => [MIN_WIDTH, NODE_HEIGHT];
-  node.size = [BASE_WIDTH, NODE_HEIGHT];
+  // 🔴 只把高度按回去，宽度必须是「现在这个」：这里曾经写死 [BASE_WIDTH, NODE_HEIGHT]，
+  //    于是从 Nodes 2.0 切回经典（uninstall → installCanvas）时，用户调好的宽度
+  //    被打回默认 320。宽度是这个节点唯一的把手，用户拉开就是为了放长名字。
+  const width = Math.max(MIN_WIDTH, Math.round(node.size?.[0] ?? BASE_WIDTH));
+  node.size = [width, NODE_HEIGHT];
   return state;
 }
 
@@ -646,6 +651,12 @@ function installDom(node) {
   ];
   domWidget.options.minNodeSize = [MIN_WIDTH, NODE_HEIGHT];
   holdNodeMinWidth(domWidget, MIN_WIDTH);
+  // Nodes 2.0：卡片是一行固定高（DOM_ROW_H），压不动；而 Vue 的空外壳会在它
+  // 上下再加槽行与内边距，外壳于是比 size[1] + 30 高出约 32px —— 画布上的选中框、
+  // 输出槽点、右下角缩放手柄全部落在外面。反过来让 size 跟上外壳。
+  // 面板高恒定，所以收敛一次就稳；经典模式的外壳不存在，观察者自动停摆。
+  watchVueShell(node, () => node.__qgBoolToggle?.root,
+    () => fitNodeToPanelHeight(node, node.__qgBoolToggle?.root, (state.vueFit ??= {})));
   return state;
 }
 
@@ -669,6 +680,7 @@ function install(node) {
 function uninstall(node) {
   const state = node.__qgBoolToggle;
   if (!state) return;
+  unwatchVueShell(node);
   node.__qgBoolToggle = null;
   if (state.mode === "dom") {
     detachDomWidget(node, state.widget, state.root);

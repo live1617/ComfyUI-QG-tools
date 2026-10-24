@@ -20,12 +20,13 @@ import {
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026102418";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102418";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102418";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102418";
-import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102418";
-import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026102418";
+} from "../shared/index.mjs?v=2026102420";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102420";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102420";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102420";
+import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102420";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102420";
+import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026102420";
 
 const NODE_CLASS = "QG_Seed";
 const CSS_ID = "qgtools-seed-css";
@@ -388,6 +389,11 @@ function buildPanel(node) {
     Math.max(node.size?.[0] ?? 0, NODE_WIDTH),
     node.computeSize?.()[1] ?? node.size?.[1],
   ]);
+  // Nodes 2.0：卡片固定高、压不动，而 Vue 的空外壳会加槽行与内边距，外壳比
+  // size[1] + 30 高一点（实测 5px）。让 size 跟上外壳，画布几何才对得上。
+  watchVueShell(node, () => node.__qgSeedPanel?.root,
+    () => fitNodeToPanelHeight(node, node.__qgSeedPanel?.root, (node.__qgSeedPanel.vueFit ??= {})));
+
   // 卡片高度固定：拖角落把节点拉高只会在卡片下面开一块死区，所以下一帧就
   // 把高度按回天然高度（LiteGraph 拖拽时直接写 size，很少回调 onResize）。
   chainCallback(node, "onDrawForeground", function () {
@@ -447,6 +453,7 @@ app.registerExtension({
 
     chainCallback(nodeType.prototype, "onRemoved", function () {
       closeMenu();
+      unwatchVueShell(this);
       this.__qgSeedPanel = null;
     });
   },

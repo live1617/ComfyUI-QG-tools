@@ -12,7 +12,7 @@
  *   4. **只影响新建**：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026102418";
+import { chainCallback } from "./index.mjs?v=2026102420";
 
 export const DEFAULT_WIDTH = 270;
 

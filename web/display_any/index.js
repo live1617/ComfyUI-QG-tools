@@ -6,7 +6,9 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102418";
+import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102420";
+import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026102420";
+import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026102420";
 
 const NODE_TYPE = "QG_DisplayAny";
 const CONNECTION_MENU_LABEL = "QG 展示任意";
@@ -120,6 +122,17 @@ function syncRootWidth(node) {
         state.root.style.marginLeft = left;
         state.root.style.marginRight = left;
     }
+}
+
+// 🔴 Nodes 2.0 下节点外壳只有 min-height（`min-h-(--node-height)`），没有上界：
+// 面板高度一旦跟着文本长，「内容高 → 外壳高」就没有刹车，实测 30 行文本把节点从
+// 140px 拉到 1420px（经典模式下面板高度固定、文本在面板里滚动，这是本节点的设计）。
+// 通用实现在 shared/vue_panel_fit.mjs，这里只负责把本节点的面板与状态交给它。
+function pinVueHeight(node) {
+    const state = node._qgDisplay;
+    if (!state?.root) return;
+    state.vueFit ??= {};
+    pinPanelToNodeHeight(node, state.root, state.vueFit);
 }
 
 // 程序自己改高度：置一个标记，好让 onResize 区分「用户拖的」和「我们调的」。
@@ -677,6 +690,7 @@ function renderPreview(node, payload) {
     // 内容换了：文本收到图就撑开，图换成数字就收回去（用户手动拖过则不动）
     fitNodeToContent(node);
     syncRootWidth(node);
+    pinVueHeight(node);
 }
 
 function syncPorts(node, visited = new Set()) {
@@ -777,7 +791,7 @@ function createPreview(node) {
     widget.options ??= {};
     // 原来写的是 [250, 200]：一行字也拖不小，只能一直占着 200 往上的高度。
     widget.options.minNodeSize = [250, 96];
-    const state = { root, toolbar, copy, body, media, text, widget, galleryClose, galleryNext, figures: [], galleryIndex: null, copyTimer: null, contextMedia: null };
+    const state = { root, toolbar, copy, body, media, text, widget, galleryClose, galleryNext, figures: [], galleryIndex: null, copyTimer: null, contextMedia: null, vueFit: {} };
     state.flashContextItem = (element, label, isError = false) => {
         if (!element) return;
         const overlay = document.createElement("div");
@@ -796,6 +810,11 @@ function createPreview(node) {
         revealImagePreview(state);
     });
     node._qgDisplay = state;
+    // 切渲染模式时就地重算面板上限：Vue 下要夹住，经典模式下要清掉。
+    node.__qgSyncMode = () => {
+        pinVueHeight(node);
+        syncRootWidth(node);
+    };
     const openFigure = (event) => {
         if (state.galleryIndex !== null || state.figures.length < 2) return;
         const index = state.figures.indexOf(event.target.closest("figure"));
@@ -878,6 +897,17 @@ app.registerExtension({
     name: "QG.DisplayAny",
     async setup() {
         installConnectionMenuEntry(app.canvas);
+        // 切到 / 切回 Nodes 2.0 时逐个节点重算面板上限，不重载工作流
+        installModeWatcher((node) => {
+            if (String(node?.comfyClass ?? node?.type ?? "") !== NODE_TYPE) return null;
+            if (typeof node.__qgSyncMode !== "function") {
+                node.__qgSyncMode = () => {
+                    pinVueHeight(node);
+                    syncRootWidth(node);
+                };
+            }
+            return node.__qgSyncMode;
+        });
     },
     async beforeRegisterNodeDef(nodeType, nodeData) {
         installConnectionMenuEntry(app.canvas);
@@ -900,10 +930,12 @@ app.registerExtension({
             } finally {
                 this.__qgAutoSize = false;
             }
-            requestAnimationFrame(() => syncPorts(this));
+            requestAnimationFrame(() => { syncPorts(this); pinVueHeight(this); });
             return result;
         };
-        // 每帧把卡片宽度钉到节点宽度（只在变了的时候写 DOM，代价可忽略）
+        // 每帧把卡片宽度钉到节点宽度（只在变了的时候写 DOM，代价可忽略）。
+        // ⚠️ 只有经典画布会调 onDrawForeground；Vue 下靠 onResize 与内容变更时的
+        //    syncRootWidth 补上，别指望这一条。
         const drawn = nodeType.prototype.onDrawForeground;
         nodeType.prototype.onDrawForeground = function (ctx) {
             syncRootWidth(this);
@@ -916,6 +948,9 @@ app.registerExtension({
                 this.properties ??= {};
                 this.properties.qg_user_resized = true;
             }
+            // Vue 下没有 onDrawForeground，拖大拖小都要在这里把面板跟上
+            pinVueHeight(this);
+            syncRootWidth(this);
             return resized?.apply(this, arguments);
         };
         const configured = nodeType.prototype.onConfigure;
@@ -926,7 +961,7 @@ app.registerExtension({
             }
             createPreview(this);
             renderPreview(this, this.properties.qg_display_preview);
-            requestAnimationFrame(() => { syncPorts(this); fitNodeToContent(this); });
+            requestAnimationFrame(() => { syncPorts(this); fitNodeToContent(this); pinVueHeight(this); });
             return result;
         };
         const connected = nodeType.prototype.onConnectionsChange;
@@ -984,6 +1019,7 @@ app.registerExtension({
         nodeType.prototype.onRemoved = function () {
             if (this._qgDisplay) {
                 cancelAnimationFrame(this._qgDisplay.imagePreviewFrame);
+                clearTimeout(this._qgDisplay.vueFit?.timer);
                 stopMedia(this._qgDisplay);
                 clearTimeout(this._qgDisplay.copyTimer);
                 this._qgDisplay.galleryResize.disconnect();

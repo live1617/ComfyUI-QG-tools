@@ -17,10 +17,10 @@ import {
     isSafeImageUrl,
     segFontSize,
     MD_MONO,
-} from "./md_render.mjs?v=2026102418";
-import { getMeasureCtx, DEFAULT_MD_BG } from "./label_common.mjs?v=2026102418";
-import { createLabelDomDriver } from "./label_dom_base.mjs?v=2026102418";
-import { openMarkdownEditor } from "./markdown_node.mjs?v=2026102418";
+} from "./md_render.mjs?v=2026102420";
+import { getMeasureCtx, DEFAULT_MD_BG } from "./label_common.mjs?v=2026102420";
+import { createLabelDomDriver } from "./label_dom_base.mjs?v=2026102420";
+import { openMarkdownEditor } from "./markdown_node.mjs?v=2026102420";
 
 // 与 canvas_label_dom.mjs 同一个值（Vue 节点外壳左右内边距合计）
 const VUE_SHELL_PAD_X = 24;

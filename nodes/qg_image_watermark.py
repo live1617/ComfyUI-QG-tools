@@ -262,7 +262,11 @@ class QGImageWatermark:
             "bottom-left": (0, base_h - wm_h),
             "bottom-right": (base_w - wm_w, base_h - wm_h),
         }
-        anchor_x, anchor_y = anchors.get(position, anchors["居中"])
+        # 🔴 这里的 key 必须是英文：老存档里的中文选项值在 @combo_legacy 里就换回英文了。
+        #    而且 dict.get() 的默认值是「先求值再传参」—— 写个不存在的 key 会无条件 KeyError，
+        #    不管 position 传什么都会炸（v0.8.5 搬进来时就写错了，一直没有节点用过 position
+        #    以外的分支所以没人发现）。
+        anchor_x, anchor_y = anchors.get(position, anchors["center"])
         location = (int(anchor_x + offset_x), int(anchor_y + offset_y))
 
         frames = []

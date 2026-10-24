@@ -16,10 +16,10 @@
  */
 
 import { app } from "/scripts/app.js";
-import { chainCallback } from "./shared/index.mjs?v=2026102418";
-import { pinNodeWidth } from "./shared/node_width.mjs?v=2026102418";
-import { installComboZh } from "./shared/combo_zh.mjs?v=2026102418";
-import { applyCategoryNames, installCategoryNames } from "./shared/category_zh.mjs?v=2026102418";
+import { chainCallback } from "./shared/index.mjs?v=2026102420";
+import { pinNodeWidth } from "./shared/node_width.mjs?v=2026102420";
+import { installComboZh } from "./shared/combo_zh.mjs?v=2026102420";
+import { applyCategoryNames, installCategoryNames } from "./shared/category_zh.mjs?v=2026102420";
 
 app.registerExtension({
     name: "QG.tools.init",

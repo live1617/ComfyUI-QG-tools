@@ -166,7 +166,7 @@
 - 指针离开后自动停在「结果」那张图上——哪一路是结果按连线判断（B 通常是从 A 改出来的那张）
 - A 原样从输出送出，所以这个节点可以夹在流程中间，不影响下游
 
-- **当前版本**：v0.9.5（支持 Nodes 2.0 / Vue 渲染）
+- **当前版本**：v0.9.6（支持 Nodes 2.0 / Vue 渲染）
 - **节点**：38 个（`LoRA Loader` / `模型加载器` / `Image Crop + Rotate + Pad` / `Workflow Note` /
   `Workflow Switches` / `Run Timer` / `Text` / `加载文档` / `Google 翻译` /
   `任意切换` / `展示任意` / `是否判断` / `存在判断` / `路由阻断` / `字符串切换` / `布尔开关` / `数值` / `数值滑条` / `数学运算` /
@@ -205,7 +205,7 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.5  |  38 nodes loaded  |  8 categories
+  QG-tools v0.9.6  |  38 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```
@@ -1725,6 +1725,10 @@ ComfyUI 新版可以把节点渲染成 Vue 组件（设置里的「Nodes 2.0 / V
 口语叫法（`web/shared/node_aliases.mjs`），页面加载时写进节点定义的 `search_aliases`，
 ComfyUI 的搜索框会把它们和标题一起做模糊匹配。
 
+> 中文名里带空格的节点（比如 `空 Latent 分辨率`）另登记了**无空格写法**：
+> 敲 `空latent`、`空Latent`、`空latent分辨率` 都能搜到。
+> 只按字面子串比的话，`空 latent` 命中而 `空latent` 不命中，所以这层变体是必要的。
+
 | 想找 | 可以搜 |
 |---|---|
 | 图像对比 | `compare` / `image compare` / `ab compare` / `diff` / `before after` |
@@ -1732,6 +1736,7 @@ ComfyUI 的搜索框会把它们和标题一起做模糊匹配。
 | 图像裁剪 + 旋转 + 补边 | `crop` / `rotate` / `pad` / `outpaint` |
 | 模型加载器 | `triple loader` / `model loader` / `checkpoint` / `unet clip vae` |
 | 尺寸选择器 | `size selector` / `aspect ratio` / `resolution` |
+| 空 Latent 分辨率 | `空latent` / `空 latent` / `empty latent` / `megapixel` / `百万像素` |
 | 遮罩上色 / 拼接 | `mask colorize` / `mask concat` / `merge masks` |
 
 想加词就改 `web/shared/node_aliases.mjs` 里对应节点那一行，刷新页面即可。

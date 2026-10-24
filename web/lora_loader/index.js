@@ -1,19 +1,20 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026102418";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102418";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026102418";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026102420";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102420";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026102420";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102418";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026102418";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102418";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026102418";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026102418";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026102418";
+} from "../shared/settings_menu.mjs?v=2026102420";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026102420";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102420";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026102420";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026102420";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102420";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026102420";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -69,8 +70,8 @@ import {
   loraFolders,
   loraPickerEntries,
   loraStackKeyAction,
-} from "../shared/lora_stack.mjs?v=2026102418";
-import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026102418";
+} from "../shared/lora_stack.mjs?v=2026102420";
+import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026102420";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -198,6 +199,12 @@ function installStyles() {
   .qgtools-lora-hoverthumb { box-sizing: border-box; }
   .qgtools-lora-panel { width: 100%; height: 100%;
     font: 12px system-ui; color: #d7dde2; pointer-events: none; }
+  /* 🔴 Nodes 2.0（Vue 渲染）：mountCard 会给桌面节点的面板写一行内联
+     height: calc(100% + 52px)，那是让面板往上探进经典画布的输出槽带（见
+     BAND_RECLAIM）。Vue 里槽行是独立的一行 DOM，用不着上探 —— 留着这 52px，
+     面板就比布局分配给它的高度高出整整 52px，整个节点被顶高（实测 56px：
+     52 + 边框）。所以外壳内改回 100%，内联样式要 !important 才盖得住。 */
+  .lg-node .qgtools-lora-panel { height: 100% !important; }
   /* The body is the panel's layout box: it fences every child and carries
      the overflow clip. height: 100% tracks whatever box the frontend
      allocates, so a short allocation shrinks the stack instead of
@@ -2439,6 +2446,7 @@ function watchBox(box) {
 function unmountCard(state, { resize = true } = {}) {
   liveCards.delete(state);
   state.disposed = true;
+  unwatchVueShell(state.node, state.box?.inputName ?? "rows");
   state.nameObserver?.disconnect();
   closePopup();
   try {
@@ -2536,6 +2544,17 @@ function mountCard(node, { box = null, separatorWidget = null, onMissingWidget =
     // at every zoom.
     panel.style.height = `calc(100% + ${reclaim}px)`;
   }
+
+  // Nodes 2.0：外壳只有下限，面板一长就把节点顶高。Vue 里槽行是独立几行 DOM、
+  // 还带内边距，比经典版式多占几十像素，所以两手一起：先用节点高度给面板加上限
+  // （面板永远不超过节点给它的空间），再让 size 跟上外壳 —— 最后剩下的是面板
+  // 自己的 min-height 地板（列表至少要看得到几行），那点差额只有 4px，交给 size。
+  const panelOf = () => state.domWidget?.element ?? panel;
+  const syncPanelFit = () => {
+    if (!pinPanelToNodeHeight(node, panelOf(), (state.vueFit ??= {}))) return;
+    fitNodeToPanelHeight(node, panelOf(), state.vueFit);
+  };
+  watchVueShell(node, panelOf, syncPanelFit, box?.inputName ?? "rows");
 
   renderRows(state);
   refreshAvailable(state);

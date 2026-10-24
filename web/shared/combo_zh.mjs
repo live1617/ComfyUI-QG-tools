@@ -12,8 +12,8 @@
 //
 // 数据源：nodes/_qg_combo_legacy.py 的 LEGACY 表（Python 侧执行期兜底用的是同一张表）。
 
-import { wantsChinese } from "./zh.mjs?v=2026102418";
-import { chainCallback } from "./index.mjs?v=2026102418";
+import { wantsChinese } from "./zh.mjs?v=2026102420";
+import { chainCallback } from "./index.mjs?v=2026102420";
 
 export const COMBO_ZH = {
     QG_ColorMatch: {
