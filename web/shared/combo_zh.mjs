@@ -12,8 +12,8 @@
 //
 // 数据源：nodes/_qg_combo_legacy.py 的 LEGACY 表（Python 侧执行期兜底用的是同一张表）。
 
-import { wantsChinese } from "./zh.mjs?v=2026102420";
-import { chainCallback } from "./index.mjs?v=2026102420";
+import { wantsChinese } from "./zh.mjs?v=2026102571";
+import { chainCallback } from "./index.mjs?v=2026102571";
 
 export const COMBO_ZH = {
     QG_ColorMatch: {
@@ -129,6 +129,19 @@ export const COMBO_ZH = {
             "9:16 (Portrait Widescreen)": "9:16（竖版宽屏）",
             "16:9 (Widescreen)": "16:9（宽屏）",
             "21:9 (Ultrawide)": "21:9（超宽屏）",
+        },
+    },
+    QG_LoadImage: {
+        tint_color: {
+            "white": "白",
+            "red": "红",
+            "orange": "橙",
+            "yellow": "黄",
+            "green": "绿",
+            "cyan": "青",
+            "blue": "蓝",
+            "purple": "紫",
+            "gray": "灰",
         },
     },
     QG_Slider: {

@@ -99,6 +99,9 @@ export const NODE_ALIASES = {
         "expression", "formula", "arithmetic", "compute", "equation", "eval",
         "add", "subtract", "multiply", "divide", "sum", "average", "percent",
         "number", "value",
+        // 这个节点也能拼文本（0.9.8 起），把这层叫留住，别让人非去接 TextConcat。
+        "text", "string", "textmath", "stringmath", "format", "formatstring",
+        "concat", "concatenate", "join", "template", "prefix", "suffix",
     ],
     QG_StringSwitch: [
         "string switch", "stringswitch", "switch string", "text switch",
@@ -162,6 +165,14 @@ export const NODE_ALIASES = {
         "image resize", "imageresize", "resize", "scale image", "image scale",
         "upscale",
         "image",
+    ],
+    QG_LoadImage: [
+        "load image", "open image", "image input", "upload image", "image source",
+        "rgba", "alpha", "transparent", "cutout", "png alpha", "filename",
+        "keep alpha", "transparent channel", "mask",
+        "mask editor", "paint mask", "draw mask", "brush mask", "inpaint mask",
+        "加载图像", "上传图像", "选图", "透明通道", "保留透明通道", "抠图", "遮罩",
+        "遮罩编辑器", "编辑遮罩", "画遮罩", "涂遮罩", "画笔遮罩", "局部重绘遮罩",
     ],
     QG_ImageOrLatentSize: [
         "image size", "latent size", "get size", "resolution", "width height",

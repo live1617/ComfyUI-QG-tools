@@ -8,7 +8,7 @@
 
 - 本插件：ComfyUI-QG-tools · GPL-3.0-or-later · https://github.com/live1617/ComfyUI-QG-tools
 - 依据：`ORIGINS.json`（更新于 2026-10-24）
-- 规模：38 个节点 = **24 个搬运** + **14 个原创**
+- 规模：39 个节点 = **24 个搬运** + **15 个原创**
 
 ## 口径
 
@@ -146,6 +146,7 @@
 | `QG_MDReader` | 加载文档 | ComfyUI-MD-Reader「MarkdownFileReader」 | MIT | 作者自有旧插件，合并进来 |
 | `QG_TripleLoader` | 模型加载器 | ComfyUI-TripleLoader「TripleLoader」 | MIT | 作者自有旧插件，合并进来 |
 | `QG_StringSwitch` | 字符串切换 | ComfyUI-Crystools「Switch string [Crystools]」 | GPL-3.0 | 参考思路，代码自行实现 |
+| `QG_LoadImage` | 加载图像 | Goohaitools-comfyui「加载图像」 | GPL-3.0 | 参考思路，代码自行实现 |
 
 ## 完全原创（无上游参考）
 

@@ -141,6 +141,19 @@ LEGACY = {
             "21:9 (Ultrawide)": "21:9（超宽屏）",
         },
     },
+    "QG_LoadImage": {
+        "tint_color": {
+            "white": "白",
+            "red": "红",
+            "orange": "橙",
+            "yellow": "黄",
+            "green": "绿",
+            "cyan": "青",
+            "blue": "蓝",
+            "purple": "紫",
+            "gray": "灰",
+        },
+    },
     "QG_Slider": {
         "kind": {
             "integer": "整数",

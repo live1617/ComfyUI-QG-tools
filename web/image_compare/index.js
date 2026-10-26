@@ -16,13 +16,13 @@ import {
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026102420";
-import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026102420";
-import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026102420";
-import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026102420";
-import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026102420";
-import { savedLinks } from "../shared/compare_erase.mjs?v=2026102420";
-import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026102420";
+} from "../shared/index.mjs?v=2026102571";
+import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026102571";
+import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026102571";
+import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026102571";
+import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026102571";
+import { savedLinks } from "../shared/compare_erase.mjs?v=2026102571";
+import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026102571";
 import {
   compareBadges,
   compareClip,
@@ -32,7 +32,7 @@ import {
   findCompareImages,
   normalizeCompareMode,
   slideFraction,
-} from "../shared/compare.mjs?v=2026102420";
+} from "../shared/compare.mjs?v=2026102571";
 
 const NODE_NAME = "QG_ImageCompare";
 const PANEL_WIDGET = "qgtools_compare_panel";

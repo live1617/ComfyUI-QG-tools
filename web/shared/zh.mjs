@@ -87,6 +87,18 @@ export function zh(text) {
 }
 
 /**
+ * 自带两份文案：中文界面直接用传进来的中文，英文界面用英文。
+ *
+ * 🔴 给「本地新造、词典里没有英文词条」的文案用。`zh()` 只能翻词典里有的键，
+ * 而汉化插件的 DOM 翻译器同样按文本查表 —— 新造的英文串（比如带色图开关
+ * 那颗胶囊）两边都查不到，中文界面下会留在英文（实测：整颗面板全中文，
+ * 只有它是 "Tinted output"）。
+ */
+export function zhPair(en, cn) {
+  return wantsChinese() ? cn : en;
+}
+
+/**
  * Counted fragment. The "{n}" template that matches the count is looked up
  * ({@link en1} for singular, {@link enN} for plural) and {n} is filled in.
  * The templates must exist verbatim in the source so tools/verify_i18n.py

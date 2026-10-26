@@ -29,17 +29,17 @@
  */
 
 import { app } from "/scripts/app.js";
-import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102420";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102420";
-import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102420";
+import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102571";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102571";
+import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102571";
 import {
     detachDomWidget,
     installModeWatcher,
     onRenderModeSwitch,
     vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026102420";
-import { zh, wantsChinese } from "../shared/zh.mjs?v=2026102420";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102420";
+} from "../shared/vue_mode.mjs?v=2026102571";
+import { zh, wantsChinese } from "../shared/zh.mjs?v=2026102571";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102571";
 
 const NODE_TYPE = "QG_ExportImage";
 const CSS_ID = "qgtools-export-css";

@@ -12,7 +12,7 @@
  *   4. **只影响新建**：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026102420";
+import { chainCallback } from "./index.mjs?v=2026102571";
 
 export const DEFAULT_WIDTH = 270;
 
@@ -29,6 +29,7 @@ export const SKIP = new Set([
     "QG_ExportImage",        // MIN_WIDTH 270 + 概要行布局
     "QG_ImageCompare",       // 420：对比台
     "QG_ImageCropRotatePad", // 330：三个并列面板
+    "QG_LoadImage",          // 300：选择行 + 三态 + 预览，minWidth 由面板自己管
     "QG_LoraLoader",         // 400：LoRA 面板
     "QG_MDReader",           // 380：文档预览
     "QG_RunTimer",           // 176：计时器卡片

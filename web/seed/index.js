@@ -20,13 +20,13 @@ import {
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026102420";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102420";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102420";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102420";
-import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102420";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102420";
-import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026102420";
+} from "../shared/index.mjs?v=2026102571";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102571";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102571";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102571";
+import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102571";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102571";
+import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026102571";
 
 const NODE_CLASS = "QG_Seed";
 const CSS_ID = "qgtools-seed-css";

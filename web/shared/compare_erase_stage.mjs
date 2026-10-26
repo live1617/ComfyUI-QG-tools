@@ -8,12 +8,12 @@
 // 移植自 ComfyUI-AusBoss（MIT，js/shared/compare_erase_stage.mjs）。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026102420";
-import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026102420";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102420";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102420";
-import { makeSlideSwitch } from "./slide_switch.mjs?v=2026102420";
-import { extendStroke } from "./compare_erase.mjs?v=2026102420";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026102571";
+import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026102571";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102571";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102571";
+import { makeSlideSwitch } from "./slide_switch.mjs?v=2026102571";
+import { extendStroke } from "./compare_erase.mjs?v=2026102571";
 import {
   ERASE_OUTSIDE,
   ERASE_SIZE,
@@ -37,7 +37,7 @@ import {
   steppedSoft,
   strokeFits,
   typedName,
-} from "./compare_erase.mjs?v=2026102420";
+} from "./compare_erase.mjs?v=2026102571";
 
 // 图上面那行工具、图下面那行保存，各有多高。节点窄的时候这两行会折成两行，
 // 而不是把节点撑宽——地方从图上出。

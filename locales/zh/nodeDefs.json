@@ -427,115 +427,115 @@
   },
   "QG_Math": {
     "display_name": "数学运算",
-    "description": "一行表达式算出一个数：卡片上写算式（如 round(a / b * 2, 2)）。变量是左侧的 a、b、c…，只从上游连线取：默认露出 3 个空槽，接满一个就自己长出下一个（最多到 z），整数、小数、布尔都能接，没连线时按 0 算，所以常数直接写进表达式。同一个结果给三个输出：数值（小数）、整数（四舍五入）、布尔（非零为真）。算式只解析不执行，别人分享的工作流带不进代码；写错时节点会直接告诉你哪一段不对。每个函数的用法见 docs/math.md。写法：a + b * 2。运算符 + - * / // % **；比较 == != > < >= <=；逻辑 and or not；三元 a if a > b else b；常量 pi、e、tau。函数：abs round min max sum pow int float bool；sqrt exp log log2 log10；sin cos tan asin acos atan atan2 sinh cosh tanh；floor ceil trunc；hypot degrees radians；factorial gcd lcm sign fmod fabs copysign dist prod fsum isnan isinf isfinite。注意 ^ 是按位异或，乘方要用 **。",
+    "description": "一行表达式，算数字也行、拼文本也行：卡片上写算式（如 round(a / b * 2, 2) 或 a + \"，最好画质\"）。变量是左侧的 a、b、c…，只从上游连线取：默认露出 3 个空槽，接满一个就自己长出下一个（最多到 z），整数、小数、布尔、文本都能接，没连线时按 0 算，所以常数直接写进表达式。接进来的文本整串是个数字（如 1024）就当数字用，否则当文字。同一个结果给四个输出：数值（小数）、整数（四舍五入，正好 .5 时远离零）、布尔（非零为真）、文本（数字按人写的样子，1024 而不是 1024.0）。结果是文本时，前三个数字输出一律给 0、0、假，免得下游把文字当尺寸。算式只解析不执行，别人分享的工作流带不进代码；写错时节点会直接告诉你哪一段不对。每个函数的用法见 docs/math.md。写法：a + b * 2。运算符 + - * / // % **；比较 == != > < >= <= 以及 in / not in；逻辑 and or not；三元 a if a > b else b；常量 pi、e、tau。函数：abs round min max sum pow int float bool；sqrt exp log log2 log10；sin cos tan asin acos atan atan2 sinh cosh tanh；floor ceil trunc；hypot degrees radians；factorial gcd lcm sign fmod fabs copysign dist prod fsum isnan isinf isfinite。文本：写在引号里，用 + 拼接、* 重复，用 [ ] 取字或切片（a[0]、a[1:4]）；函数 str len upper lower title capitalize swapcase strip lstrip rstrip replace split join find rfind count startswith endswith zfill。注意 ^ 是按位异或，乘方要用 **。",
     "inputs": {
       "expr": {
         "name": "表达式",
-        "tooltip": "算式，例如 round(a / b * 2, 2)。\n常量 pi、e、tau；支持 + - * / // % **、比较、and/or/not、三元表达式，以及 sqrt、round、min、max、log、sin 等 30 多个函数，逐个用法见 docs/math.md。留空时输出 0。"
+        "tooltip": "算式，例如 round(a / b * 2, 2) 或 a + \"，最好画质\"。\n常量 pi、e、tau；支持 + - * / // % **、比较、in、and/or/not、三元表达式；文本用引号写，+ 拼接、* 重复、[ ] 取字或切片；以及 sqrt、round、min、max、log、sin、upper、split、join 等 50 多个函数，逐个用法见 docs/math.md。留空时输出 0。"
       },
       "a": {
         "name": "a",
-        "tooltip": "变量 a"
+        "tooltip": "变量 a：数字或文本，没接线按 0 算"
       },
       "b": {
         "name": "b",
-        "tooltip": "变量 b"
+        "tooltip": "变量 b：数字或文本，没接线按 0 算"
       },
       "c": {
         "name": "c",
-        "tooltip": "变量 c"
+        "tooltip": "变量 c：数字或文本，没接线按 0 算"
       },
       "d": {
         "name": "d",
-        "tooltip": "变量 d"
+        "tooltip": "变量 d：数字或文本，没接线按 0 算"
       },
       "e": {
         "name": "e",
-        "tooltip": "变量 e"
+        "tooltip": "变量 e：数字或文本，没接线按 0 算"
       },
       "f": {
         "name": "f",
-        "tooltip": "变量 f"
+        "tooltip": "变量 f：数字或文本，没接线按 0 算"
       },
       "g": {
         "name": "g",
-        "tooltip": "变量 g"
+        "tooltip": "变量 g：数字或文本，没接线按 0 算"
       },
       "h": {
         "name": "h",
-        "tooltip": "变量 h"
+        "tooltip": "变量 h：数字或文本，没接线按 0 算"
       },
       "i": {
         "name": "i",
-        "tooltip": "变量 i"
+        "tooltip": "变量 i：数字或文本，没接线按 0 算"
       },
       "j": {
         "name": "j",
-        "tooltip": "变量 j"
+        "tooltip": "变量 j：数字或文本，没接线按 0 算"
       },
       "k": {
         "name": "k",
-        "tooltip": "变量 k"
+        "tooltip": "变量 k：数字或文本，没接线按 0 算"
       },
       "l": {
         "name": "l",
-        "tooltip": "变量 l"
+        "tooltip": "变量 l：数字或文本，没接线按 0 算"
       },
       "m": {
         "name": "m",
-        "tooltip": "变量 m"
+        "tooltip": "变量 m：数字或文本，没接线按 0 算"
       },
       "n": {
         "name": "n",
-        "tooltip": "变量 n"
+        "tooltip": "变量 n：数字或文本，没接线按 0 算"
       },
       "o": {
         "name": "o",
-        "tooltip": "变量 o"
+        "tooltip": "变量 o：数字或文本，没接线按 0 算"
       },
       "p": {
         "name": "p",
-        "tooltip": "变量 p"
+        "tooltip": "变量 p：数字或文本，没接线按 0 算"
       },
       "q": {
         "name": "q",
-        "tooltip": "变量 q"
+        "tooltip": "变量 q：数字或文本，没接线按 0 算"
       },
       "r": {
         "name": "r",
-        "tooltip": "变量 r"
+        "tooltip": "变量 r：数字或文本，没接线按 0 算"
       },
       "s": {
         "name": "s",
-        "tooltip": "变量 s"
+        "tooltip": "变量 s：数字或文本，没接线按 0 算"
       },
       "t": {
         "name": "t",
-        "tooltip": "变量 t"
+        "tooltip": "变量 t：数字或文本，没接线按 0 算"
       },
       "u": {
         "name": "u",
-        "tooltip": "变量 u"
+        "tooltip": "变量 u：数字或文本，没接线按 0 算"
       },
       "v": {
         "name": "v",
-        "tooltip": "变量 v"
+        "tooltip": "变量 v：数字或文本，没接线按 0 算"
       },
       "w": {
         "name": "w",
-        "tooltip": "变量 w"
+        "tooltip": "变量 w：数字或文本，没接线按 0 算"
       },
       "x": {
         "name": "x",
-        "tooltip": "变量 x"
+        "tooltip": "变量 x：数字或文本，没接线按 0 算"
       },
       "y": {
         "name": "y",
-        "tooltip": "变量 y"
+        "tooltip": "变量 y：数字或文本，没接线按 0 算"
       },
       "z": {
         "name": "z",
-        "tooltip": "变量 z"
+        "tooltip": "变量 z：数字或文本，没接线按 0 算"
       }
     },
     "outputs": {
@@ -545,11 +545,15 @@
       },
       "1": {
         "name": "整数",
-        "tooltip": "同一个结果四舍五入成整数，夹在 INT32 范围内。"
+        "tooltip": "同一个结果四舍五入成整数（正好 .5 时远离零，2.5 进成 3），夹在 INT32 范围内。"
       },
       "2": {
         "name": "布尔",
-        "tooltip": "同一个结果是否为非零。写比较表达式（如 a > b）时直接当条件用。"
+        "tooltip": "同一个结果是否为非零。写比较表达式（如 a > b）时直接当条件用。结果是文本时为假。"
+      },
+      "3": {
+        "name": "文本",
+        "tooltip": "同一个结果当作文本输出：数字按人写的样子写（1024 而不是 1024.0），文本原样，可以直接接提示词。"
       }
     }
   },
@@ -1303,5 +1307,41 @@
     "description": "画布上的 Markdown 便签：标题、粗斜体、列表、引用、表格、代码块和行内颜色都画得出来，渲染器是内置的，不依赖浏览器 HTML，也没有外部库。双击打开居中编辑器，左边实时预览、右边表单；点「应用」之前改动只影响预览，不会写回画布。不参与运行——没有输出。只要一行纯文字就用画布标签。",
     "inputs": {},
     "outputs": {}
+  },
+  "QG_LoadImage": {
+    "display_name": "加载图像",
+    "description": "从 ComfyUI 的 input 文件夹里读一张图，输出图像和遮罩。遮罩编辑器画的结果存在图片旁边，读回来时靠配对的原图副本把透明通道换回去，所以图像输出永远是画之前那张图。开「输出带色图」就在遮罩区按选定的颜色和透明度混一层，看一眼就知道画在哪儿；那个颜色和透明度由遮罩编辑器存盘时带回来。",
+    "inputs": {
+      "image": {
+        "name": "图像",
+        "tooltip": "从 ComfyUI 的 input 文件夹里选择或上传一张图片。遮罩编辑器保存的结果会写回这里。"
+      },
+      "keep_alpha": {
+        "name": "保留透明通道",
+        "tooltip": "关：透明像素合成白底，就是看图软件显示的样子，图像输出三通道。开：保留四个通道，把透明原样交出去。"
+      },
+      "tint_output": {
+        "name": "输出带色图",
+        "tooltip": "关：图像输出是干净的画面；开：把遮罩编辑器里画好的颜色一起带出来 ——每一笔保留自己选的颜色，浓度就是编辑器里那根透明度滑条。旧版本存的成品没有烧色，会退回用下面的「遮罩颜色」。"
+      },
+      "tint_color": {
+        "name": "叠加颜色",
+        "tooltip": "带色图用的颜色，九种和遮罩编辑器里那排色点一一对应。编辑器存盘时会把它选的那个写回来。"
+      },
+      "tint_alpha": {
+        "name": "叠加透明度",
+        "tooltip": "颜色混进去多少（百分比）。50 还能看清底下的画面。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "图像",
+        "tooltip": "图片本体。没开带色图时这就是画之前的图，遮罩的 alpha 已经被换掉了；开了的话遮罩区会带上颜色。"
+      },
+      "1": {
+        "name": "遮罩",
+        "tooltip": "画上的地方为 1、没画的地方为 0；尺寸恒等于图片，不会再出现 64 × 64 的占位。"
+      }
+    }
   }
 }

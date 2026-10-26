@@ -1,28 +1,28 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026102420";
-import { hideInputsInDef, hideWidget } from "./widget_visibility.mjs?v=2026102420";
-import { mountTransformTrim } from "./transform_trim.mjs?v=2026102420";
-import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026102420";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026102420";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026102420";
-import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=2026102420";
-import { createMediaPicker } from "./media_picker.mjs?v=2026102420";
-import { normalizeFillColor } from "./fill_color.mjs?v=2026102420";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102420";
-import { confirmDiscard } from "./discard_prompt.mjs?v=2026102420";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102420";
-import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026102420";
-import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026102420";
-import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026102420";
-import { createSettle } from "./settle.mjs?v=2026102420";
+import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026102571";
+import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "./widget_visibility.mjs?v=2026102571";
+import { mountTransformTrim } from "./transform_trim.mjs?v=2026102571";
+import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026102571";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026102571";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026102571";
+import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=2026102571";
+import { createMediaPicker } from "./media_picker.mjs?v=2026102571";
+import { normalizeFillColor } from "./fill_color.mjs?v=2026102571";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102571";
+import { confirmDiscard } from "./discard_prompt.mjs?v=2026102571";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102571";
+import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026102571";
+import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026102571";
+import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026102571";
+import { createSettle } from "./settle.mjs?v=2026102571";
 import {
   INPUT_FOLDER_MODE,
   LOCAL_PATH_MODE,
   normalizeVideoOptions,
   mediaSourceState,
   videoSourceState,
-} from "./video_source_card.mjs?v=2026102420";
+} from "./video_source_card.mjs?v=2026102571";
 import {
   alignChanges,
   aspectMatches,
@@ -77,9 +77,9 @@ import {
   turnedCrop,
   wrapDegrees,
   zoomAround,
-} from "./transform_geometry.mjs?v=2026102420";
-import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026102420";
-import { liftSocket } from "./widget_card.mjs?v=2026102420";
+} from "./transform_geometry.mjs?v=2026102571";
+import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026102571";
+import { liftSocket } from "./widget_card.mjs?v=2026102571";
 
 const HIDDEN_WIDGETS = [
   "image", "upload",
@@ -289,34 +289,6 @@ function setValue(node, name, next) {
 }
 function values(node) {
   return Object.fromEntries(Object.keys(TRANSFORM_DEFAULTS).map((name) => [name, value(node, name, TRANSFORM_DEFAULTS[name])]));
-}
-
-function suppressCoreImagePreview(node) {
-  const previewIndex = node.widgets?.findIndex((item) => item.name === CORE_IMAGE_PREVIEW_WIDGET) ?? -1;
-  if (previewIndex >= 0) {
-    node.widgets[previewIndex].onRemove?.();
-    node.widgets.splice(previewIndex, 1);
-  }
-  if (node.__qgImgsSuppressed) return;
-  node.__qgImgsSuppressed = true;
-  node.__qgAddCustomWidget = node.addCustomWidget;
-  if (typeof node.addCustomWidget === "function") {
-    node.addCustomWidget = function (customWidget) {
-      if (customWidget?.name === CORE_IMAGE_PREVIEW_WIDGET) hideWidget(customWidget);
-      return node.__qgAddCustomWidget.call(this, customWidget);
-    };
-  }
-  node.__qgImgsDescriptor = Object.getOwnPropertyDescriptor(node, "imgs");
-  Object.defineProperty(node, "imgs", {
-    configurable: true,
-    enumerable: true,
-    get() { return undefined; },
-    // The MaskEditor sets this right after it writes the picture it saved.
-    set() {
-      const state = node.__qgTransformState;
-      if (state) queueMicrotask(() => followSource(state));
-    },
-  });
 }
 
 // The MaskEditor saves its picture (the mask is the picture's alpha) into
@@ -586,7 +558,9 @@ export function installTransformNode(node, kind, mountPanel = null) {
   // queued in another workflow tab lands on the node with the same id here.
   // The stage is the node's only picture, in both renderers (the video
   // suppression also sets Nodes 2.0's hideOutputImages).
-  suppressCoreImagePreview(node);
+  // The picture the mask editor saves lands in `imgs` before the widget value
+  // changes; the follow callback is what makes the stage reload it.
+  suppressCoreImagePreview(node, () => followSource(state));
   suppressCoreVideoPreview(node);
   if (kind === "video") installVideoDrop(state);
   for (const name of HIDDEN_WIDGETS) hideWidget(widget(node, name));

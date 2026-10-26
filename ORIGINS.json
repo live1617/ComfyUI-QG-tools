@@ -7,8 +7,8 @@
     "ported": "搬运 —— 整段照抄上游代码，只改类名 / 节点 ID / 分类 / 显示名 / 中文文案，逻辑一行没动"
   },
   "counts": {
-    "total": 38,
-    "original": 14,
+    "total": 39,
+    "original": 15,
     "ported": 24
   },
   "upstreams": {
@@ -334,9 +334,19 @@
       "origin": "original",
       "upstream": null,
       "note": "只借了 KOOK / 孤海同类节点「quality 该放在哪」的结论"
+    },
+    {
+      "id": "QG_LoadImage",
+      "display": "加载图像",
+      "file": "nodes/qg_load_image.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {"plugin": "Goohaitools-comfyui", "node": "加载图像", "license": "GPL-3.0", "relation": "idea"},
+      "note": "契约照孤海那支定：两个输出（图像 / 遮罩）、一个「保留透明通道」开关、编辑器存「原图副本 + alpha 带遮罩的成品」两个文件、读回时用副本的 alpha 换掉成品的 alpha，所以遮罩默认不进画面。带色图做成可选开关（孤海是二选一的档位），颜色与浓度直接吃编辑器里的九色板和透明度滑块，存盘时回写到这两个控件。实现自写：配对靠文件名里的 13 位时间戳（孤海靠像素比对 + 修改时间反查），只写两个文件，读写复用 _qg_media_helpers"
     }
   ],
   "sections": [
+    {"anchor": "## Load Image", "nodes": ["QG_LoadImage"]},
     {"anchor": "## Image Crop + Rotate + Pad", "nodes": ["QG_ImageCropRotatePad"]},
     {"anchor": "## LoRA Loader", "nodes": ["QG_LoraLoader"]},
     {"anchor": "## 模型加载器", "nodes": ["QG_TripleLoader"]},

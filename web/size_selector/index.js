@@ -16,7 +16,7 @@
  */
 
 import { app } from "/scripts/app.js";
-import { chainCallback } from "../shared/index.mjs?v=2026102420";
+import { chainCallback } from "../shared/index.mjs?v=2026102571";
 
 const NODE_CLASS = "QG_SizeSelector";
 

@@ -3,7 +3,7 @@
 // zh() so the composed sentences come out translated; the zh plugin's DOM
 // translator whole-string-matches and can never reach these. Without the
 // dictionary everything falls back to the English source strings.
-import { zh, zhSep } from "./zh.mjs?v=2026102420";
+import { zh, zhSep } from "./zh.mjs?v=2026102571";
 
 export const MIN_CROP_SIZE = 8;
 
