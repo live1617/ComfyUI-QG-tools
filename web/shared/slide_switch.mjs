@@ -3,7 +3,7 @@
 //
 // 移植自 ComfyUI-AusBoss（MIT，js/shared/slide_switch.mjs）。
 
-import { BRAND } from "./index.mjs?v=2026102571";
+import { BRAND } from "./index.mjs?v=2026102706";
 
 const CSS_ID = "qgtools-slide-switch-css";
 

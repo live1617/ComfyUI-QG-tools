@@ -13,33 +13,36 @@
 //    size 只算主体，别把 30 加进去。
 
 import { app } from "/scripts/app.js";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102706";
 import {
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
   zh,
-} from "../shared/index.mjs?v=2026102571";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102571";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102571";
+} from "../shared/index.mjs?v=2026102706";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102706";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102706";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
-} from "../shared/vue_mode.mjs?v=2026102571";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102571";
+} from "../shared/vue_mode.mjs?v=2026102706";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102706";
 
 const NODE_CLASS = "QG_BoolToggle";
 const WIDGET_NAME = "qg_bool_toggle_panel";
 const CSS_ID = "qgtools-bool-toggle-css";
 
+// 缩放基准（字号 / 胶囊 / 圆角都按它等比算），**不是节点宽度**，所以不走尺寸表；
+// 节点默认宽由尺寸表钉（pinNodeWidth），最小宽从表里取。
 const BASE_WIDTH = 320;
 // 缩放基准（字号 / 胶囊 / 圆角都按它等比算），**不是节点高度**。
 const BASE_HEIGHT = 84;
-const MIN_WIDTH = 220;
+const MIN_WIDTH = sizeFor("QG_BoolToggle").minW;
 const RATIO = BASE_HEIGHT / BASE_WIDTH;
 // 节点高度固定在「缩到最小时的高度」：一排开关并排完全齐平，也最省地方。
 // 宽度随便拉，只横向长，不加厚。
-const NODE_HEIGHT = Math.round(MIN_WIDTH * RATIO);   // 58
+const NODE_HEIGHT = heightFor("QG_BoolToggle") ?? Math.round(MIN_WIDTH * RATIO);
 
 const PAD = 8;              // 卡片相对节点主体的内缩
 const SLOT_ROW = 22;        // 顶部给输出槽名留的一行（槽是原生画的，卡片别压上去）
@@ -646,7 +649,7 @@ function installDom(node) {
   // uninstall 要用它把 DOM 一并摘掉（只 splice node.widgets 会留下包装层）
   state.widget = domWidget;
   domWidget.computeSize = (width) => [
-    Math.max(MIN_WIDTH, Number(width || node.size?.[0] || BASE_WIDTH)),
+    Math.max(MIN_WIDTH, Number(width) > 0 ? Number(width) : MIN_WIDTH),
     NODE_HEIGHT,
   ];
   domWidget.options.minNodeSize = [MIN_WIDTH, NODE_HEIGHT];

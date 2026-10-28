@@ -14,12 +14,13 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, zh } from "../shared/index.mjs?v=2026102571";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102571";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, zh } from "../shared/index.mjs?v=2026102706";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102706";
 import {
   detachDomWidget,
   installModeWatcher,
-} from "../shared/vue_mode.mjs?v=2026102571";
+} from "../shared/vue_mode.mjs?v=2026102706";
 import {
   cachedLayer,
   createTimer,
@@ -28,15 +29,15 @@ import {
   startTimer,
   stopTimer,
   tickTimer,
-} from "../shared/run_timer.mjs?v=2026102571";
+} from "../shared/run_timer.mjs?v=2026102706";
 
 const NODE_CLASS = "QG_RunTimer";
 const CSS_ID = "qgtools-run-timer-css";
 const WIDGET_NAME = "qg_run_timer_panel";
 const PROPERTY = "qg_run_timer"; // { history: [seconds, newest first] }
-const BASE_WIDTH = 176;
+const BASE_WIDTH = sizeFor("QG_RunTimer").w;
 const BASE_HEIGHT = 56;
-const MIN_WIDTH = 110;
+const MIN_WIDTH = sizeFor("QG_RunTimer").minW;
 const TICK_MS = 100;
 const NO_TITLE = globalThis.LiteGraph?.NO_TITLE ?? 1;
 const READOUT_COLOR = "#07090a";
@@ -434,7 +435,11 @@ function installDomReadout(node) {
   widget.serialize = false;
   // A constant-height readout, not a viewport: pinned on purpose (see
   // tests/panel_guards.test.mjs, fixedByDesign).
-  widget.computeSize = (width) => [Math.max(MIN_WIDTH, Number(width || node.size?.[0] || BASE_WIDTH)), BASE_HEIGHT];
+  // 🔴 无参调用（拖拽缩放）时必须回落到 MIN_WIDTH，不能回落到当前宽，否则拖不小。
+  widget.computeSize = (width) => {
+    const wanted = Number(width);
+    return [Math.max(MIN_WIDTH, Number.isFinite(wanted) && wanted > 0 ? wanted : MIN_WIDTH), BASE_HEIGHT];
+  };
   widget.computeLayoutSize = () => ({ minWidth: MIN_WIDTH, minHeight: BASE_HEIGHT });
   widget.options.minNodeSize = [MIN_WIDTH, BASE_HEIGHT];
   holdNodeMinWidth(widget, MIN_WIDTH);

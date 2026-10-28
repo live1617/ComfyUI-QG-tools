@@ -46,18 +46,61 @@ ComfyUI-QG-tools/
 以及被它们串起来带进来的通用工具（`transform_geometry`、`media_picker`、`pad_canvas`…）。
 后一类当前没有节点直接用，但**别删** —— 删了会让 `widget_card.mjs` 的 import 断链。
 
-### 节点默认宽度：`web/shared/node_width.mjs`
+### 节点尺寸：`web/shared/node_width.mjs`（唯一真相源）
 
 ComfyUI 的节点默认宽度**不在 Python 里**，是前端按控件类型算的（带多行文本框的会被撑到
 400，普通节点 270，只有两个控件的甚至算成 159），`INPUT_TYPES` 里没法声明，grep 也 grep 不到。
-所以统一由 `qg_init.js` 在所有 `QG_*` 节点注册前调用 `pinNodeWidth()` 钉一遍：
+所以全部 41 个节点在一张表里登记，**改尺寸只改这一处**：
 
-- `DEFAULT_WIDTH = 270`；
-- `SKIP` 里是**自己有尺寸逻辑**的节点（种子卡片 300、LoRA 面板 400、对比台 420…），绝不碰；
-- `OVERRIDES` 给带多行输入框的节点单独定宽（目前 400）；
+```js
+export const SIZES = {
+    QG_ColorMatch: { w: 270 },                                   // 简单节点：钉宽
+    QG_LoadImage:  { w: 270, minW: 250, h: 405, own: true },     // 自带布局：最小宽也从表取
+    QG_CanvasLabel:{ w: null, own: true },                       // w: null = 宽度跟文字算
+};
+```
+
+- 字段：`w` 默认宽 / `minW` 最小宽（缺省 = w）/ `h` 默认高（只有写死高度的才填）/ `own` 自带布局标记；
+- **A 路**：`pinNodeWidth()` 在新建时把宽度钉成 `w`（`w: null` 的不钉）；
+- **B 路**：`own: true` 的节点，`web/<节点>/index.js` 里的 `MIN_WIDTH` / `NODE_WIDTH` /
+  `PANEL_MIN_WIDTH` 等常量写成 `sizeFor("QG_Xxx").minW`，最小宽和默认宽都跟着表走；
+- 🔴 节点通常只把宽度当**最小宽**用（`minNodeSize`），初始宽由 LiteGraph 给。所以只改常量不钉宽，
+  会出现「表里 300 改成 260、节点还是 270」的假象 —— 两条路必须一起用；
 - **只影响新建**：存档里有宽度的节点由 `onConfigure` 覆盖回来，不动用户调过的尺寸。
 
-想看全部节点的实际默认尺寸：`tools/probe_all_node_widths.py`（工作区脚本，headless 起页面逐个新建量）。
+体检：`tools/verify_node_sizes.py`（已进 `regress.py`）—— 查漏登记、僵尸条目、数值合法性、
+以及「前端还写死宽度却没引用表」。实测全量尺寸：`tools/probe_all_node_widths.py` /
+`tools/_probe_all_sizes.cjs`（headless 起页面逐个新建量，输出 `reports/node_sizes.json`）。
+
+### 右键「测量尺寸」→ 已独立成 ComfyUI-QG-NodeMeasure
+
+这个功能**不在本插件里**了（2026-10-27 拆出去）。`custom_nodes/ComfyUI-QG-NodeMeasure`
+是个纯前端插件，没有节点，量的是**任何**插件的节点（官方 / rgthree / Impact 都行）。
+原来那份 `web/shared/measure_node.mjs` 已删除。
+
+本插件只负责喂数据：`shared/node_width.mjs` 把 `SIZES` 挂到 `globalThis.__QG_SIZE_TABLE__`
+（探针在用的老名字 `__QG_SIZES__` 也保留，同一个对象）。那边读到就多显示一行「默认」，
+没装本插件就退化 —— 两个插件互不依赖，谁先加载都行。
+
+🔴 别在本插件里再挂 `getNodeMenuItems` 返回同样的菜单项：两边都挂会让右键出现
+**两项**「测量尺寸」。菜单入口只有 NodeMeasure 提供。
+
+卡片本身长这样（在 NodeMeasure 那边实现，CSS 前缀 `qgmeasure-`）：
+
+| 行 | 含义 |
+|---|---|
+| 节点 / 类型 | 标题与 `QG_` 类名，附带控件数、输入输出槽数 |
+| 当前 | 画布上现在多大（含比例） |
+| 默认 | 尺寸表里的 `w × h`（读不到表就显示「无尺寸表」） |
+| 按内容 | `computeSize()` 算的「该多大」，没有表时用它当参考 |
+| 最小 | **真正生效**的下限：`widget.options.minNodeSize`，没有就是 LiteGraph 全局 140。跟表里写的 `minW` 不一致时标黄，并在右侧注明「表里写 X」 |
+
+底部「复制成表格行」产出一行 markdown，可直接贴进 `reports/节点默认与最小尺寸.md`。
+探针还在本工作区：`tools/_probe_measure_node.cjs`（数据 + 卡片）、`tools/_probe_measure_menu.cjs`（菜单项，两种模式）。
+
+🔴 类型那一行用伪元素 `attr(data-type)` 画，**不能写进 DOM 文本**：汉化插件把节点类名当词条
+（字典键就是 `QG_ColorMatch`），整串会显示成「颜色匹配」，拆成 `QG_` + `ColorMatch` 也会把后半截
+翻成「图像调色」。只有伪元素不产生文本节点，翻译器才够不着。
 
 ## 命名约定
 
@@ -107,7 +150,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "My Node"}
 | `locales/zh/nodeDefs.json` | 加条目：`display_name`（**必填**，后端只有英文）/ `description` / `inputs`（带 tooltip）/ `outputs` |
 | 汉化插件 `zh-CN/Nodes/ComfyUI-QG-tools.json` | 同上但**格式不同**（`title` + 纯字符串 name），两套不可互换 |
 | `web/shared/node_aliases.mjs` | 登记英文别名；`verify_display_names.py` 会检查键不多不少 |
-| `web/shared/node_width.mjs` | 带多行框的加进 `OVERRIDES`；自己有尺寸逻辑的加进 `SKIP` |
+| `web/shared/node_width.mjs` | 在 `SIZES` 里登记一条（`w` / `minW` / `h` / `own`）；漏了会退回 270 默认宽，`verify_node_sizes.py` 会报 |
 | `tools/sync_translation_pack.py` | 加进 `NODE_ORDER`，否则同步汉化包时报「字典里还有本脚本没列出的键」 |
 | `nodes/_qg_combo_legacy.py` | 有新下拉选项的，把老中文值登记进 `LEGACY`，再跑 `tools/gen_combo_zh.py` |
 
@@ -341,7 +384,7 @@ category: def.category.split('/')
 
 ## 抽取来源
 
-39 个节点 = **15 原创**（其中 2 个参考上游思路重写、3 个搬自作者自有旧插件）+ **24 搬运**。
+41 个节点 = **15 原创**（其中 3 个参考上游思路重写、3 个搬自作者自有旧插件）+ **26 搬运**。
 逐文件的 from/to 与每一处字符串替换记在 `PORTED.json`（`pack_version` 停在 0.8.0，
 后面几批以本表为准）。
 
@@ -372,7 +415,7 @@ python tools/verify_origin.py          # 校验：与注册节点 / README / 文
 
 | 来源插件 | 抽取的节点 | 当前 ID | 说明 |
 |---|---|---|---|
-| ComfyUI-AusBoss v2.10.1 / 2.11.1 / 2.12.x（MIT） | LoRA Loader / 图像裁剪 + 旋转 + 补边 / Workflow Note / Workflow Switches / RunTimer / 图像对比 | `QG_LoraLoader` / `QG_ImageCropRotatePad` / `QG_WorkflowNote` / `QG_WorkflowSwitches` / `QG_RunTimer` / `QG_ImageCompare` | 见下方各「搬家记录」；`QG_ImageCompare` 上游约 3900 行，只搬滑动 / A / B / 擦除那一部分 |
+| ComfyUI-AusBoss v2.10.1 / 2.11.1 / 2.12.x（MIT） | LoRA Loader / 图像裁剪 + 旋转 + 补边 / Workflow Note / Workflow Switches / RunTimer / 图像对比 / Free Memory | `QG_LoraLoader` / `QG_ImageCropRotatePad` / `QG_WorkflowNote` / `QG_WorkflowSwitches` / `QG_RunTimer` / `QG_ImageCompare` / `QG_FreeMemory` | 见下方各「搬家记录」；`QG_ImageCompare` 上游约 3900 行，只搬滑动 / A / B / 擦除那一部分；`QG_FreeMemory` 四步释放整段照搬（每步 fail-soft），通配类型用上游的 str 子类写法 |
 | ComfyUI-AusBoss + rgthree-comfy（MIT） | 种子 | `QG_Seed` | 卡片界面来自 AusBoss，取值与随机逻辑来自 rgthree；老存档 -1/-2/-3 在 `onConfigure` 翻译 |
 | ComfyUI_Muye 1.0.17（MIT） | Text Edit Output | `QG_TextEditOutput` | v0.6.0，见「Text Edit Output 搬家记录」 |
 | ComfyUI_Muye 1.0.17（MIT） | 图像水印 / 文字叠加图像 / 宫格图像拼接 / 遮罩上色 / 遮罩拼接 / 文本按分隔符分割 / 尺寸选择器 | `QG_ImageWatermark` / `QG_TextOverlayImage` / `QG_ImageGrid` / `QG_MaskColorize` / `QG_MaskConcat` / `QG_TextSplit` / `QG_SizeSelector` | v0.8.5，见「Muye 8 节点搬家记录」 |
@@ -598,8 +641,8 @@ mountWidgetCard(node, { rows: [
   没连线 → 卡片的数照常进 prompt（实测 `graphToPrompt` 里 `a: 7`）；
   连着线 → 上游赢（`input.link` 优先）。**这两条都要探针盯着**，删 `input.widget` 很容易
   把「没连线时的值」弄丢。
-- `QG_Math` 要进 `web/shared/node_width.mjs` 的 **`SKIP`**：卡片自己用 `minWidth: 300`
-  管宽度，外层再钉 270 会把卡片压扁。
+- `QG_Math` 在 `web/shared/node_width.mjs` 里是 `own: true` + `minW: 260`：卡片自己用
+  `minWidth` 管宽度（现在从表里取），外层钉宽只管新建时那一下。
 - 变量行接上线后只有那一格变灰（`fieldsLinked[0] === true`，行本身不变灰）——
   这是 `mountWidgetCard` 既有的「pair 里只暗被连的那个字段」行为，不是特例。
 
@@ -1293,7 +1336,7 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.8  |  39 nodes loaded  |  8 categories
+  QG-tools v0.9.9  |  41 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

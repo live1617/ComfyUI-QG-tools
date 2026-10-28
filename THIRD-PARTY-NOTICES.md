@@ -8,7 +8,7 @@
 
 - 本插件：ComfyUI-QG-tools · GPL-3.0-or-later · https://github.com/live1617/ComfyUI-QG-tools
 - 依据：`ORIGINS.json`（更新于 2026-10-24）
-- 规模：39 个节点 = **24 个搬运** + **15 个原创**
+- 规模：41 个节点 = **26 个搬运** + **15 个原创**
 
 ## 口径
 
@@ -22,10 +22,12 @@
 - 作者：ausboss
 - 许可证：MIT —— 全文见 `licenses/ComfyUI-AusBoss-LICENSE.txt`
 - 仓库：https://github.com/ausboss/ComfyUI-AusBoss
-- 贡献 7 个节点
+- 贡献 9 个节点
 
 | 本插件节点 | 显示名 | 上游节点 | 修改 / 保留说明 |
 |---|---|---|---|
+| `QG_FreeMemory` | Free Memory | `Free Memory 🆎` | 四步释放整段照搬（卸模型 / 清模型缓存 / gc / 清 CUDA 缓存），每步独立 fail-soft；通配类型用 AusBoss 的 str 子类写法 |
+| `QG_MaskRefine` | Mask Refine | `Mask Refine 🆎` | 扩缩 / 补洞 / 平滑 / 羽化 / 边缘精修 / 色阶六步顺序与算法整组搬入（逐样本 max_pool、边界漫水、可分离高斯都保留）；scipy 仍是可选加速，没装走 torch fallback；预览改用本插件的 temp PNG 写法 |
 | `QG_LoraLoader` | LoRA Loader | `LoRA Loader 🆎` | 六条 HTTP 路由全部保留（list / thumb / info / hash / civitai / triggers） |
 | `QG_ImageCropRotatePad` | Image Crop + Rotate + Pad | `Image Crop + Rotate + Pad 🆎` | 编辑器与几何换算整组搬入（10 个 Python 闭包 + 前端闭包 16 个） |
 | `QG_WorkflowNote` | Workflow Note | `Workflow Note 🆎` | — |
@@ -91,6 +93,7 @@
 
 - 作者：孤海 (Goohaitools)
 - 许可证：GPL-3.0 —— 全文见 `LICENSE`
+- 仓库：https://github.com/goohai/Goohaitools-comfyui
 - 贡献 3 个节点
 
 | 本插件节点 | 显示名 | 上游节点 | 修改 / 保留说明 |

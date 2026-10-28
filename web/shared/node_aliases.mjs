@@ -20,214 +20,141 @@
 
 export const NODE_ALIASES = {
     QG_LoraLoader: [
-        "lora loader", "loraloader", "load lora", "lora stack", "apply lora", "lora",
+        "lora loader", "loraloader", "load lora", "lora stack", "apply lora", "lora", "LoRA加载器", "加载LoRA", "罗拉",
     ],
     QG_TripleLoader: [
-        "triple loader", "tripleloader", "model loader", "modelloader",
-        "checkpoint loader", "unet clip vae", "load checkpoint",
-        "model", "loader",
+        "triple loader", "tripleloader", "model loader", "modelloader", "checkpoint loader", "unet clip vae", "load checkpoint", "model", "loader", "模型加载器", "加载模型", "加载checkpoint", "三合一加载",
     ],
     QG_MDReader: [
-        "md reader", "mdreader", "markdown", "markdown reader", "read markdown",
-        "document reader", "load markdown",
-        "document", "doc",
+        "md reader", "mdreader", "markdown", "markdown reader", "read markdown", "document reader", "load markdown", "document", "doc", "加载文档", "文档阅读", "读文档", "Markdown阅读",
     ],
     QG_GoogleTranslateText: [
-        "google translate", "googletranslate", "translate", "translation",
-        "translate text", "prompt translate",
+        "google translate", "googletranslate", "translate", "translation", "translate text", "prompt translate", "Google翻译", "翻译", "翻译文本", "谷歌翻译",
     ],
     QG_TextEditOutput: [
-        "text", "text box", "textbox", "text edit", "prompt box",
+        "text", "text box", "textbox", "text edit", "prompt box", "文本", "文本框", "编辑文本", "输入框",
     ],
     QG_TextOverlayImage: [
-        "text overlay", "textoverlay", "overlay text", "draw text",
-        "text on image", "caption",
-        "text",
+        "text overlay", "textoverlay", "overlay text", "draw text", "text on image", "caption", "text", "文字叠加图像", "文字叠加", "图上加字", "加字",
     ],
     QG_TextReplace: [
-        "text replace", "textreplace", "find and replace", "search replace",
-        "string replace", "literal replace", "regex replace", "regex",
-        "replace text",
-        "text",
+        "text replace", "textreplace", "find and replace", "search replace", "string replace", "literal replace", "regex replace", "regex", "replace text", "text", "文本替换", "替换", "查找替换", "批量替换",
     ],
     QG_TextSplit: [
-        "text split", "textsplit", "split text", "split by delimiter",
-        "string split", "chunk text",
-        "text",
+        "text split", "textsplit", "split text", "split by delimiter", "string split", "chunk text", "text", "文本按分隔符分割", "分割文本", "拆分文本", "切分", "打散",
     ],
     QG_TextConcat: [
-        "text concat", "textconcat", "concatenate", "concat text", "merge text",
-        "join text", "combine text", "string concat",
-        "text",
+        "text concat", "textconcat", "concatenate", "concat text", "merge text", "join text", "combine text", "string concat", "text", "文本合并", "合并文本", "拼接文本", "连接文本",
     ],
     QG_AnySwitch: [
-        "any switch", "anyswitch", "switch", "type switch", "merge inputs",
+        "any switch", "anyswitch", "switch", "type switch", "merge inputs", "任意切换", "切换", "通路切换", "选择器",
     ],
     QG_IfElse: [
-        "if else", "ifelse", "conditional", "condition", "branch",
-        "if then else",
+        "if else", "ifelse", "conditional", "condition", "branch", "if then else", "是否判断", "判断", "条件", "分支",
     ],
     QG_Exists: [
-        "exists", "exist", "existence", "has value", "hasvalue", "presence",
-        "is none", "not none", "none", "null", "nil", "empty", "is empty",
-        "missing", "optional", "passthrough", "pass through", "check",
-        "is connected", "connected",
+        "exists", "exist", "existence", "has value", "hasvalue", "presence", "is none", "not none", "none", "null", "nil", "empty", "is empty", "missing", "optional", "passthrough", "pass through", "check", "is connected", "connected", "存在判断", "存在", "判空", "是否为空",
     ],
     QG_RouteBlocker: [
-        "route blocker", "routeblocker", "block", "blocker", "blocked",
-        "mute", "muted", "gate", "bypass", "cut", "skip", "stop",
-        "disable branch", "silence", "execution blocker", "switch off",
+        "route blocker", "routeblocker", "block", "blocker", "blocked", "mute", "muted", "gate", "bypass", "cut", "skip", "stop", "disable branch", "silence", "execution blocker", "switch off", "路由阻断", "阻断", "拦截", "阻断器",
     ],
     QG_BoolToggle: [
-        "bool switch", "boolswitch", "boolean switch", "boolean", "bool",
-        "toggle", "switch", "on off", "master switch", "flag", "gate",
-        "label", "caption", "named switch",
+        "bool switch", "boolswitch", "boolean switch", "boolean", "bool", "toggle", "switch", "on off", "master switch", "flag", "gate", "label", "caption", "named switch", "布尔开关", "开关", "开关按钮", "拨动开关",
     ],
     QG_Number: [
-        "number", "value", "constant", "primitive", "int", "integer",
-        "float", "decimal", "whole number", "double", "steps", "seed",
-        "cfg", "strength", "denoise", "scale",
+        "number", "value", "constant", "primitive", "int", "integer", "float", "decimal", "whole number", "double", "steps", "seed", "cfg", "strength", "denoise", "scale", "intconstant", "int constant", "num", "数值", "数字", "常量", "整数", "浮点数",
     ],
     QG_Slider: [
-        "slider", "range", "range slider", "sliders", "number slider",
-        "numberslider", "value slider", "valueslider", "slide",
-        "number", "value", "constant", "int", "integer", "float", "decimal",
-        "steps", "cfg", "strength", "denoise", "scale", "weight",
+        "slider", "range", "range slider", "sliders", "number slider", "numberslider", "value slider", "valueslider", "slide", "number", "value", "constant", "int", "integer", "float", "decimal", "steps", "cfg", "strength", "denoise", "scale", "weight", "数值滑条", "滑条", "滑块", "拖动条", "拉杆",
     ],
+    // 这个节点也能拼文本（0.9.8 起），把 text/string/format 这层叫留住，
+    // 别让人非去接 TextConcat。
     QG_Math: [
-        "math", "maths", "mathematics", "calculate", "calculator", "calculation",
-        "expression", "formula", "arithmetic", "compute", "equation", "eval",
-        "add", "subtract", "multiply", "divide", "sum", "average", "percent",
-        "number", "value",
-        // 这个节点也能拼文本（0.9.8 起），把这层叫留住，别让人非去接 TextConcat。
-        "text", "string", "textmath", "stringmath", "format", "formatstring",
-        "concat", "concatenate", "join", "template", "prefix", "suffix",
+        "math", "maths", "mathematics", "calculate", "calculator", "calculation", "expression", "formula", "arithmetic", "compute", "equation", "eval", "add", "subtract", "multiply", "divide", "sum", "average", "percent", "number", "value", "text", "string", "textmath", "stringmath", "format", "formatstring", "concat", "concatenate", "join", "template", "prefix", "suffix", "simplemath", "simple math", "simplemath+", "数学运算", "算式", "计算", "表达式", "加减乘除",
     ],
     QG_StringSwitch: [
-        "string switch", "stringswitch", "switch string", "text switch",
-        "prompt switch", "prompt ab", "ab test", "variant",
-        "string",
+        "string switch", "stringswitch", "switch string", "text switch", "prompt switch", "prompt ab", "ab test", "variant", "string", "字符串切换", "文本切换", "二选一", "切换文本",
     ],
     QG_Seed: [
-        "seed", "random seed", "seed control", "seed history",
+        "seed", "random seed", "seed control", "seed history", "种子", "随机种子", "随机数",
     ],
     QG_DisplayAny: [
-        "display any", "displayany", "show any", "debug", "preview any",
-        "inspect",
+        "display any", "displayany", "show any", "debug", "preview any", "inspect", "show text", "showtext", "show anything", "showanything", "showany", "展示任意", "显示任意", "显示文本", "显示内容", "预览任意", "调试显示",
     ],
     QG_RunTimer: [
-        "run timer", "runtimer", "timer", "elapsed time", "stopwatch",
-        "execution time",
+        "run timer", "runtimer", "timer", "elapsed time", "stopwatch", "execution time", "运行计时器", "计时器", "计时", "耗时",
     ],
     QG_WorkflowNote: [
-        "workflow note", "workflownote", "note", "comment", "sticky note",
-        "annotation",
-        "workflow",
+        "workflow note", "workflownote", "note", "comment", "sticky note", "annotation", "workflow", "工作流说明卡", "说明卡", "说明", "注释",
     ],
     QG_WorkflowSwitches: [
-        "workflow switches", "workflowswitches", "switch group", "toggles",
-        "bypass switches",
-        "workflow",
+        "workflow switches", "workflowswitches", "switch group", "toggles", "bypass switches", "workflow", "工作流开关", "开关组", "开关",
     ],
     QG_MaskColorize: [
-        "mask colorize", "maskcolorize", "color mask", "mask to color",
-        "colorize mask",
-        "mask",
+        "mask colorize", "maskcolorize", "color mask", "mask to color", "colorize mask", "mask", "遮罩上色", "遮罩着色", "上色", "遮罩预览",
     ],
     QG_MaskConcat: [
-        "mask concat", "maskconcat", "concat mask", "merge masks",
-        "join masks", "mask combine",
-        "mask",
+        "mask concat", "maskconcat", "concat mask", "merge masks", "join masks", "mask combine", "mask", "遮罩拼接", "遮罩合并", "合并遮罩",
     ],
     QG_ImageCropRotatePad: [
-        "crop", "rotate", "pad", "crop rotate pad", "croprotatepad",
-        "outpaint", "canvas", "straighten", "deskew",
-        "image",
+        "crop", "rotate", "pad", "crop rotate pad", "croprotatepad", "outpaint", "canvas", "straighten", "deskew", "image", "图像裁剪旋转补边", "裁剪旋转补边", "裁剪", "旋转", "补边", "扩图",
     ],
     QG_ColorCorrect: [
-        "color correct", "colour correct", "color corrector", "color correction",
-        "colour correction", "colorcorrection", "color grade", "colour grade",
-        "color grading", "grading", "color adjust", "color balance",
-        "temperature", "white balance", "tint", "hue", "hue rotate", "brightness",
-        "contrast", "saturation", "desaturate", "gamma", "exposure",
-        "image",
+        "color correct", "colour correct", "color corrector", "color correction", "colour correction", "colorcorrection", "color grade", "colour grade", "color grading", "grading", "color adjust", "color balance", "temperature", "white balance", "tint", "hue", "hue rotate", "brightness", "contrast", "saturation", "desaturate", "gamma", "exposure", "image", "颜色校正", "校色", "色彩校正", "调色",
     ],
     QG_ColorMatch: [
-        "color match", "colour match", "color matching", "colour matching",
-        "color transfer", "colour transfer", "colortransfer", "match color",
-        "match colour", "match reference color", "recolor", "recolour",
-        "palette transfer", "color harmonization", "colour harmonization",
-        "color harmonisation", "reinhard", "mkl", "histogram match", "hist match",
-        "reference color", "color palette",
-        "image", "color",
+        "color match", "colour match", "color matching", "colour matching", "color transfer", "colour transfer", "colortransfer", "match color", "match colour", "match reference color", "recolor", "recolour", "palette transfer", "color harmonization", "colour harmonization", "color harmonisation", "reinhard", "mkl", "histogram match", "hist match", "reference color", "color palette", "image", "color", "颜色匹配", "配色", "色彩匹配", "统一色调",
     ],
     QG_ImageResize: [
-        "image resize", "imageresize", "resize", "scale image", "image scale",
-        "upscale",
-        "image",
+        "image resize", "imageresize", "resize", "scale image", "image scale", "upscale", "image", "图像缩放", "缩放", "改尺寸", "放大", "缩小",
     ],
     QG_LoadImage: [
-        "load image", "open image", "image input", "upload image", "image source",
-        "rgba", "alpha", "transparent", "cutout", "png alpha", "filename",
-        "keep alpha", "transparent channel", "mask",
-        "mask editor", "paint mask", "draw mask", "brush mask", "inpaint mask",
-        "加载图像", "上传图像", "选图", "透明通道", "保留透明通道", "抠图", "遮罩",
-        "遮罩编辑器", "编辑遮罩", "画遮罩", "涂遮罩", "画笔遮罩", "局部重绘遮罩",
+        "load image", "open image", "image input", "upload image", "image source", "rgba", "alpha", "transparent", "cutout", "png alpha", "filename", "keep alpha", "transparent channel", "mask", "mask editor", "paint mask", "draw mask", "brush mask", "inpaint mask", "加载图像", "上传图像", "选图", "透明通道", "保留透明通道", "抠图", "遮罩", "遮罩编辑器", "编辑遮罩", "画遮罩", "涂遮罩", "画笔遮罩", "局部重绘遮罩", "加载图片", "读图",
     ],
     QG_ImageOrLatentSize: [
-        "image size", "latent size", "get size", "resolution", "width height",
-        "dimensions", "size info",
-        "image", "size",
+        "image size", "latent size", "get size", "resolution", "width height", "dimensions", "size info", "image", "size", "图像或Latent尺寸", "读尺寸", "取尺寸", "宽高",
     ],
     QG_ImageWatermark: [
-        "watermark", "image watermark", "water mark", "add watermark", "logo",
-        "stamp",
-        "image",
+        "watermark", "image watermark", "water mark", "add watermark", "logo", "stamp", "image", "图像水印", "水印", "加水印",
     ],
     QG_ImageGrid: [
-        "image grid", "imagegrid", "grid", "tile images", "contact sheet",
-        "collage", "mosaic",
-        "image",
+        "image grid", "imagegrid", "grid", "tile images", "contact sheet", "collage", "mosaic", "image", "宫格图像拼接", "宫格", "拼图", "九宫格", "拼接图像",
     ],
     QG_SizeSelector: [
-        "size selector", "sizeselector", "resolution preset", "aspect ratio",
-        "size picker", "megapixel", "megapixels", "mp",
-        "preset ratio", "adopt ratio", "ratio preset", "ratio",
-        "size",
+        "size selector", "sizeselector", "resolution preset", "aspect ratio", "size picker", "megapixel", "megapixels", "mp", "preset ratio", "adopt ratio", "ratio preset", "ratio", "size", "尺寸选择器", "选尺寸", "尺寸预设",
     ],
+    // 中文名是「空 Latent 分辨率」，中间那个空格会让「空latent」搜不到 ——
+    // 中文用户基本不会敲空格，所以中英文两种写法的无空格变体都要登记。
     QG_EmptyLatentResolution: [
-        // 中文名是「空 Latent 分辨率」，中间那个空格会让「空latent」搜不到 ——
-        // 中文用户基本不会敲空格，所以中英文两种写法的无空格变体都要登记
-        "空latent", "空 latent", "空latent分辨率", "空 latent 分辨率",
-        "空latent图像", "宽高比", "百万像素", "出图尺寸",
-        "empty latent", "emptylatent", "empty latent resolution", "emptylatentresolution",
-        "empty latent image", "latent", "latent resolution", "resolution",
-        "resolution selector", "resolutions", "aspect ratio", "ratio", "preset ratio",
-        "megapixel", "megapixels", "mp", "width height", "dimensions",
-        "batch size", "multiple",
-        "size", "image",
+        "空latent", "空 latent", "空latent分辨率", "空 latent 分辨率", "空latent图像", "宽高比", "百万像素", "出图尺寸", "empty latent", "emptylatent", "empty latent resolution", "emptylatentresolution", "empty latent image", "latent", "latent resolution", "resolution", "resolution selector", "resolutions", "aspect ratio", "ratio", "preset ratio", "megapixel", "megapixels", "mp", "width height", "dimensions", "batch size", "multiple", "size", "image", "空Latent分辨率", "空Latent", "分辨率", "空画布",
     ],
     QG_ImageCompare: [
-        "image compare", "imagecompare", "compare", "ab compare",
-        "before after", "diff", "slide compare",
-        "image",
+        "image compare", "imagecompare", "compare", "ab compare", "before after", "diff", "slide compare", "image", "image comparer", "comparer", "side by side", "compare images", "图像对比", "对比图", "前后对比", "对比", "左右对比",
     ],
     QG_ExportImage: [
-        "save image", "saveimage", "export image", "exportimage",
-        "save", "export", "write image",
-        "jpg", "jpeg", "png", "webp", "quality", "compress",
-        "image",
+        "save image", "saveimage", "export image", "exportimage", "save", "export", "write image", "jpg", "jpeg", "png", "webp", "quality", "compress", "image", "导出图像", "导出", "保存图片", "输出图片",
     ],
     QG_CanvasLabel: [
-        "canvas label", "canvaslabel", "label", "text label", "sticky note",
-        "note", "annotation", "comment", "title", "caption",
-        "text",
+        "canvas label", "canvaslabel", "label", "text label", "sticky note", "note", "annotation", "comment", "title", "caption", "text", "画布标签", "标签", "标题", "便签",
     ],
     QG_MarkdownNote: [
-        "markdown note", "markdownnote", "markdown", "md note", "sticky note",
-        "note", "annotation", "comment", "documentation",
-        "markdown text",
+        "markdown note", "markdownnote", "markdown", "md note", "sticky note", "note", "annotation", "comment", "documentation", "markdown text", "Markdown便签", "便签", "笔记", "备注",
     ],
+    QG_FreeMemory: [
+        "free memory", "freememory", "free vram", "vram", "unload models", "unload", "offload",
+        "empty cache", "clear cache", "purge", "cleanup", "release memory", "clean memory",
+        "释放显存", "清显存", "显存清理", "清理显存", "清空显存", "腾显存", "显存不足", "爆显存",
+        "卸载模型", "清缓存", "清理缓存",
+    ],
+    QG_MaskRefine: [
+        "mask refine", "maskrefine", "refine mask", "grow mask", "shrink mask", "expand mask",
+        "feather", "blur mask", "fill holes", "smooth mask", "levels", "guided filter",
+        "alpha matting", "mask fix", "mask cleanup", "edge refine",
+        "遮罩精修", "精修遮罩", "遮罩羽化", "羽化遮罩", "遮罩扩缩", "扩张遮罩", "收缩遮罩",
+        "补洞", "填洞", "遮罩补洞", "遮罩平滑", "平滑遮罩", "去锯齿", "边缘精修", "导向滤波",
+        "抠像", "色阶", "黑白场", "修遮罩", "遮罩修边",
+    ],
+
 };
 
 export const NODE_ALIAS_COUNT = Object.keys(NODE_ALIASES).length;

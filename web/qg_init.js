@@ -16,10 +16,10 @@
  */
 
 import { app } from "/scripts/app.js";
-import { chainCallback } from "./shared/index.mjs?v=2026102571";
-import { pinNodeWidth } from "./shared/node_width.mjs?v=2026102571";
-import { installComboZh } from "./shared/combo_zh.mjs?v=2026102571";
-import { applyCategoryNames, installCategoryNames } from "./shared/category_zh.mjs?v=2026102571";
+import { chainCallback } from "./shared/index.mjs?v=2026102706";
+import { pinNodeWidth } from "./shared/node_width.mjs?v=2026102706";
+import { installComboZh } from "./shared/combo_zh.mjs?v=2026102706";
+import { applyCategoryNames, installCategoryNames } from "./shared/category_zh.mjs?v=2026102706";
 
 app.registerExtension({
     name: "QG.tools.init",
@@ -28,6 +28,9 @@ app.registerExtension({
         // 下拉选项的中文标签 + 老存档中文值迁移（见 shared/combo_zh.mjs）
         installComboZh(nodeType, nodeData);
     },
+    // 🔴 右键「测量尺寸」不在这里：它已经独立成 ComfyUI-QG-NodeMeasure 插件了。
+    // 两边都挂 getNodeMenuItems 会让右键菜单出现两项「测量尺寸」。
+    // 本插件只负责把尺寸表挂到 globalThis.__QG_SIZE_TABLE__ 供那边读取（见 shared/node_width.mjs）。
     async setup() {
         // 分类名要在节点注册完之后才改得动。先改现有注册表，再包住 registerNodeType
         // 兜住「本扩展之后才注册」的节点（扩展的 setup 是逐个跑的）。开菜单前再补一次

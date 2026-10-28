@@ -5,10 +5,10 @@
 // entry points live in web/<node>/index.js and import from here.
 
 import { app } from "/scripts/app.js";
-import { zh } from "./zh.mjs?v=2026102571";
+import { zh } from "./zh.mjs?v=2026102706";
 
 // Re-exported so node entry points keep a single shared import path.
-export { zh, zhOn, zhCount, zhSep, zhEnd } from "./zh.mjs?v=2026102571";
+export { zh, zhOn, zhCount, zhSep, zhEnd } from "./zh.mjs?v=2026102706";
 
 // Kept in lockstep with __version__ in the pack's __init__.py by hand.
 // The backend does not serve a matching version endpoint here, so this

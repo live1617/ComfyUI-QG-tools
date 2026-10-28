@@ -7,31 +7,131 @@
     "ported": "搬运 —— 整段照抄上游代码，只改类名 / 节点 ID / 分类 / 显示名 / 中文文案，逻辑一行没动"
   },
   "counts": {
-    "total": 39,
+    "total": 41,
     "original": 15,
-    "ported": 24
+    "ported": 26
   },
   "upstreams": {
-    "ComfyUI-AusBoss": {"name": "ComfyUI-AusBoss", "author": "ausboss", "license": "MIT", "repo": "https://github.com/ausboss/ComfyUI-AusBoss", "license_file": "licenses/ComfyUI-AusBoss-LICENSE.txt"},
-    "ComfyUI_Muye": {"name": "ComfyUI-Muye-nodes", "author": "muyexiuluo (Muye)", "license": "MIT", "repo": "https://github.com/muyexiuluo/ComfyUI-Muye-nodes", "license_file": "licenses/ComfyUI-Muye-nodes-LICENSE.txt"},
-    "ComfyUI_Comfyroll_CustomNodes": {"name": "ComfyUI_Comfyroll_CustomNodes", "author": "Suzie1 (Comfyroll)", "license": "MIT", "repo": "https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes", "license_file": "licenses/ComfyUI_Comfyroll_CustomNodes-LICENSE.txt"},
-    "ComfyUI_Custom_Nodes_AlekPet": {"name": "ComfyUI_Custom_Nodes_AlekPet", "author": "AlekPet", "license": "MIT", "repo": "https://github.com/AlekPet/ComfyUI_Custom_Nodes_AlekPet", "license_file": "licenses/ComfyUI-AlekPet-LICENSE.txt"},
-    "rgthree-comfy": {"name": "rgthree-comfy", "author": "rgthree", "license": "MIT", "repo": "https://github.com/rgthree/rgthree-comfy"},
-    "孤海工具箱 Goohaitools-comfyui": {"name": "孤海工具箱（Goohaitools-comfyui）", "author": "孤海 (Goohaitools)", "license": "GPL-3.0", "repo": "", "license_file": "LICENSE"},
-    "ComfyUI-Easy-Use": {"name": "ComfyUI-Easy-Use", "author": "yolain", "license": "GPL-3.0", "repo": "https://github.com/yolain/ComfyUI-Easy-Use", "license_file": "LICENSE"},
-    "ComfyUI-Crystools": {"name": "ComfyUI-Crystools", "author": "crystian", "license": "GPL-3.0", "repo": "https://github.com/crystian/ComfyUI-Crystools", "license_file": "LICENSE", "note": "只作原创节点的参考对象，代码未搬"},
-    "comfyui-art-venture": {"name": "comfyui-art-venture", "author": "kaibioinfo", "license": "MIT", "repo": "https://github.com/kaibioinfo/comfyui-art-venture", "note": "只作原创节点的参考对象，代码未搬"},
-    "ComfyUI-MD-Reader": {"name": "ComfyUI-MD-Reader", "author": "本插件作者（自有旧插件）", "license": "MIT", "repo": "", "own": true},
-    "ComfyUI-TripleLoader": {"name": "ComfyUI-TripleLoader", "author": "本插件作者（自有旧插件）", "license": "MIT", "repo": "", "own": true},
-    "ComfyUI-EmptyLatentResolution": {"name": "ComfyUI-EmptyLatentResolution", "author": "本插件作者（自有旧插件）", "license": "MIT", "repo": "", "own": true}
+    "ComfyUI-AusBoss": {
+      "name": "ComfyUI-AusBoss",
+      "author": "ausboss",
+      "license": "MIT",
+      "repo": "https://github.com/ausboss/ComfyUI-AusBoss",
+      "license_file": "licenses/ComfyUI-AusBoss-LICENSE.txt"
+    },
+    "ComfyUI_Muye": {
+      "name": "ComfyUI-Muye-nodes",
+      "author": "muyexiuluo (Muye)",
+      "license": "MIT",
+      "repo": "https://github.com/muyexiuluo/ComfyUI-Muye-nodes",
+      "license_file": "licenses/ComfyUI-Muye-nodes-LICENSE.txt"
+    },
+    "ComfyUI_Comfyroll_CustomNodes": {
+      "name": "ComfyUI_Comfyroll_CustomNodes",
+      "author": "Suzie1 (Comfyroll)",
+      "license": "MIT",
+      "repo": "https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes",
+      "license_file": "licenses/ComfyUI_Comfyroll_CustomNodes-LICENSE.txt"
+    },
+    "ComfyUI_Custom_Nodes_AlekPet": {
+      "name": "ComfyUI_Custom_Nodes_AlekPet",
+      "author": "AlekPet",
+      "license": "MIT",
+      "repo": "https://github.com/AlekPet/ComfyUI_Custom_Nodes_AlekPet",
+      "license_file": "licenses/ComfyUI-AlekPet-LICENSE.txt"
+    },
+    "rgthree-comfy": {
+      "name": "rgthree-comfy",
+      "author": "rgthree",
+      "license": "MIT",
+      "repo": "https://github.com/rgthree/rgthree-comfy"
+    },
+    "孤海工具箱 Goohaitools-comfyui": {
+      "name": "孤海工具箱（Goohaitools-comfyui）",
+      "author": "孤海 (Goohaitools)",
+      "license": "GPL-3.0",
+      "repo": "https://github.com/goohai/Goohaitools-comfyui",
+      "license_file": "LICENSE"
+    },
+    "ComfyUI-Easy-Use": {
+      "name": "ComfyUI-Easy-Use",
+      "author": "yolain",
+      "license": "GPL-3.0",
+      "repo": "https://github.com/yolain/ComfyUI-Easy-Use",
+      "license_file": "LICENSE"
+    },
+    "ComfyUI-Crystools": {
+      "name": "ComfyUI-Crystools",
+      "author": "crystian",
+      "license": "GPL-3.0",
+      "repo": "https://github.com/crystian/ComfyUI-Crystools",
+      "license_file": "LICENSE",
+      "note": "只作原创节点的参考对象，代码未搬"
+    },
+    "comfyui-art-venture": {
+      "name": "comfyui-art-venture",
+      "author": "kaibioinfo",
+      "license": "MIT",
+      "repo": "https://github.com/kaibioinfo/comfyui-art-venture",
+      "note": "只作原创节点的参考对象，代码未搬"
+    },
+    "ComfyUI-MD-Reader": {
+      "name": "ComfyUI-MD-Reader",
+      "author": "本插件作者（自有旧插件）",
+      "license": "MIT",
+      "repo": "",
+      "own": true
+    },
+    "ComfyUI-TripleLoader": {
+      "name": "ComfyUI-TripleLoader",
+      "author": "本插件作者（自有旧插件）",
+      "license": "MIT",
+      "repo": "",
+      "own": true
+    },
+    "ComfyUI-EmptyLatentResolution": {
+      "name": "ComfyUI-EmptyLatentResolution",
+      "author": "本插件作者（自有旧插件）",
+      "license": "MIT",
+      "repo": "",
+      "own": true
+    }
   },
   "nodes": [
+    {
+      "id": "QG_FreeMemory",
+      "display": "Free Memory",
+      "file": "nodes/qg_free_memory.py",
+      "origin": "ported",
+      "upstream": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "Free Memory 🆎",
+        "license": "MIT"
+      },
+      "note": "四步释放整段照搬（卸模型 / 清模型缓存 / gc / 清 CUDA 缓存），每步独立 fail-soft；通配类型用 AusBoss 的 str 子类写法"
+    },
+    {
+      "id": "QG_MaskRefine",
+      "display": "Mask Refine",
+      "file": "nodes/qg_mask_refine.py",
+      "origin": "ported",
+      "upstream": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "Mask Refine 🆎",
+        "license": "MIT"
+      },
+      "note": "扩缩 / 补洞 / 平滑 / 羽化 / 边缘精修 / 色阶六步顺序与算法整组搬入（逐样本 max_pool、边界漫水、可分离高斯都保留）；scipy 仍是可选加速，没装走 torch fallback；预览改用本插件的 temp PNG 写法"
+    },
     {
       "id": "QG_LoraLoader",
       "display": "LoRA Loader",
       "file": "nodes/qg_lora_loader.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI-AusBoss", "node": "LoRA Loader 🆎", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "LoRA Loader 🆎",
+        "license": "MIT"
+      },
       "note": "六条 HTTP 路由全部保留（list / thumb / info / hash / civitai / triggers）"
     },
     {
@@ -39,7 +139,11 @@
       "display": "Image Crop + Rotate + Pad",
       "file": "nodes/qg_image_crop_rotate_pad.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI-AusBoss", "node": "Image Crop + Rotate + Pad 🆎", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "Image Crop + Rotate + Pad 🆎",
+        "license": "MIT"
+      },
       "note": "编辑器与几何换算整组搬入（10 个 Python 闭包 + 前端闭包 16 个）"
     },
     {
@@ -47,7 +151,11 @@
       "display": "Workflow Note",
       "file": "nodes/qg_workflow_note.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI-AusBoss", "node": "Workflow Note 🆎", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "Workflow Note 🆎",
+        "license": "MIT"
+      },
       "note": ""
     },
     {
@@ -55,7 +163,11 @@
       "display": "Workflow Switches",
       "file": "nodes/qg_workflow_switches.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI-AusBoss", "node": "Workflow Switches 🆎", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "Workflow Switches 🆎",
+        "license": "MIT"
+      },
       "note": ""
     },
     {
@@ -63,7 +175,11 @@
       "display": "Run Timer",
       "file": "nodes/qg_run_timer.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI-AusBoss", "node": "Run Timer", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "Run Timer",
+        "license": "MIT"
+      },
       "note": ""
     },
     {
@@ -71,7 +187,11 @@
       "display": "图像对比",
       "file": "nodes/qg_image_compare.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI-AusBoss", "node": "Image Compare A/B 🆎", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "Image Compare A/B 🆎",
+        "license": "MIT"
+      },
       "note": "上游约 3900 行，只取滑动 / A / B / 擦除四种模式那部分"
     },
     {
@@ -79,7 +199,11 @@
       "display": "种子",
       "file": "nodes/qg_seed.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI-AusBoss + rgthree-comfy", "node": "Seed 🆎 / Seed", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI-AusBoss + rgthree-comfy",
+        "node": "Seed 🆎 / Seed",
+        "license": "MIT"
+      },
       "note": "卡片界面来自 AusBoss，取值与随机逻辑来自 rgthree；老存档 -1/-2/-3 在 onConfigure 翻译"
     },
     {
@@ -87,7 +211,11 @@
       "display": "Text",
       "file": "nodes/qg_text_edit_output.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Muye", "node": "Text Edit Output", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Muye",
+        "node": "Text Edit Output",
+        "license": "MIT"
+      },
       "note": "v0.6.0；显示名从「文本」改成「Text」是刻意的"
     },
     {
@@ -95,7 +223,11 @@
       "display": "图像水印",
       "file": "nodes/qg_image_watermark.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Muye", "node": "AddImageWatermark", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Muye",
+        "node": "AddImageWatermark",
+        "license": "MIT"
+      },
       "note": "v0.8.5"
     },
     {
@@ -103,7 +235,11 @@
       "display": "文字叠加图像",
       "file": "nodes/qg_text_overlay_image.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Muye", "node": "TextOverlayImage", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Muye",
+        "node": "TextOverlayImage",
+        "license": "MIT"
+      },
       "note": "v0.8.5"
     },
     {
@@ -111,7 +247,11 @@
       "display": "宫格图像拼接",
       "file": "nodes/qg_image_grid.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Muye", "node": "MuyeGridImageConcat", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Muye",
+        "node": "MuyeGridImageConcat",
+        "license": "MIT"
+      },
       "note": "v0.8.5；OUTPUT_NODE"
     },
     {
@@ -119,7 +259,11 @@
       "display": "遮罩上色",
       "file": "nodes/qg_mask_colorize.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Muye", "node": "MaskColorize", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Muye",
+        "node": "MaskColorize",
+        "license": "MIT"
+      },
       "note": "v0.8.5"
     },
     {
@@ -127,7 +271,11 @@
       "display": "遮罩拼接",
       "file": "nodes/qg_mask_concat.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Muye", "node": "MaskConcatenate", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Muye",
+        "node": "MaskConcatenate",
+        "license": "MIT"
+      },
       "note": "v0.8.5"
     },
     {
@@ -135,7 +283,11 @@
       "display": "文本按分隔符分割",
       "file": "nodes/qg_text_split.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Muye", "node": "TextSplitByDelimiterEnhanced", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Muye",
+        "node": "TextSplitByDelimiterEnhanced",
+        "license": "MIT"
+      },
       "note": "v0.8.5"
     },
     {
@@ -143,7 +295,11 @@
       "display": "尺寸选择器",
       "file": "nodes/qg_size_selector.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Muye", "node": "MuyeSizeSelector", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Muye",
+        "node": "MuyeSizeSelector",
+        "license": "MIT"
+      },
       "note": "v0.8.5；latent 尺寸必须是 8 的倍数"
     },
     {
@@ -152,7 +308,12 @@
       "file": "nodes/qg_empty_latent_resolution.py",
       "origin": "original",
       "upstream": null,
-      "reference": {"plugin": "ComfyUI-EmptyLatentResolution", "node": "EmptyLatentResolution", "license": "MIT", "relation": "own"},
+      "reference": {
+        "plugin": "ComfyUI-EmptyLatentResolution",
+        "node": "EmptyLatentResolution",
+        "license": "MIT",
+        "relation": "own"
+      },
       "note": "把官方 ResolutionSelector（比例 + 百万像素 → 宽高）与 EmptyLatentImage（宽高 + 批量 → LATENT）合成一个节点，省掉中间两根线。尺寸算法与 ResolutionSelector 逐行一致（同样的 sqrt 缩放与 multiple 取整，128 组参数实测逐个相同），latent 结构与 EmptyLatentImage 一致（4 通道、intermediate_device / intermediate_dtype、downscale_ratio_spacial=8）；另给 RESOLUTION_PREVIEW 预览控件（optional，三个 *_widget 指向真实输入）"
     },
     {
@@ -160,7 +321,11 @@
       "display": "文本合并",
       "file": "nodes/qg_text_concat.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Comfyroll_CustomNodes", "node": "CR_TextConcatenate", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Comfyroll_CustomNodes",
+        "node": "CR_TextConcatenate",
+        "license": "MIT"
+      },
       "note": "两个文本输入都是纯槽（forceInput），分隔符是控件，不做任何 trim"
     },
     {
@@ -168,7 +333,11 @@
       "display": "文本替换",
       "file": "nodes/qg_text_replace.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Comfyroll_CustomNodes", "node": "CR_TextReplace", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Comfyroll_CustomNodes",
+        "node": "CR_TextReplace",
+        "license": "MIT"
+      },
       "note": "v0.8.5 起搬的是 Muye BatchTextReplace，v0.9.4 换成 Comfyroll；旧存档由 web/text_replace/ 自动迁移"
     },
     {
@@ -177,7 +346,12 @@
       "file": "nodes/qg_color_correct.py",
       "origin": "original",
       "upstream": null,
-      "reference": {"plugin": "comfyui-art-venture", "node": "ColorCorrect", "license": "MIT", "relation": "idea"},
+      "reference": {
+        "plugin": "comfyui-art-venture",
+        "node": "ColorCorrect",
+        "license": "MIT",
+        "relation": "idea"
+      },
       "note": "只沿用六个滑条的参数划分与作用顺序（色温/色调/明度/对比度/饱和度/伽马），实现整段自己写：纯 torch、全 float、不依赖 cv2，并修掉参考实现的三处问题（逐帧 8bit 往返导致色阶、饱和度实际改的是 HLS 明度通道、色温乘单通道会连带变亮）"
     },
     {
@@ -193,7 +367,11 @@
       "display": "图像缩放",
       "file": "nodes/qg_image_resize.py",
       "origin": "ported",
-      "upstream": {"plugin": "rgthree-comfy", "node": "RgthreeImageResize", "license": "MIT"},
+      "upstream": {
+        "plugin": "rgthree-comfy",
+        "node": "RgthreeImageResize",
+        "license": "MIT"
+      },
       "note": "复用 ComfyUI 自带的 common_upscale，没有额外依赖"
     },
     {
@@ -201,7 +379,11 @@
       "display": "图像或 Latent 尺寸",
       "file": "nodes/qg_image_or_latent_size.py",
       "origin": "ported",
-      "upstream": {"plugin": "rgthree-comfy", "node": "Image or Latent Size", "license": "MIT"},
+      "upstream": {
+        "plugin": "rgthree-comfy",
+        "node": "Image or Latent Size",
+        "license": "MIT"
+      },
       "note": ""
     },
     {
@@ -209,7 +391,11 @@
       "display": "Google Translate",
       "file": "nodes/qg_google_translate.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI_Custom_Nodes_AlekPet", "node": "GoogleTranslateTextNode", "license": "MIT"},
+      "upstream": {
+        "plugin": "ComfyUI_Custom_Nodes_AlekPet",
+        "node": "GoogleTranslateTextNode",
+        "license": "MIT"
+      },
       "note": "上游依赖 googletrans；这里用 requests 直连同一批端点，保持零新增依赖"
     },
     {
@@ -217,7 +403,11 @@
       "display": "任意切换",
       "file": "nodes/qg_any_switch.py",
       "origin": "ported",
-      "upstream": {"plugin": "孤海工具箱 Goohaitools-comfyui", "node": "GoohaiAnySwitch", "license": "GPL-3.0"},
+      "upstream": {
+        "plugin": "孤海工具箱 Goohaitools-comfyui",
+        "node": "GoohaiAnySwitch",
+        "license": "GPL-3.0"
+      },
       "note": "GPL 出处标注保留在文件头"
     },
     {
@@ -225,7 +415,11 @@
       "display": "展示任意",
       "file": "nodes/qg_display_any.py",
       "origin": "ported",
-      "upstream": {"plugin": "孤海工具箱 Goohaitools-comfyui", "node": "GoohaiDisplayAny", "license": "GPL-3.0"},
+      "upstream": {
+        "plugin": "孤海工具箱 Goohaitools-comfyui",
+        "node": "GoohaiDisplayAny",
+        "license": "GPL-3.0"
+      },
       "note": "GPL 出处标注保留在文件头"
     },
     {
@@ -233,7 +427,11 @@
       "display": "路由阻断",
       "file": "nodes/qg_route_blocker.py",
       "origin": "ported",
-      "upstream": {"plugin": "孤海工具箱 Goohaitools-comfyui", "node": "GoohaiRouteBlocker", "license": "GPL-3.0"},
+      "upstream": {
+        "plugin": "孤海工具箱 Goohaitools-comfyui",
+        "node": "GoohaiRouteBlocker",
+        "license": "GPL-3.0"
+      },
       "note": "1:1 搬运，唯一改动是给 any 加 forceInput（不加会在画布上多出一个用不了的控件）"
     },
     {
@@ -241,7 +439,11 @@
       "display": "是否判断",
       "file": "nodes/qg_if_else.py",
       "origin": "ported",
-      "upstream": {"plugin": "ComfyUI-Easy-Use", "node": "easy ifElse", "license": "GPL-3.0"},
+      "upstream": {
+        "plugin": "ComfyUI-Easy-Use",
+        "node": "easy ifElse",
+        "license": "GPL-3.0"
+      },
       "note": "未选中的那一支走 check_lazy_status 不执行"
     },
     {
@@ -250,7 +452,12 @@
       "file": "nodes/qg_md_reader.py",
       "origin": "original",
       "upstream": null,
-      "reference": {"plugin": "ComfyUI-MD-Reader", "node": "MarkdownFileReader", "license": "MIT", "relation": "own"},
+      "reference": {
+        "plugin": "ComfyUI-MD-Reader",
+        "node": "MarkdownFileReader",
+        "license": "MIT",
+        "relation": "own"
+      },
       "note": "扫 input（4 层）与旁边 md / markdown / prompts / prompt 目录；节点内带预览、放大窗与一键复制"
     },
     {
@@ -259,7 +466,12 @@
       "file": "nodes/qg_triple_loader.py",
       "origin": "original",
       "upstream": null,
-      "reference": {"plugin": "ComfyUI-TripleLoader", "node": "TripleLoader", "license": "MIT", "relation": "own"},
+      "reference": {
+        "plugin": "ComfyUI-TripleLoader",
+        "node": "TripleLoader",
+        "license": "MIT",
+        "relation": "own"
+      },
       "note": "import 期就实例化内置 UNET / CLIP / VAE Loader"
     },
     {
@@ -268,7 +480,12 @@
       "file": "nodes/qg_string_switch.py",
       "origin": "original",
       "upstream": null,
-      "reference": {"plugin": "ComfyUI-Crystools", "node": "Switch string [Crystools]", "license": "GPL-3.0", "relation": "idea"},
+      "reference": {
+        "plugin": "ComfyUI-Crystools",
+        "node": "Switch string [Crystools]",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      },
       "note": "只借「两个分支是可编辑框而不是槽」这个思路，文案也全部重写"
     },
     {
@@ -341,48 +558,256 @@
       "file": "nodes/qg_load_image.py",
       "origin": "original",
       "upstream": null,
-      "reference": {"plugin": "Goohaitools-comfyui", "node": "加载图像", "license": "GPL-3.0", "relation": "idea"},
+      "reference": {
+        "plugin": "Goohaitools-comfyui",
+        "node": "加载图像",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      },
       "note": "契约照孤海那支定：两个输出（图像 / 遮罩）、一个「保留透明通道」开关、编辑器存「原图副本 + alpha 带遮罩的成品」两个文件、读回时用副本的 alpha 换掉成品的 alpha，所以遮罩默认不进画面。带色图做成可选开关（孤海是二选一的档位），颜色与浓度直接吃编辑器里的九色板和透明度滑块，存盘时回写到这两个控件。实现自写：配对靠文件名里的 13 位时间戳（孤海靠像素比对 + 修改时间反查），只写两个文件，读写复用 _qg_media_helpers"
     }
   ],
   "sections": [
-    {"anchor": "## Load Image", "nodes": ["QG_LoadImage"]},
-    {"anchor": "## Image Crop + Rotate + Pad", "nodes": ["QG_ImageCropRotatePad"]},
-    {"anchor": "## LoRA Loader", "nodes": ["QG_LoraLoader"]},
-    {"anchor": "## 模型加载器", "nodes": ["QG_TripleLoader"]},
-    {"anchor": "## Workflow Note", "nodes": ["QG_WorkflowNote"]},
-    {"anchor": "## Workflow Switches", "nodes": ["QG_WorkflowSwitches"]},
-    {"anchor": "## Run Timer", "nodes": ["QG_RunTimer"]},
-    {"anchor": "## 加载文档", "nodes": ["QG_MDReader"]},
-    {"anchor": "## Text（文本）", "nodes": ["QG_TextEditOutput"]},
-    {"anchor": "## 任意切换", "nodes": ["QG_AnySwitch"]},
-    {"anchor": "## 展示任意", "nodes": ["QG_DisplayAny"]},
-    {"anchor": "## 是否判断", "nodes": ["QG_IfElse"]},
-    {"anchor": "## 存在判断", "nodes": ["QG_Exists"]},
-    {"anchor": "## 路由阻断", "nodes": ["QG_RouteBlocker"]},
-    {"anchor": "## 字符串切换", "nodes": ["QG_StringSwitch"]},
-    {"anchor": "## 布尔开关", "nodes": ["QG_BoolToggle"]},
-    {"anchor": "## 数值（整数", "nodes": ["QG_Number"]},
-    {"anchor": "## 数值滑条", "nodes": ["QG_Slider"]},
-    {"anchor": "## 数学运算", "nodes": ["QG_Math"]},
-    {"anchor": "## 种子（一个数字单独走一根线）", "nodes": ["QG_Seed"]},
-    {"anchor": "## 颜色校正（六个滑条走完调色）", "nodes": ["QG_ColorCorrect"]},
-    {"anchor": "## 颜色匹配（把一张图的配色搬到另一张）", "nodes": ["QG_ColorMatch"]},
-    {"anchor": "## 图像水印", "nodes": ["QG_ImageWatermark"]},
-    {"anchor": "## 文字叠加图像", "nodes": ["QG_TextOverlayImage"]},
-    {"anchor": "## 宫格图像拼接", "nodes": ["QG_ImageGrid"]},
-    {"anchor": "## 遮罩上色", "nodes": ["QG_MaskColorize"]},
-    {"anchor": "## 遮罩拼接", "nodes": ["QG_MaskConcat"]},
-    {"anchor": "## 文本替换", "nodes": ["QG_TextReplace"]},
-    {"anchor": "## 文本按分隔符分割", "nodes": ["QG_TextSplit"]},
-    {"anchor": "## 文本合并（两段拼一段）", "nodes": ["QG_TextConcat"]},
-    {"anchor": "## Google 翻译（提示词对翻）", "nodes": ["QG_GoogleTranslateText"]},
-    {"anchor": "## 尺寸选择器", "nodes": ["QG_SizeSelector"]},
-    {"anchor": "## 空 Latent 分辨率（比例 + 百万像素一步出 latent）", "nodes": ["QG_EmptyLatentResolution"]},
-    {"anchor": "## 图像缩放（像素或百分比，crop / pad / contain）", "nodes": ["QG_ImageResize"]},
-    {"anchor": "## 图像或 Latent 尺寸（一个入口读宽高）", "nodes": ["QG_ImageOrLatentSize"]},
-    {"anchor": "## 图像对比", "nodes": ["QG_ImageCompare"]},
-    {"anchor": "## 导出图像（JPEG / PNG / WEBP，画质就在保存这一步）", "nodes": ["QG_ExportImage"]},
-    {"anchor": "## 画布标签", "nodes": ["QG_CanvasLabel", "QG_MarkdownNote"]}
+    {
+      "anchor": "## Load Image",
+      "nodes": [
+        "QG_LoadImage"
+      ]
+    },
+    {
+      "anchor": "## Image Crop + Rotate + Pad",
+      "nodes": [
+        "QG_ImageCropRotatePad"
+      ]
+    },
+    {
+      "anchor": "## LoRA Loader",
+      "nodes": [
+        "QG_LoraLoader"
+      ]
+    },
+    {
+      "anchor": "## 模型加载器",
+      "nodes": [
+        "QG_TripleLoader"
+      ]
+    },
+    {
+      "anchor": "## Workflow Note",
+      "nodes": [
+        "QG_WorkflowNote"
+      ]
+    },
+    {
+      "anchor": "## Workflow Switches",
+      "nodes": [
+        "QG_WorkflowSwitches"
+      ]
+    },
+    {
+      "anchor": "## Run Timer",
+      "nodes": [
+        "QG_RunTimer"
+      ]
+    },
+    {
+      "anchor": "## 加载文档",
+      "nodes": [
+        "QG_MDReader"
+      ]
+    },
+    {
+      "anchor": "## Text（文本）",
+      "nodes": [
+        "QG_TextEditOutput"
+      ]
+    },
+    {
+      "anchor": "## 任意切换",
+      "nodes": [
+        "QG_AnySwitch"
+      ]
+    },
+    {
+      "anchor": "## 展示任意",
+      "nodes": [
+        "QG_DisplayAny"
+      ]
+    },
+    {
+      "anchor": "## 是否判断",
+      "nodes": [
+        "QG_IfElse"
+      ]
+    },
+    {
+      "anchor": "## 存在判断",
+      "nodes": [
+        "QG_Exists"
+      ]
+    },
+    {
+      "anchor": "## 路由阻断",
+      "nodes": [
+        "QG_RouteBlocker"
+      ]
+    },
+    {
+      "anchor": "## 字符串切换",
+      "nodes": [
+        "QG_StringSwitch"
+      ]
+    },
+    {
+      "anchor": "## 布尔开关",
+      "nodes": [
+        "QG_BoolToggle"
+      ]
+    },
+    {
+      "anchor": "## 数值（整数",
+      "nodes": [
+        "QG_Number"
+      ]
+    },
+    {
+      "anchor": "## 数值滑条",
+      "nodes": [
+        "QG_Slider"
+      ]
+    },
+    {
+      "anchor": "## 数学运算",
+      "nodes": [
+        "QG_Math"
+      ]
+    },
+    {
+      "anchor": "## 种子（一个数字单独走一根线）",
+      "nodes": [
+        "QG_Seed"
+      ]
+    },
+    {
+      "anchor": "## 颜色校正（六个滑条走完调色）",
+      "nodes": [
+        "QG_ColorCorrect"
+      ]
+    },
+    {
+      "anchor": "## 颜色匹配（把一张图的配色搬到另一张）",
+      "nodes": [
+        "QG_ColorMatch"
+      ]
+    },
+    {
+      "anchor": "## 图像水印",
+      "nodes": [
+        "QG_ImageWatermark"
+      ]
+    },
+    {
+      "anchor": "## 文字叠加图像",
+      "nodes": [
+        "QG_TextOverlayImage"
+      ]
+    },
+    {
+      "anchor": "## 宫格图像拼接",
+      "nodes": [
+        "QG_ImageGrid"
+      ]
+    },
+    {
+      "anchor": "## 遮罩上色",
+      "nodes": [
+        "QG_MaskColorize"
+      ]
+    },
+    {
+      "anchor": "## 遮罩拼接",
+      "nodes": [
+        "QG_MaskConcat"
+      ]
+    },
+    {
+      "anchor": "## 文本替换",
+      "nodes": [
+        "QG_TextReplace"
+      ]
+    },
+    {
+      "anchor": "## 文本按分隔符分割",
+      "nodes": [
+        "QG_TextSplit"
+      ]
+    },
+    {
+      "anchor": "## 文本合并（两段拼一段）",
+      "nodes": [
+        "QG_TextConcat"
+      ]
+    },
+    {
+      "anchor": "## Google 翻译（提示词对翻）",
+      "nodes": [
+        "QG_GoogleTranslateText"
+      ]
+    },
+    {
+      "anchor": "## 尺寸选择器",
+      "nodes": [
+        "QG_SizeSelector"
+      ]
+    },
+    {
+      "anchor": "## 空 Latent 分辨率（比例 + 百万像素一步出 latent）",
+      "nodes": [
+        "QG_EmptyLatentResolution"
+      ]
+    },
+    {
+      "anchor": "## 图像缩放（像素或百分比，crop / pad / contain）",
+      "nodes": [
+        "QG_ImageResize"
+      ]
+    },
+    {
+      "anchor": "## 图像或 Latent 尺寸（一个入口读宽高）",
+      "nodes": [
+        "QG_ImageOrLatentSize"
+      ]
+    },
+    {
+      "anchor": "## 图像对比",
+      "nodes": [
+        "QG_ImageCompare"
+      ]
+    },
+    {
+      "anchor": "## 导出图像（JPEG / PNG / WEBP，画质就在保存这一步）",
+      "nodes": [
+        "QG_ExportImage"
+      ]
+    },
+    {
+      "anchor": "## 画布标签",
+      "nodes": [
+        "QG_CanvasLabel",
+        "QG_MarkdownNote"
+      ]
+    },
+    {
+      "anchor": "## 释放显存",
+      "nodes": [
+        "QG_FreeMemory"
+      ]
+    },
+    {
+      "anchor": "## 遮罩精修",
+      "nodes": [
+        "QG_MaskRefine"
+      ]
+    }
   ]
 }

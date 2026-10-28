@@ -5,6 +5,7 @@
 // and specializes the slot type to the connected input type so links validate.
 
 import { app } from "/scripts/app.js";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
 
 const MAX_INPUTS = 16;
 const MIN_INPUTS = 2;
@@ -15,7 +16,8 @@ const MIN_INPUTS = 2;
 const INPUT_ROW_HEIGHT = 20;
 const BOTTOM_PADDING = 6;
 const INITIAL_HEIGHT = MIN_INPUTS * INPUT_ROW_HEIGHT + BOTTOM_PADDING;
-const INITIAL_SIZE = [240, INITIAL_HEIGHT];
+// 宽度取自 shared/node_width.mjs 的尺寸表（表改了这里跟着变）。
+const INITIAL_SIZE = [sizeFor("QG_AnySwitch").w, INITIAL_HEIGHT];
 const slotName = (index) => `any_${String(index + 1).padStart(2, "0")}`;
 const slotNumber = (index) => String(index + 1).padStart(2, "0");
 const heightForInputCount = (count) =>

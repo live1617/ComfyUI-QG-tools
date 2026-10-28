@@ -11,18 +11,19 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
 import {
   BRAND,
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026102571";
-import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026102571";
-import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026102571";
-import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026102571";
-import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026102571";
-import { savedLinks } from "../shared/compare_erase.mjs?v=2026102571";
-import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026102571";
+} from "../shared/index.mjs?v=2026102706";
+import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026102706";
+import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026102706";
+import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026102706";
+import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026102706";
+import { savedLinks } from "../shared/compare_erase.mjs?v=2026102706";
+import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026102706";
 import {
   compareBadges,
   compareClip,
@@ -32,7 +33,7 @@ import {
   findCompareImages,
   normalizeCompareMode,
   slideFraction,
-} from "../shared/compare.mjs?v=2026102571";
+} from "../shared/compare.mjs?v=2026102706";
 
 const NODE_NAME = "QG_ImageCompare";
 const PANEL_WIDGET = "qgtools_compare_panel";
@@ -42,11 +43,12 @@ const CAPTION_HEIGHT = 24;
 const PANEL_MIN_HEIGHT = 144 + CAPTION_HEIGHT;
 // 节点打开时的高度。面板可以自己长高，所以默认值要写死在这；16:9 上下是
 // 大多数 A/B 图对想要的形状。
+const NODE_WIDTH = sizeFor("QG_ImageCompare").w;
 const DEFAULT_NODE_SIZE = [
-  420,
-  responsivePreviewHeight(420, 132, 520) + PANEL_CHROME + CAPTION_HEIGHT + 60,
+  NODE_WIDTH,
+  responsivePreviewHeight(NODE_WIDTH, 132, 520) + PANEL_CHROME + CAPTION_HEIGHT + 60,
 ];
-const NODE_MIN_WIDTH = 220;
+const NODE_MIN_WIDTH = sizeFor("QG_ImageCompare").minW;
 const CSS_ID = "qgtools-compare-css";
 const ROOT_GAP = 6;
 const BADGE_WIDTH = 22;

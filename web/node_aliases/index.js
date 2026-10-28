@@ -22,7 +22,7 @@ import {
     applyNodeAliasesToLiteGraph,
     pinExactAliasHits,
     NODE_ALIAS_COUNT,
-} from "../shared/node_aliases.mjs?v=2026102571";
+} from "../shared/node_aliases.mjs?v=2026102706";
 
 // 探针和排障用：扩展脚本到底跑没跑、钩子有没有触发，看一眼这个就知道。
 // 只读标记，不参与任何逻辑。

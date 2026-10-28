@@ -33,27 +33,28 @@
 // 滑条顶在右端、输出却是 80，看着就像坏了。
 
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, chainHandler, notifyQgChange } from "../shared/index.mjs?v=2026102571";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026102571";
-import { hideWidget } from "../shared/widget_visibility.mjs?v=2026102571";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
+import { BRAND, chainCallback, chainHandler, notifyQgChange } from "../shared/index.mjs?v=2026102706";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026102706";
+import { hideWidget } from "../shared/widget_visibility.mjs?v=2026102706";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
   vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026102571";
+} from "../shared/vue_mode.mjs?v=2026102706";
 import {
   closeSettingsMenu,
   gearIconSvg,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102571";
+} from "../shared/settings_menu.mjs?v=2026102706";
 
 const NODE_CLASS = "QG_Slider";
 // kind 的取值，必须和 nodes/qg_slider.py 的 KINDS 逐字一致。
 const KIND_INT = "integer";
 const KIND_FLOAT = "float";
 // 节点宽（也是拖拽下限）。320 = 布尔开关的默认宽（那边 BASE_WIDTH 320）。
-const MIN_WIDTH = 320;
+const MIN_WIDTH = sizeFor("QG_Slider").minW;
 // 🔴 经典模式的节点高度，取布尔开关那一档（web/bool_toggle 的 NODE_HEIGHT 58）：
 //    两个节点摆一起完全齐平。canvas 自绘才能做到 —— 走 DOM 卡片时这 58 里
 //    要先扣掉 26 的槽位行和 12 的前端余量，只剩 20 给卡片，装不下一行滑条。

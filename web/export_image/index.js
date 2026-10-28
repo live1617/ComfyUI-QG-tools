@@ -29,17 +29,18 @@
  */
 
 import { app } from "/scripts/app.js";
-import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102571";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102571";
-import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102571";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
+import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102706";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102706";
+import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102706";
 import {
     detachDomWidget,
     installModeWatcher,
     onRenderModeSwitch,
     vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026102571";
-import { zh, wantsChinese } from "../shared/zh.mjs?v=2026102571";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102571";
+} from "../shared/vue_mode.mjs?v=2026102706";
+import { zh, wantsChinese } from "../shared/zh.mjs?v=2026102706";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102706";
 
 const NODE_TYPE = "QG_ExportImage";
 const CSS_ID = "qgtools-export-css";
@@ -48,7 +49,7 @@ const SUMMARY_HEIGHT = 22;
 // 所以这 22px 同时也是槽位行的落脚处。别删。
 // 藏掉控件后节点宽度会从 270 掉到 210 —— 预览按节点宽度缩放，窄了预览就更小，
 // 正好和这次的诉求相反，所以把原来的宽度守住。
-const MIN_WIDTH = 270;
+const MIN_WIDTH = sizeFor("QG_ExportImage").minW;
 const KEEP_ALPHA = "keep-alpha";
 const FLAT_WHITE = "on-white";
 const FLAT_BLACK = "on-black";

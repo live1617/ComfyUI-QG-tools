@@ -1,28 +1,29 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026102571";
-import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "./widget_visibility.mjs?v=2026102571";
-import { mountTransformTrim } from "./transform_trim.mjs?v=2026102571";
-import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026102571";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026102571";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026102571";
-import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=2026102571";
-import { createMediaPicker } from "./media_picker.mjs?v=2026102571";
-import { normalizeFillColor } from "./fill_color.mjs?v=2026102571";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102571";
-import { confirmDiscard } from "./discard_prompt.mjs?v=2026102571";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102571";
-import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026102571";
-import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026102571";
-import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026102571";
-import { createSettle } from "./settle.mjs?v=2026102571";
+import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026102706";
+import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "./widget_visibility.mjs?v=2026102706";
+import { mountTransformTrim } from "./transform_trim.mjs?v=2026102706";
+import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026102706";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026102706";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026102706";
+import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=2026102706";
+import { createMediaPicker } from "./media_picker.mjs?v=2026102706";
+import { normalizeFillColor } from "./fill_color.mjs?v=2026102706";
+import { sizeFor } from "./node_width.mjs?v=2026102706";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102706";
+import { confirmDiscard } from "./discard_prompt.mjs?v=2026102706";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102706";
+import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026102706";
+import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026102706";
+import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026102706";
+import { createSettle } from "./settle.mjs?v=2026102706";
 import {
   INPUT_FOLDER_MODE,
   LOCAL_PATH_MODE,
   normalizeVideoOptions,
   mediaSourceState,
   videoSourceState,
-} from "./video_source_card.mjs?v=2026102571";
+} from "./video_source_card.mjs?v=2026102706";
 import {
   alignChanges,
   aspectMatches,
@@ -77,9 +78,9 @@ import {
   turnedCrop,
   wrapDegrees,
   zoomAround,
-} from "./transform_geometry.mjs?v=2026102571";
-import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026102571";
-import { liftSocket } from "./widget_card.mjs?v=2026102571";
+} from "./transform_geometry.mjs?v=2026102706";
+import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026102706";
+import { liftSocket } from "./widget_card.mjs?v=2026102706";
 
 const HIDDEN_WIDGETS = [
   "image", "upload",
@@ -2454,8 +2455,8 @@ const PANEL_CHROME_ESTIMATE = { image: 262, video: 365, clip: 451 };
 const RESIZE_ROW = 30;
 // Node width minus stage width: the DOM widget frame, panel padding, borders.
 const PANEL_SIDE_INSET = 38;
-// The narrowest face the chip row and the button rows fit on.
-export const TRANSFORM_MIN_WIDTH = 330;
+// The narrowest face the chip row and the button rows fit on. 数值取自尺寸表。
+export const TRANSFORM_MIN_WIDTH = sizeFor("QG_ImageCropRotatePad").minW;
 
 function stageWidth(state) {
   return state.previewCanvas?.clientWidth || Math.max(0, (Number(state.node.size?.[0]) || TRANSFORM_MIN_WIDTH) - PANEL_SIDE_INSET);

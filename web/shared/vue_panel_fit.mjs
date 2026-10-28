@@ -16,7 +16,7 @@
 // 两种做法都不写死「面板以外有多高」：它随前端版式变，且恒等于
 // 「外壳高 − 面板高」—— 面板被夹住时同样成立，所以一次就能收敛。
 
-import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102571";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102706";
 
 /** 外壳上标题栏之外的高度（Vue 里 node.size[1] 不含标题栏，与经典一致）。 */
 export const VUE_TITLE_HEIGHT = 30;

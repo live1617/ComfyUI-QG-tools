@@ -3,9 +3,10 @@
 // Markdown 相关的渲染已拆到独立节点「Markdown 文本」；本节点保持纯文本，不做语法解析。
 // 共用代码：label_common.js（编辑面板 + 画布钩子）
 import { openLabelEditor, registerLabelCanvasHooks, getMeasureCtx, DEFAULT_LABEL_BG,
-         DEFAULT_LABEL_PAD, DEFAULT_LABEL_RADIUS } from "./label_common.mjs?v=2026102571";
-import { syncCanvasLabelMode } from "./canvas_label_dom.mjs?v=2026102571";
-import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102571";
+         DEFAULT_LABEL_PAD, DEFAULT_LABEL_RADIUS } from "./label_common.mjs?v=2026102706";
+import { syncCanvasLabelMode } from "./canvas_label_dom.mjs?v=2026102706";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102706";
+import { sizeFor } from "./node_width.mjs?v=2026102706";
 
 const NODE_TYPE = "QG_CanvasLabel";
 
@@ -166,7 +167,10 @@ class QGCanvasLabel extends LGraphNode {
         const style = (p["italic"] ? "italic " : "") + (p["bold"] ? "bold " : "");
         mctx.font = `${style}${Math.max(fontSize, 1)}px ${quoteFamily(family)}`;
         const met = textMetrics(mctx, lines, Math.max(fontSize, 1));
-        return [met.maxW + padding * 2, met.lineH * lines.length + padding * 2];
+        // 尺寸表里给本节点填了数字就以它为最小宽（现在表里是 null = 完全按文字算）。
+        const pinned = sizeFor(NODE_TYPE).w;
+        const width = met.maxW + padding * 2;
+        return [pinned ? Math.max(width, pinned) : width, met.lineH * lines.length + padding * 2];
     }
 
     // 属性变化时，Vue 模式的 DOM 分支需要重排内容

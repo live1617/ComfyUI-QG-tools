@@ -4,7 +4,7 @@
 // master-toggle memory. DOM wiring lives in js/lora_loader/index.js;
 // everything here runs under node:test.
 
-import { zhCount, zhSep, zhEnd } from "./zh.mjs?v=2026102571";
+import { zhCount, zhSep, zhEnd } from "./zh.mjs?v=2026102706";
 
 export const STRENGTH_MIN = -10;
 export const STRENGTH_MAX = 10;

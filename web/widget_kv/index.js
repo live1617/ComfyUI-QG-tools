@@ -11,12 +11,12 @@
 // survives reordering.
 
 import { app } from "/scripts/app.js";
-import { chainCallback } from "../shared/index.mjs?v=2026102571";
+import { chainCallback } from "../shared/index.mjs?v=2026102706";
 import {
   captureWidgetDefaults,
   planWidgetRestore,
   widgetsToDict,
-} from "../shared/widget_kv.mjs?v=2026102571";
+} from "../shared/widget_kv.mjs?v=2026102706";
 
 // 只登记本插件搬过来的节点：原插件自带的 widget_kv 扩展已经在管它
 // 自己的那些节点，两边都接管会重复序列化 / 恢复同一份 widgets_values。

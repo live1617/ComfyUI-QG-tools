@@ -6,7 +6,11 @@
 #
 # QG_ImageCropRotatePad 会 import av（读视频帧）—— av 是 ComfyUI 核心自己的依赖，
 # 任何一套能跑起来的 ComfyUI 都已经有它，所以这里不用列。
-# scipy / pymatting 只在该节点用到的高级分支里可选调用，缺了有内置回退，也不会报错。
+# scipy 只在补洞那条路上做加速，缺了走纯 torch 回退，结果一样、只是慢一点。
+# QG_MaskRefine 的「边缘精修」是显式的可选功能：选「导向滤波」要 opencv-contrib-python
+# （cv2.ximgproc，普通 opencv-python 没有），选「抠像」要 pymatting。没装不影响这个节点
+# 的其它设置，只在你把那两个模式真的选上时抛一句缺依赖提示 —— 因为那时没有正确的回退
+# 能替代它，静默换算法比报错更坑。
 #
 # 保持本文件为空（仅注释）是有意为之：ComfyUI Manager 会读它，
 # 空文件表示「安装本插件时无需执行 pip install」。

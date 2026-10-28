@@ -11,14 +11,15 @@
 // URLs become buttons or links (the parser already filtered them).
 
 import { api } from "/scripts/api.js";
-import { zh } from "../shared/zh.mjs?v=2026102571";
+import { zh } from "../shared/zh.mjs?v=2026102706";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026102571";
-import { collectGraphNodes } from "../shared/appearance.mjs?v=2026102571";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102571";
-import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026102571";
-import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026102571";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102571";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102706";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026102706";
+import { collectGraphNodes } from "../shared/appearance.mjs?v=2026102706";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102706";
+import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026102706";
+import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026102706";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102706";
 import {
   COMMON_FOLDERS,
   INPUT_FOLDER,
@@ -38,17 +39,17 @@ import {
   rowFromCells,
   serializeNote,
   subfolderOf,
-} from "../shared/workflow_note.mjs?v=2026102571";
-import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026102571";
-import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026102571";
+} from "../shared/workflow_note.mjs?v=2026102706";
+import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026102706";
+import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026102706";
 
 const NODE_CLASS = "QG_WorkflowNote";
 const CSS_ID = "qgtools-workflow-note-css";
 const WIDGET_NAME = "qg_workflow_note_panel";
-const PANEL_MIN_WIDTH = 300;
+const PANEL_MIN_WIDTH = sizeFor("QG_WorkflowNote").minW;
 const CARD_MIN_HEIGHT = 160;
 const BANNER_MIN_HEIGHT = 64;
-const DEFAULT_SIZE = [520, 620];
+const DEFAULT_SIZE = [sizeFor("QG_WorkflowNote").w, heightFor("QG_WorkflowNote") ?? 620];
 const FOLDER_CACHE_MS = 30000;
 // The classic canvas lays a node's first widget 2 px below its title. Only
 // used before the node has been laid out once; after that the widget's own

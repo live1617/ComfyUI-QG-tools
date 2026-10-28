@@ -15,18 +15,19 @@
  */
 
 import { app } from "/scripts/app.js";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
 import {
   BRAND,
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026102571";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102571";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102571";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102571";
-import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102571";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102571";
-import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026102571";
+} from "../shared/index.mjs?v=2026102706";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102706";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102706";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102706";
+import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102706";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102706";
+import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026102706";
 
 const NODE_CLASS = "QG_Seed";
 const CSS_ID = "qgtools-seed-css";
@@ -36,7 +37,9 @@ const PROPERTY = "qg_seed_history"; // [seed, 最新的在最前]
 const ROLL_MAX = 0x4000000000000;
 const CARD_HEIGHT = 158;
 const PANEL_DECLARED_HEIGHT = CARD_HEIGHT + 20; // + 前端套在 DOM 控件外面的内边距
-const NODE_WIDTH = 300;
+const NODE_WIDTH = sizeFor("QG_Seed").w;
+// 拖拽缩放的下限（表里的 minW）。默认宽是 w，两者可以不同。
+const MIN_WIDTH = sizeFor("QG_Seed").minW;
 
 const COPY_SVG =
   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
@@ -375,14 +378,17 @@ function buildPanel(node) {
   // 面板值本来就不进工作流（隐藏的 seed 控件才是真身），这里再关一次序列化，
   // 免得前端按位置把面板值也存进去。
   widget.serialize = false;
-  widget.computeSize = (width) => [
-    Math.max(NODE_WIDTH, Number(width || node.size?.[0] || NODE_WIDTH)),
-    PANEL_DECLARED_HEIGHT,
-  ];
+  // 🔴 litegraph 拖拽缩放时调 `computeSize()` **不带参数**，把返回值的宽度当下限。
+  // 以前这里回落到 `node.size[0]`，等于「下限 = 当前宽」→ 只能拖大、拖不小。
+  widget.computeSize = (width) => {
+    const wanted = Number(width);
+    return [Math.max(MIN_WIDTH, Number.isFinite(wanted) && wanted > 0 ? wanted : MIN_WIDTH), PANEL_DECLARED_HEIGHT];
+  };
   // 固定高度的卡片：Nodes 2.0 里也钉住，别让节点被拉出卡片外的空白。
   pinVuePanelHeight(widget);
-  widget.options.minNodeSize = [NODE_WIDTH, 120];
-  holdNodeMinWidth(widget, NODE_WIDTH);
+  // 宽度下限用表里的 minW（默认宽 w 是新建时的宽度，两者可以不同）
+  widget.options.minNodeSize = [MIN_WIDTH, 120];
+  holdNodeMinWidth(widget, MIN_WIDTH);
 
   render(state);
   node.setSize?.([

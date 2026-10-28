@@ -25,20 +25,21 @@
 // decisions live in js/shared/workflow_switches.mjs under node:test.
 
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026102571";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102571";
-import { holdNodeMinWidth, holdVueNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102571";
-import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026102571";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026102706";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102706";
+import { holdNodeMinWidth, holdVueNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102706";
+import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026102706";
 import {
   DEFAULT_SETTINGS, SETTINGS_PROPERTY, SWITCHES_MAX, TITLE_MAX, addMembers, addSwitch, cardView, choiceState, choosePlan, flipTo, frameBounds, groupBounds, heldCount,
   hideGroup, listedRows, modeMatters, moveSwitch, normalizeSettings, pairValue, placeNodes, readGroups, readSwitches,
   removeMembers, removeSwitch, renameSwitch, restoreGroups, rowLabel, rowsSignature, saveValues, snapshotNode, suggestTitle, switchAllPlan,
   switchPlan, valueAllPlan, valuePlan,
-} from "../shared/workflow_switches.mjs?v=2026102571";
+} from "../shared/workflow_switches.mjs?v=2026102706";
 // Sentences the DOM translator cannot reach: every one here is built at
 // runtime (a name, a count, or a branch), or written onto a title after the
 // fact. zh() looks the whole English sentence up and falls back to it.
-import { zh, zhOn, zhReady, zhSep } from "../shared/zh.mjs?v=2026102571";
+import { zh, zhOn, zhReady, zhSep } from "../shared/zh.mjs?v=2026102706";
 
 const NODE_CLASS = "QG_WorkflowSwitches";
 const CSS_ID = "qgtools-workflow-switches-css";
@@ -47,11 +48,13 @@ const WIDGET_NAME = "qg_workflow_switches";
 // the settings inside it.
 const SHOW_EDIT = "qg_show_edit";
 const SHOW_SETTINGS = "qg_show_settings";
-const NODE_WIDTH = 320;
+const NODE_WIDTH = sizeFor("QG_WorkflowSwitches").w;
 // The narrowest each view still reads at: a label and a pill, or those plus
-// the two row buttons.
-const SMALL_MIN_WIDTH = 200;
-const EDIT_MIN_WIDTH = 300;
+// the two row buttons. 两个视图的下限都取尺寸表的 minW —— 表说能拖到多窄就多窄。
+// 🔴 编辑态以前是 `EDIT_MIN_WIDTH = NODE_WIDTH`（= 默认宽），而节点默认就是展开态，
+// 于是「下限 == 默认宽」，表现就是**只能拖大、拖不小**。
+const SMALL_MIN_WIDTH = sizeFor("QG_WorkflowSwitches").minW;
+const EDIT_MIN_WIDTH = SMALL_MIN_WIDTH;
 // Same wrapper allowance as the widget cards (js/shared/widget_card.mjs).
 const WRAPPER_INSET = 16;
 const HINT_HEIGHT = 34;
@@ -1159,7 +1162,15 @@ function buildPanel(node) {
   widget.serialize = false;
   // A list sized to its rows, pinned on purpose (tests/panel_guards.test.mjs,
   // fixedByDesign): the rows are the content, there is no viewport to grow.
-  widget.computeSize = (width) => [Math.max(minWidth(node), Number(width || node.size?.[0] || NODE_WIDTH)), declaredHeight(state)];
+  // 🔴 litegraph 拖拽缩放时调的是 `node.computeSize()`（**不带参数**），并把
+  // 「返回值宽度」当成节点的最小宽度：`if (l.width < u[0]) l.width = u[0]`。
+  // 以前这里回落到 `node.size[0]`，于是下限恒等于当前宽度 —— 节点只能拖大、拖不小。
+  // 下限必须是 minWidth(node)（收起态 = 表里的 minW），传入宽度只作为「想多宽」。
+  widget.computeSize = (width) => {
+    const floor = minWidth(node);
+    const wanted = Number(width);
+    return [Math.max(floor, Number.isFinite(wanted) && wanted > 0 ? wanted : floor), declaredHeight(state)];
+  };
   // Pinned in Nodes 2.0 as well, where a node can be made taller than its list.
   pinVuePanelHeight(widget);
   widget.options.minNodeSize = [SMALL_MIN_WIDTH, 60];

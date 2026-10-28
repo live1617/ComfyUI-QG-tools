@@ -1,20 +1,21 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026102571";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102571";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026102571";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026102706";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102706";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026102706";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102571";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026102571";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102571";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026102571";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026102571";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102571";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026102571";
+} from "../shared/settings_menu.mjs?v=2026102706";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026102706";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102706";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026102706";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026102706";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102706";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026102706";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -70,8 +71,8 @@ import {
   loraFolders,
   loraPickerEntries,
   loraStackKeyAction,
-} from "../shared/lora_stack.mjs?v=2026102571";
-import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026102571";
+} from "../shared/lora_stack.mjs?v=2026102706";
+import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026102706";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -181,7 +182,7 @@ const SETTINGS_SCHEMA = [
 // hang past the right edge. Separate model / CLIP strengths put a second
 // strength box and its gap on every row, so that mode's floor is wider by
 // as much, and the name keeps the same room.
-const PANEL_MIN_WIDTH = 320;
+const PANEL_MIN_WIDTH = sizeFor("QG_LoraLoader").minW;
 const SEPARATE_EXTRA_WIDTH = 72;
 // The popups' font, shared with the picker's width measurement, and the
 // picker's side paddings, from which an option's text width is worked out.
@@ -2559,7 +2560,8 @@ function mountCard(node, { box = null, separatorWidget = null, onMissingWidget =
   renderRows(state);
   refreshAvailable(state);
   placeWidgetSlots(node);
-  node.setSize?.([Math.max(336, node.size?.[0] || 336), node.computeSize?.()[1] || 220]);
+  const initialWidth = PANEL_MIN_WIDTH + 16;  // 面板内边距 + 边框
+  node.setSize?.([Math.max(initialWidth, node.size?.[0] || initialWidth), node.computeSize?.()[1] || 220]);
   liveCards.add(state);
   ensureRedrawHook();
 

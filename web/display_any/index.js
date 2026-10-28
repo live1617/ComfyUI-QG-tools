@@ -5,10 +5,11 @@
 // pass-through output, gallery mode, text style settings and clipboard actions.
 
 import { app } from "/scripts/app.js";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102706";
 import { api } from "/scripts/api.js";
-import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102571";
-import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026102571";
-import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026102571";
+import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102706";
+import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026102706";
+import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026102706";
 
 const NODE_TYPE = "QG_DisplayAny";
 const CONNECTION_MENU_LABEL = "QG 展示任意";
@@ -98,8 +99,10 @@ const DEFAULT_TEXT_FONT_SIZE = 16;
 const DEFAULT_TEXT_FONT_COLOR = "#B2B7BD";
 // 节点高度按内容给：一行数字 / 短文本不需要一块 260px 的空板，真要放图才撑开。
 // 用户手动拖过尺寸之后就不再自动改（properties.qg_user_resized 随工作流存盘）。
-const TEXT_NODE_HEIGHT = 110;
-const MEDIA_NODE_HEIGHT = 260;
+// 高度以尺寸表为准：用户定的是「新建就是这么高」，放图/放文本都不再缩回去。
+const DEFAULT_NODE_HEIGHT = heightFor("QG_DisplayAny");
+const TEXT_NODE_HEIGHT = DEFAULT_NODE_HEIGHT ?? 110;
+const MEDIA_NODE_HEIGHT = Math.max(DEFAULT_NODE_HEIGHT ?? 260, 260);
 const TEXT_WIDGET_MIN_HEIGHT = 40;
 const MEDIA_WIDGET_MIN_HEIGHT = 200;
 
@@ -790,7 +793,7 @@ function createPreview(node) {
     widget.serialize = false;
     widget.options ??= {};
     // 原来写的是 [250, 200]：一行字也拖不小，只能一直占着 200 往上的高度。
-    widget.options.minNodeSize = [250, 96];
+    widget.options.minNodeSize = [sizeFor("QG_DisplayAny").minW, 96];
     const state = { root, toolbar, copy, body, media, text, widget, galleryClose, galleryNext, figures: [], galleryIndex: null, copyTimer: null, contextMedia: null, vueFit: {} };
     state.flashContextItem = (element, label, isError = false) => {
         if (!element) return;
@@ -926,7 +929,7 @@ app.registerExtension({
             // 这里也是程序调尺寸，不能记成「用户拖过」，否则自动调整立刻失效
             this.__qgAutoSize = true;
             try {
-                this.setSize([320, TEXT_NODE_HEIGHT]);
+                this.setSize([sizeFor("QG_DisplayAny").w, TEXT_NODE_HEIGHT]);
             } finally {
                 this.__qgAutoSize = false;
             }

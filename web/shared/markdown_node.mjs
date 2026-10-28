@@ -3,9 +3,10 @@
 // 渲染引擎：md_render.js（解析 → 排版 → 绘制）
 // 共用代码：label_common.js（编辑面板 + 画布钩子）
 import { openLabelEditorModal, registerLabelCanvasHooks, getMeasureCtx, DEFAULT_MD_BG,
-         DEFAULT_MD_PAD, DEFAULT_MD_RADIUS } from "./label_common.mjs?v=2026102571";
-import { MD_DEFAULT_MAX_WIDTH, getLabelLayout, drawLabelBlocks } from "./md_render.mjs?v=2026102571";
-import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102571";
+         DEFAULT_MD_PAD, DEFAULT_MD_RADIUS } from "./label_common.mjs?v=2026102706";
+import { MD_DEFAULT_MAX_WIDTH, getLabelLayout, drawLabelBlocks } from "./md_render.mjs?v=2026102706";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102706";
+import { sizeFor } from "./node_width.mjs?v=2026102706";
 
 const MD_NODE_TYPE = "QG_MarkdownNote";
 
@@ -213,7 +214,10 @@ class QGMarkdownNote extends LGraphNode {
         const mctx = getMeasureCtx();
         if (!mctx) return [100, 40];
         const { layout } = getLabelLayout(mctx, processed, opts);
-        return [layout.width + padding * 2, layout.height + padding * 2];
+        // 尺寸表里给本节点填了数字就以它为最小宽（现在表里是 null = 完全按文字算）。
+        const pinned = sizeFor(MD_NODE_TYPE).w;
+        const width = layout.width + padding * 2;
+        return [pinned ? Math.max(width, pinned) : width, layout.height + padding * 2];
     }
 
     // 属性变化时重排 Vue 分支的 DOM（经典模式没有 __qgLabelDom，空操作）。

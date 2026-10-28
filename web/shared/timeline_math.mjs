@@ -9,7 +9,7 @@
 // round-trip to the same frames. No DOM, no ComfyUI imports: tested in
 // tests/timeline_math.test.mjs.
 
-import { snapFrameCount } from "../load_video/trim_preview.mjs?v=2026102571";
+import { snapFrameCount } from "../load_video/trim_preview.mjs?v=2026102706";
 
 // nodes/_video_load_helpers._TIME_EPSILON
 export const TRIM_EPSILON = 1e-4;
