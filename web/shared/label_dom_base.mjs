@@ -13,7 +13,7 @@
 // 🔴 尺寸必须由 measure() 一次算死。绝不能在 refresh 里回读 DOM 布局反推尺寸：
 //    写 node.size → Vue 重排 → ResizeObserver → 再写，形成回声循环，
 //    节点一大就把主线程占满，画布滚轮缩放完全失效（实测过）。
-import { keepDomWidgetWidthAuto } from "./index.mjs?v=2026102706";
+import { keepDomWidgetWidthAuto } from "./index.mjs?v=2026102915";
 import {
     applyPointerPassthrough,
     detachDomWidget,
@@ -21,7 +21,7 @@ import {
     unwatchPointerPassthrough,
     vueNodesEnabled,
     watchPointerPassthrough,
-} from "./vue_mode.mjs?v=2026102706";
+} from "./vue_mode.mjs?v=2026102915";
 
 const MOUNTING = Symbol("qg.labelDomMounting");
 // 间隔兜底阈值。450 → 600 → 800 的演进原因：

@@ -30,7 +30,7 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
 
 const NODE_CLASS = "QG_TripleLoader";
 const PRETTY_WIDGETS = new Set(["unet_name", "clip_name", "vae_name"]);

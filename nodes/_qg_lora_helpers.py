@@ -728,6 +728,53 @@ def save_civitai_sidecar(name: str, payload: Any) -> dict[str, Any]:
     return info
 
 
+# Civitai 的预览图。字节由浏览器下载后转交，所以这里是「不可信输入」：
+# 重新解码、重新编码成一张小 JPEG 再落盘，Civitai 塞在 EXIF 里的东西一概不进来。
+MAX_PICTURE_BYTES = 8 * 1024 * 1024
+# 解压炸弹防线：一张 20000×20000 的 PNG 只有几百 KB，解开要 1.2 GB。
+MAX_PICTURE_PIXELS = 40_000_000
+PICTURE_EDGE = 768
+
+
+def save_civitai_picture(name: str, data: Any) -> Path:
+    """把一张图存成 ``<模型>.preview.jpg`` 放在 LoRA 旁边。
+
+    已经有预览图的 LoRA **一律不覆盖** —— 用户自己放的那张比 Civitai 的珍贵。
+    用 ``xb`` 独占创建，两个请求同时到达时后到的那个也覆盖不了。
+    """
+    if not isinstance(data, (bytes, bytearray)) or not data:
+        raise ValueError("No picture was sent.")
+    if len(data) > MAX_PICTURE_BYTES:
+        raise ValueError("The picture is too large.")
+    path = resolve_lora_path(name)
+    if find_thumbnail(name) is not None:
+        raise ValueError("This LoRA already has a preview picture.")
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        with Image.open(BytesIO(bytes(data))) as picture:
+            width, height = picture.size
+            if width * height > MAX_PICTURE_PIXELS:
+                raise ValueError("The picture is too large.")
+            picture = picture.convert("RGB")
+            picture.thumbnail((PICTURE_EDGE, PICTURE_EDGE))
+            out = BytesIO()
+            picture.save(out, "JPEG", quality=88)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("That is not a picture.") from exc
+    target = Path(str(path.with_suffix("")) + ".preview.jpg")
+    try:
+        with open(target, "xb") as handle:
+            handle.write(out.getvalue())
+    except FileExistsError as exc:
+        raise ValueError("This LoRA already has a preview picture.") from exc
+    return target
+
+
 def lora_info(name: str) -> dict[str, Any]:
     path = resolve_lora_path(name)
     metadata = read_safetensors_metadata(path)
@@ -809,6 +856,19 @@ def register_lora_routes() -> None:
                 save_civitai_sidecar, str(body.get("name", "")), body.get("info")
             )
             return web.json_response({"ok": True, "info": info})
+        except Exception as exc:
+            return web.json_response({"ok": False, "error": safe_route_error(exc)}, status=400)
+
+    @prompt_server.routes.post("/qg/lora/picture")
+    async def qg_lora_picture(request):
+        try:
+            if (request.content_length or 0) > MAX_PICTURE_BYTES:
+                raise ValueError("The picture is too large.")
+            data = await request.read()
+            await asyncio_run_in_executor(
+                save_civitai_picture, request.query.get("name", ""), data
+            )
+            return web.json_response({"ok": True})
         except Exception as exc:
             return web.json_response({"ok": False, "error": safe_route_error(exc)}, status=400)
 

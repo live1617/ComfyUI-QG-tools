@@ -5,11 +5,11 @@
 // pass-through output, gallery mode, text style settings and clipboard actions.
 
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102706";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102915";
 import { api } from "/scripts/api.js";
-import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102706";
-import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026102706";
-import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026102706";
+import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102915";
+import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026102915";
+import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026102915";
 
 const NODE_TYPE = "QG_DisplayAny";
 const CONNECTION_MENU_LABEL = "QG 展示任意";

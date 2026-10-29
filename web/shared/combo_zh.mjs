@@ -12,8 +12,8 @@
 //
 // 数据源：nodes/_qg_combo_legacy.py 的 LEGACY 表（Python 侧执行期兜底用的是同一张表）。
 
-import { wantsChinese } from "./zh.mjs?v=2026102706";
-import { chainCallback } from "./index.mjs?v=2026102706";
+import { wantsChinese } from "./zh.mjs?v=2026102915";
+import { chainCallback } from "./index.mjs?v=2026102915";
 
 export const COMBO_ZH = {
     QG_ColorMatch: {
@@ -175,7 +175,16 @@ export const COMBO_ZH = {
             "text-field": "文本框",
             "external-list": "外部列表",
         },
-    },};
+    },
+    QG_StepPreview: {
+        method: {
+            "auto": "自动",
+            "latent2rgb": "快速",
+            "taesd": "清晰",
+            "none": "关闭",
+        },
+    },
+};
 
 // 每个节点/控件的双向查表：en→zh 给显示，zh→en 给老存档迁移。
 const LOOKUP = {};

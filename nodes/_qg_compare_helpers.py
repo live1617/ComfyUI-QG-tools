@@ -151,10 +151,31 @@ def erase_mask(strokes: list[dict], width: int, height: int) -> np.ndarray:
 
 
 def mix_pictures(top: np.ndarray, under: np.ndarray, gone: np.ndarray) -> np.ndarray:
-    """上面那张压在底下那张上，把 ``gone`` 的地方擦掉。"""
+    """上面那张压在底下那张上，把 ``gone`` 的地方擦掉。
+
+    两张都不透（HxWx3）时混出来也不透。只要有一张带透明部分（HxWx4），
+    混出来的也带：底下那张能从上面那张的透明处透出来，而上面被擦掉的
+    地方，底下那张该透明还是透明。
+    """
     weight = gone[:, :, None]
-    mixed = top.astype(np.float32) * (1.0 - weight) + under.astype(np.float32) * weight
+    if top.shape[2] == 3 and under.shape[2] == 3:
+        mixed = top.astype(np.float32) * (1.0 - weight) + under.astype(np.float32) * weight
+        return np.clip(np.round(mixed), 0, 255).astype(np.uint8)
+    top, under = _with_alpha(top).astype(np.float32), _with_alpha(under).astype(np.float32)
+    upper = top[..., 3:] / 255.0 * (1.0 - weight)
+    lower = under[..., 3:] / 255.0 * (1.0 - upper)
+    alpha = upper + lower
+    rgb = (top[..., :3] * upper + under[..., :3] * lower) / np.maximum(alpha, 1e-6)
+    mixed = np.concatenate([rgb, alpha * 255.0], axis=-1)
     return np.clip(np.round(mixed), 0, 255).astype(np.uint8)
+
+
+def _with_alpha(pixels: np.ndarray) -> np.ndarray:
+    """HxWx4：不透的 HxWx3 补一路全实心的透明通道。"""
+    if pixels.shape[2] == 4:
+        return pixels
+    solid = np.full(pixels.shape[:2] + (1,), 255, dtype=pixels.dtype)
+    return np.concatenate([pixels, solid], axis=-1)
 
 
 def strip_image_extension(name: str) -> str:
@@ -252,13 +273,16 @@ def align_pair(*, picture_a, picture_b, temp_root, name: str = "") -> dict:
     「A + 对齐后的 B」的 pair 键。
     """
     try:
-        first = _load_rgb(Path(picture_a))
-        second = _load_rgb(Path(picture_b))
+        first = _load_picture(Path(picture_a))
+        second = _load_picture(Path(picture_b))
     except OSError as error:
         raise CompareSaveError(ALIGN_GONE, status=404) from error
+    if first.shape[2] == 4 or second.shape[2] == 4:
+        first, second = _with_alpha(first), _with_alpha(second)
     source = torch.from_numpy(np.array(first)).float() / 255.0
     edit = torch.from_numpy(np.array(second)).float() / 255.0
-    result = measure(source, edit, "zoom + shift", ALIGN_MAX_ZOOM)
+    # 按「实际看到的样子」量：透明部分铺在中灰上。
+    result = measure(_on_gray(source), _on_gray(edit), "zoom + shift", ALIGN_MAX_ZOOM)
     if not result.reliable:
         logging.info("[QG-tools] 图像对比：对齐没动 B —— %s", result.reason)
         return {"aligned": False, "message": ALIGN_FAILED}
@@ -268,7 +292,10 @@ def align_pair(*, picture_a, picture_b, temp_root, name: str = "") -> dict:
     height, width = first.shape[:2]
     lined = crop_if_shift(edit, result.matrix, width, height)
     if lined is None:
-        lined, _empty = warp_to_source(edit, result.matrix, width, height, "source", source)
+        lined, _empty = warp_to_source(
+            _premultiplied(edit), result.matrix, width, height, "source", _premultiplied(source)
+        )
+        lined = _unpremultiplied(lined)
     target = Path(picture_b).with_name(f"{Path(picture_b).stem}_aligned.png")
     try:
         require_output_path(target, Path(temp_root))
@@ -277,20 +304,60 @@ def align_pair(*, picture_a, picture_b, temp_root, name: str = "") -> dict:
             "图像对比：预览图不在 ComfyUI 的 temp 目录里。重新运行一次工作流。"
         ) from error
     pixels = np.round(lined.numpy() * 255.0).clip(0, 255).astype(np.uint8)
+    if pixels.shape[2] == 4 and pixels[..., 3].min() == 255:
+        pixels = np.ascontiguousarray(pixels[..., :3])
     Image.fromarray(pixels).save(target, compress_level=1)
     return {
         "aligned": True,
         "file": target,
         "width": int(width),
         "height": int(height),
+        "alpha": pixels.shape[2] == 4,
         "pair": remember_pair(picture_a, target, name),
         "message": f"B 已经对齐到 A。原来最多差 {max(1, round(off))} 像素。",
     }
 
 
-def _load_rgb(path: Path) -> np.ndarray:
+def _on_gray(pixels: torch.Tensor) -> torch.Tensor:
+    """HWC 颜色按「实际看到的样子」铺在中灰上，透明处就是中灰。"""
+    if pixels.shape[-1] < 4:
+        return pixels
+    alpha = pixels[..., 3:]
+    return pixels[..., :3] * alpha + 0.5 * (1.0 - alpha)
+
+
+def _premultiplied(pixels: torch.Tensor) -> torch.Tensor:
+    """颜色先按实心程度加权，重采样时就不会把透明像素里藏的颜色拽到邻居身上。"""
+    if pixels.shape[-1] < 4:
+        return pixels
+    return torch.cat([pixels[..., :3] * pixels[..., 3:], pixels[..., 3:]], dim=-1)
+
+
+def _unpremultiplied(pixels: torch.Tensor) -> torch.Tensor:
+    if pixels.shape[-1] < 4:
+        return pixels
+    alpha = pixels[..., 3:]
+    rgb = torch.where(alpha > 0, pixels[..., :3] / alpha.clamp_min(1e-6), torch.zeros_like(pixels[..., :3]))
+    return torch.cat([rgb.clamp(0.0, 1.0), alpha], dim=-1)
+
+
+def _load_picture(path: Path, size: tuple[int, int] | None = None) -> np.ndarray:
+    """读预览图的像素：HxWx3，带透明部分时是 HxWx4。
+
+    给了 ``size``（宽、高）就缩到那个尺寸；带透明的那张按预乘方式缩，
+    这样透明处的颜色不会渗到边缘上去。
+    """
     with Image.open(path) as image:
-        return np.asarray(image.convert("RGB"))
+        clear = image.mode in ("RGBA", "LA", "PA") or "transparency" in image.info
+        image = image.convert("RGBA" if clear else "RGB")
+        if clear and image.getextrema()[3][0] == 255:
+            image, clear = image.convert("RGB"), False
+        if size is not None and image.size != size:
+            if clear:
+                image = image.convert("RGBa").resize(size, Image.LANCZOS).convert("RGBA")
+            else:
+                image = image.resize(size, Image.LANCZOS)
+        return np.asarray(image)
 
 
 def save_mix(*, picture_a, picture_b, output_dir, top="A", strokes=None, layers=False, name=SAVE_NAME) -> dict:
@@ -305,14 +372,10 @@ def save_mix(*, picture_a, picture_b, output_dir, top="A", strokes=None, layers=
         raise CompareSaveError("图像对比：上面那张只能是 A 或 B。")
     name = clean_save_name(name)
     try:
-        first = _load_rgb(Path(picture_a))
-        with Image.open(Path(picture_b)) as image:
-            image = image.convert("RGB")
-            height, width = first.shape[:2]
-            # 混合图永远是 A 的尺寸；B 尺寸不同就缩到 A。
-            if image.size != (width, height):
-                image = image.resize((width, height), Image.LANCZOS)
-            second = np.asarray(image)
+        first = _load_picture(Path(picture_a))
+        height, width = first.shape[:2]
+        # 混合图永远是 A 的尺寸；B 尺寸不同就缩到 A。
+        second = _load_picture(Path(picture_b), (width, height))
     except OSError as error:
         raise CompareSaveError(PICTURES_GONE, status=404) from error
     if max(height, width) > PSD_MAX_SIDE:
@@ -341,8 +404,9 @@ def save_mix(*, picture_a, picture_b, output_dir, top="A", strokes=None, layers=
             shown = np.round((1.0 - gone) * 255.0).astype(np.uint8)
             write_psd(
                 folder / wanted[1],
-                [{"name": under_name, "rgb": under}, {"name": upper_name, "rgb": upper, "mask": shown}],
-                mixed,
+                [_layer(under_name, under), {**_layer(upper_name, upper), "mask": shown}],
+                mixed[..., :3],
+                alpha=mixed[..., 3] if mixed.shape[2] == 4 else None,
             )
             Image.fromarray(255 - shown).save(folder / wanted[2], compress_level=4)
 
@@ -351,6 +415,11 @@ def save_mix(*, picture_a, picture_b, output_dir, top="A", strokes=None, layers=
         "width": width,
         "height": height,
     }
+
+
+def _layer(name: str, pixels: np.ndarray) -> dict:
+    """一张图变成 PSD 的一层；带透明部分时把透明通道也带上。"""
+    return {"name": name, "rgb": pixels[..., :3], "alpha": pixels[..., 3] if pixels.shape[2] == 4 else None}
 
 
 __all__ = [

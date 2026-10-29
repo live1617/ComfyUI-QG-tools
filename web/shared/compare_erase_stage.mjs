@@ -8,13 +8,14 @@
 // 移植自 ComfyUI-AusBoss（MIT，js/shared/compare_erase_stage.mjs）。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026102706";
-import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026102706";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102706";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102706";
-import { makeSlideSwitch } from "./slide_switch.mjs?v=2026102706";
-import { extendStroke } from "./compare_erase.mjs?v=2026102706";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026102915";
+import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026102915";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102915";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026102915";
+import { makeSlideSwitch } from "./slide_switch.mjs?v=2026102915";
+import { extendStroke } from "./compare_erase.mjs?v=2026102915";
 import {
+  CHECKER,
   ERASE_OUTSIDE,
   ERASE_SIZE,
   ERASE_SOFT_DEFAULT,
@@ -37,7 +38,7 @@ import {
   steppedSoft,
   strokeFits,
   typedName,
-} from "./compare_erase.mjs?v=2026102706";
+} from "./compare_erase.mjs?v=2026102915";
 
 // 图上面那行工具、图下面那行保存，各有多高。节点窄的时候这两行会折成两行，
 // 而不是把节点撑宽——地方从图上出。
@@ -225,6 +226,24 @@ function sizeView(er) {
   }
 }
 
+// 带透明部分的图铺在棋盘格上看，格子大小跟屏幕上看到的一致。
+function drawCheckerboard(er, ctx, fit) {
+  const side = Math.max(2, Math.round(CHECKER.side * er.canvas.width / Math.max(1, er.canvas.clientWidth)));
+  if (er.checker?.side !== side) {
+    const tile = document.createElement("canvas");
+    const tileCtx = sized(tile, side * 2, side * 2);
+    tileCtx.fillStyle = CHECKER.dark;
+    tileCtx.fillRect(0, 0, side * 2, side * 2);
+    tileCtx.fillStyle = CHECKER.light;
+    tileCtx.fillRect(0, 0, side, side);
+    tileCtx.fillRect(side, side, side, side);
+    er.checker = { side, pattern: ctx.createPattern(tile, "repeat") };
+  }
+  er.checker.pattern.setTransform?.(new DOMMatrix([1, 0, 0, 1, fit.left, fit.top]));
+  ctx.fillStyle = er.checker.pattern;
+  ctx.fillRect(fit.left, fit.top, fit.width, fit.height);
+}
+
 function draw(er) {
   er.frame = 0;
   if (!er.active || !er.refs) return;
@@ -254,6 +273,7 @@ function draw(er) {
   cut.drawImage(top, 0, 0, width, height);
   cut.globalCompositeOperation = "destination-out";
   cut.drawImage(mask, 0, 0, width, height);
+  if (er.refs.a?.alpha || er.refs.b?.alpha) drawCheckerboard(er, ctx, fit);
   ctx.drawImage(under, fit.left, fit.top, width, height);
   ctx.drawImage(er.cut, fit.left, fit.top);
 

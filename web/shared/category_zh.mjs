@@ -21,7 +21,7 @@
  * 是否一致，漏一处就报错。
  */
 
-import { wantsChinese } from "./zh.mjs?v=2026102706";
+import { wantsChinese } from "./zh.mjs?v=2026102915";
 
 /** 子分类 → 中文菜单名。键必须跟后端 CATEGORY 的尾段逐字相同（含大小写）。 */
 export const CATEGORY_ZH = {

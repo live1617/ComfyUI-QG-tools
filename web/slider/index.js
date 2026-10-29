@@ -33,21 +33,21 @@
 // 滑条顶在右端、输出却是 80，看着就像坏了。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
-import { BRAND, chainCallback, chainHandler, notifyQgChange } from "../shared/index.mjs?v=2026102706";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026102706";
-import { hideWidget } from "../shared/widget_visibility.mjs?v=2026102706";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
+import { BRAND, chainCallback, chainHandler, notifyQgChange } from "../shared/index.mjs?v=2026102915";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026102915";
+import { hideWidget } from "../shared/widget_visibility.mjs?v=2026102915";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
   vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026102706";
+} from "../shared/vue_mode.mjs?v=2026102915";
 import {
   closeSettingsMenu,
   gearIconSvg,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102706";
+} from "../shared/settings_menu.mjs?v=2026102915";
 
 const NODE_CLASS = "QG_Slider";
 // kind 的取值，必须和 nodes/qg_slider.py 的 KINDS 逐字一致。

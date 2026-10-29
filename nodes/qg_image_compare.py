@@ -55,10 +55,12 @@ def temp_prefix() -> str:
     return "qg_compare_" + "".join(random.choices(string.ascii_lowercase, k=5))
 
 
-def first_frame_to_pil(image: torch.Tensor) -> Image.Image:
+def first_frame_to_pil(image: torch.Tensor, keep_alpha: bool = False) -> Image.Image:
     """BHWC 浮点批次的第一帧，转成可以直接存的 PIL 图。
 
     单通道帧转成 8 位灰度图而不是 1 通道 RGB——遮罩补成 BHWC 之后就是这种形状。
+    ``keep_alpha`` 为真时，四通道且真有透明部分的帧原样存成 RGBA；
+    不透的帧两种情况下都是 RGB。
     """
     if not isinstance(image, torch.Tensor) or image.ndim != 4:
         raise ValueError("QG 图像对比：输入必须是 BHWC 图像批次。")
@@ -69,14 +71,20 @@ def first_frame_to_pil(image: torch.Tensor) -> Image.Image:
     if array.shape[-1] == 1:
         array = array[..., 0]
     elif array.shape[-1] > 3:
+        if keep_alpha and array.shape[-1] == 4 and int(array[..., 3].min()) < 255:
+            return Image.fromarray(array, "RGBA")
         # 丢掉 alpha：面板底色是自己的深色台面，透明预览会读成一个洞。
         array = array[..., :3]
     return Image.fromarray(array)
 
 
-def save_temp_preview(image: torch.Tensor, prefix: str) -> dict:
-    """把一帧预览 PNG 写进 temp 目录，返回它在 ui.images 里的那一项。"""
-    preview = first_frame_to_pil(image)
+def save_temp_preview(image: torch.Tensor, prefix: str, keep_alpha: bool = False) -> dict:
+    """把一帧预览 PNG 写进 temp 目录，返回它在 ui.images 里的那一项。
+
+    ``keep_alpha`` 为真时，带透明部分的图连透明一起存，返回项里用
+    ``"alpha": True`` 说一声，前端据此把棋盘格铺在底下。
+    """
+    preview = first_frame_to_pil(image, keep_alpha)
     full_output_folder, filename, counter, subfolder, _prefix = folder_paths.get_save_image_path(
         prefix,
         folder_paths.get_temp_directory(),
@@ -85,13 +93,16 @@ def save_temp_preview(image: torch.Tensor, prefix: str) -> dict:
     )
     file = f"{filename}_{counter:05}_.png"
     preview.save(Path(full_output_folder) / file, compress_level=4)
-    return {
+    entry = {
         "filename": file,
         "subfolder": subfolder,
         "type": "temp",
         "width": preview.width,
         "height": preview.height,
     }
+    if preview.mode == "RGBA":
+        entry["alpha"] = True
+    return entry
 
 
 def _register_save_route() -> None:
@@ -185,6 +196,8 @@ def _register_save_route() -> None:
                 "width": result["width"],
                 "height": result["height"],
             }
+            if result.get("alpha"):
+                answer["b"]["alpha"] = True
             answer["pair"] = result["pair"]
         return web.json_response(answer)
 
@@ -195,8 +208,8 @@ class QGImageCompare:
         "A/B compare: two images in one panel. Slide to see the difference, or hold A "
         "or B to view one alone; the eraser paints away part of the top image to "
         "reveal the one beneath, and the blend can be saved as a PNG, optionally with "
-        "a layered PSD and a mask. image_a is passed straight through, so the node "
-        "can sit in the middle of a graph."
+        "a layered PSD and a mask. Both inputs are passed straight through as "
+        "image_a and image_b, so the node can sit in the middle of a graph."
     )
     SEARCH_ALIASES = [
         "image compare", "compare", "a/b", "before after", "slider", "diff",
@@ -246,18 +259,21 @@ class QGImageCompare:
             },
         }
 
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("IMAGE",)
+    RETURN_TYPES = ("IMAGE", "IMAGE")
+    RETURN_NAMES = ("image_a", "image_b")
     OUTPUT_TOOLTIPS = (
         "The batch fed into A, passed straight through so the node can sit "
         "mid-graph.",
+        "The batch fed into B, untouched: the picture you compare against, "
+        "often the edited one.",
     )
     OUTPUT_NODE = True
     FUNCTION = "compare"
 
     def compare(self, image_a, image_b, filename=None):
-        preview_a = save_temp_preview(image_a, self._prefix)
-        preview_b = save_temp_preview(image_b, self._prefix)
+        # 透明部分要留着：面板在它们底下铺棋盘格，橡皮擦也得能把它们混回来。
+        preview_a = save_temp_preview(image_a, self._prefix, keep_alpha=True)
+        preview_b = save_temp_preview(image_b, self._prefix, keep_alpha=True)
         wired = tidy_save_name(filename)
         return {
             "ui": {
@@ -268,7 +284,7 @@ class QGImageCompare:
                 # 连线时文件会叫什么名字。
                 "save_name": [wired],
             },
-            "result": (image_a,),
+            "result": (image_a, image_b),
         }
 
     @staticmethod

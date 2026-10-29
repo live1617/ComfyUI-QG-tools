@@ -10,8 +10,8 @@
 // Vue 模式下必须自己补回来的两件事（原生路径全断）：
 //   1. **拖拽 / 选中** —— 节点外壳的 pointerdown 被 widget 区吃掉 → 指针穿透。
 //   2. **双击编辑** —— node.onDblClick 不触发 → document 捕获委托判双击。
-import { getMeasureCtx, openLabelEditor, DEFAULT_LABEL_BG } from "../shared/label_common.mjs?v=2026102706";
-import { createLabelDomDriver } from "../shared/label_dom_base.mjs?v=2026102706";
+import { getMeasureCtx, openLabelEditor, DEFAULT_LABEL_BG } from "../shared/label_common.mjs?v=2026102915";
+import { createLabelDomDriver } from "../shared/label_dom_base.mjs?v=2026102915";
 
 // Vue 节点外壳左右内边距合计（实测 24px，左右各 12）。
 // 🔴 用固定值，不要事后去量 row.clientWidth 反推：

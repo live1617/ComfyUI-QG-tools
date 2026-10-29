@@ -3,8 +3,8 @@
 // 只提供：样式注入、DOM 小工具、编辑弹窗、画布绘制/穿透钩子
 // ===========================================================================
 import { app } from "/scripts/app.js";
-import { zh } from "./zh.mjs?v=2026102706";
-import { MD_DEFAULT_MAX_WIDTH } from "./md_render.mjs?v=2026102706";
+import { zh } from "./zh.mjs?v=2026102915";
+import { MD_DEFAULT_MAX_WIDTH } from "./md_render.mjs?v=2026102915";
 
 const CSS_ID = "qgtools-canvaslabel-css";
 

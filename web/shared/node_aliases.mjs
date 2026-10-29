@@ -96,6 +96,18 @@ export const NODE_ALIASES = {
     QG_MaskConcat: [
         "mask concat", "maskconcat", "concat mask", "merge masks", "join masks", "mask combine", "mask", "遮罩拼接", "遮罩合并", "合并遮罩",
     ],
+    QG_MaskCrop: [
+        "mask crop", "maskcrop", "crop by mask", "crop to mask", "crop around mask", "mask bounding box", "mask bbox",
+        "遮罩裁剪", "按遮罩裁剪", "裁图", "裁切", "框选裁剪", "裁剪",
+    ],
+    QG_CropRestore: [
+        "crop restore", "croprestore", "paste back", "paste crop back", "stitch crop", "restore crop",
+        "裁剪恢复", "贴回", "贴回原位", "缝合", "还原裁剪", "接回",
+    ],
+    QG_MaskAlign: [
+        "mask align", "maskalign", "align mask", "center mask", "centre mask", "mask position", "move mask", "mask bbox",
+        "遮罩对齐", "遮罩居中", "居中", "对齐", "位置对齐", "遮罩定位",
+    ],
     QG_ImageCropRotatePad: [
         "crop", "rotate", "pad", "crop rotate pad", "croprotatepad", "outpaint", "canvas", "straighten", "deskew", "image", "图像裁剪旋转补边", "裁剪旋转补边", "裁剪", "旋转", "补边", "扩图",
     ],
@@ -146,6 +158,12 @@ export const NODE_ALIASES = {
         "释放显存", "清显存", "显存清理", "清理显存", "清空显存", "腾显存", "显存不足", "爆显存",
         "卸载模型", "清缓存", "清理缓存",
     ],
+    QG_StepPreview: [
+        "step preview", "steppreview", "sampler preview", "live preview", "preview steps",
+        "latent preview", "preview", "taesd", "latent2rgb", "quick preview", "no preview",
+        "采样预览", "步预览", "中间预览", "实时预览", "过程预览", "预览开关", "预览方式",
+        "关闭预览", "打开预览", "开预览", "关预览", "taesd 预览",
+    ],
     QG_MaskRefine: [
         "mask refine", "maskrefine", "refine mask", "grow mask", "shrink mask", "expand mask",
         "feather", "blur mask", "fill holes", "smooth mask", "levels", "guided filter",
@@ -194,8 +212,16 @@ const MAX_PIN = 2;
 function aliasRank(def, query) {
     const aliases = NODE_ALIASES[def?.name];
     if (!Array.isArray(aliases)) return 999;
-    const i = aliases.indexOf(query);
+    const i = aliases.findIndex((a) => String(a).toLowerCase() === query);
     return i === -1 ? 999 : i;
+}
+
+// 所有别名的小写形态。查询词不是其中之一时，提权根本无从谈起 —— 用它来跳过
+// 那次「不限条数的补搜」。这一步很关键：装了 3500+ 个节点的环境里，补搜一次要
+// 100ms 上下，而它每个按键都会跑，等于把输入框拖成幻灯片。
+const EXACT_ALIASES = new Set();
+for (const list of Object.values(NODE_ALIASES)) {
+    for (const alias of list) EXACT_ALIASES.add(String(alias).toLowerCase());
 }
 
 export function pinExactAliasHits(store) {
@@ -212,7 +238,10 @@ export function pinExactAliasHits(store) {
     let currentQuery = "";      // 闭包存当前查询词（写 Pinia store 的临时属性读不回来）
     const isHit = (def) => {
         const aliases = NODE_ALIASES[def?.name];
-        return Array.isArray(aliases) && aliases.includes(currentQuery);
+        return (
+            Array.isArray(aliases) &&
+            aliases.some((alias) => String(alias).toLowerCase() === currentQuery)
+        );
     };
 
     proto.searchNode = function (query, filters = [], options, extra = {}) {
@@ -232,7 +261,10 @@ export function pinExactAliasHits(store) {
             return [...pinned, ...out.filter((d) => !pinnedSet.has(d))];
         }
 
-        // 一个都没进前 N 条：补一次不限条数的搜索，把最相关的 MAX_PIN 个捞回来
+        // 一个都没进前 N 条。只有整个词真的等于某个别名时才值得再搜一遍全量 ——
+        // 否则（"a"、"mask c" 这种半截词）补搜一次要 100ms 上下、每个按键都跑，
+        // 用户看到的就是「输入框卡住，半天才出字」。
+        if (!EXACT_ALIASES.has(currentQuery)) return out;
         const all = original.call(this, query, filters, undefined, extra);
         const pinned = all
             .filter(isHit)

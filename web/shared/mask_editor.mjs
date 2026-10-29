@@ -17,7 +17,7 @@
 // 2048 长边足够；不压的话 4000 × 3000 的图每笔都要在 1200 万像素上做模糊。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026102706";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026102915";
 import {
   brushAdjusts,
   brushCore,
@@ -32,10 +32,10 @@ import {
   steppedSoft,
   startAdjust,
   moveAdjust,
-} from "./brush.mjs?v=2026102706";
-import { defaultBrushSize } from "./compare_erase.mjs?v=2026102706";
-import { encodeRgbaPng } from "./png_encode.mjs?v=2026102706";
-import { zh, zhPair } from "./zh.mjs?v=2026102706";
+} from "./brush.mjs?v=2026102915";
+import { defaultBrushSize } from "./compare_erase.mjs?v=2026102915";
+import { encodeRgbaPng } from "./png_encode.mjs?v=2026102915";
+import { zh, zhPair } from "./zh.mjs?v=2026102915";
 
 const CSS_ID = "qgtools-mask-editor-css";
 
@@ -66,6 +66,9 @@ const TINT_HEX = {
   purple: "#b04cff",
   gray: "#808080",
 };
+// 🔴 这里是**模块顶层求值**，依赖「本模块只在用户点『编辑遮罩』时才动态 import」
+// （web/load_image/index.js 里那条 import()）—— 那时 zh 字典早已 ready。
+// 若哪天改成静态 import，zh() 会在字典到达之前跑完，这九条提示就永久留在英文。
 const TINT_TIP = {
   white: zh("Overlay colour: white"),
   red: zh("Overlay colour: red"),

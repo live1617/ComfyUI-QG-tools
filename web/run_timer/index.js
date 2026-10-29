@@ -14,13 +14,13 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, zh } from "../shared/index.mjs?v=2026102706";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102706";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, zh } from "../shared/index.mjs?v=2026102915";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102915";
 import {
   detachDomWidget,
   installModeWatcher,
-} from "../shared/vue_mode.mjs?v=2026102706";
+} from "../shared/vue_mode.mjs?v=2026102915";
 import {
   cachedLayer,
   createTimer,
@@ -29,7 +29,7 @@ import {
   startTimer,
   stopTimer,
   tickTimer,
-} from "../shared/run_timer.mjs?v=2026102706";
+} from "../shared/run_timer.mjs?v=2026102915";
 
 const NODE_CLASS = "QG_RunTimer";
 const CSS_ID = "qgtools-run-timer-css";

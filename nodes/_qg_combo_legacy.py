@@ -186,6 +186,16 @@ LEGACY = {
             "external-list": "外部列表",
         },
     },
+    "QG_StepPreview": {
+        # 值必须与 CLI 的 --preview-method 一字不差（交给 from_string 解析），
+        # 中文只作显示，靠这张表反查。
+        "method": {
+            "auto": "自动",
+            "latent2rgb": "快速",
+            "taesd": "清晰",
+            "none": "关闭",
+        },
+    },
 }
 
 

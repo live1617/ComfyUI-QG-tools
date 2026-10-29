@@ -50,7 +50,7 @@ ComfyUI-QG-tools/
 
 ComfyUI 的节点默认宽度**不在 Python 里**，是前端按控件类型算的（带多行文本框的会被撑到
 400，普通节点 270，只有两个控件的甚至算成 159），`INPUT_TYPES` 里没法声明，grep 也 grep 不到。
-所以全部 41 个节点在一张表里登记，**改尺寸只改这一处**：
+所以全部 42 个节点在一张表里登记，**改尺寸只改这一处**：
 
 ```js
 export const SIZES = {
@@ -384,7 +384,7 @@ category: def.category.split('/')
 
 ## 抽取来源
 
-41 个节点 = **15 原创**（其中 3 个参考上游思路重写、3 个搬自作者自有旧插件）+ **26 搬运**。
+42 个节点 = **16 原创**（其中 3 个参考上游思路重写、3 个搬自作者自有旧插件）+ **26 搬运**。
 逐文件的 from/to 与每一处字符串替换记在 `PORTED.json`（`pack_version` 停在 0.8.0，
 后面几批以本表为准）。
 
@@ -669,6 +669,218 @@ mountWidgetCard(node, { rows: [
   真连线后 a 那格变灰而 b 仍可改、表达式那行照常能打字
 - **存档往返**：改值 → `serialize()` → 新节点 `configure()`，`expr` / `a` / 卡片都回来
 
+## 采样预览（原创，v0.9.10）
+
+`--preview-method` 是**启动参数**，改一次影响整台服务器所有工作流。这个节点把它变成
+**按工作流生效**：丢在画布上、不用连线，只有它所在的 prompt 开预览，跑完自动复位。
+
+### 不用打补丁：ComfyUI 自己就有这个口子
+
+`PromptExecutor.execute_async` 第一行：
+
+```python
+set_preview_method(extra_data.get("preview_method"))
+```
+
+`extra_data` 就是 `/prompt` 请求体里的那个字段。**所以只要在排队之前改写它**，
+剩下的 ComfyUI 全包了 —— 不用碰采样器、不用改全局状态、也不用担心恢复：
+
+```python
+def _prompt_handler(json_data):
+    ...
+    json_data.setdefault("extra_data", {})["preview_method"] = method
+    return json_data
+
+PromptServer.instance.add_on_prompt_handler(_prompt_handler)
+```
+
+`trigger_on_prompt()` 里是 `json_data = handler(json_data)`，返回值就是后续要用的对象；
+`post_prompt` 随后 `extra_data = json_data["extra_data"]` 原样送进队列。链路上没有任何
+"副本" 或 "拷贝"，改了就生效。
+
+🔴 **`set_preview_method(None)` 会恢复启动默认**。所以「下一个工作流没带本节点」
+不需要我们做任何事，ComfyUI 自己就复位了 —— 这也是为什么这个节点可以随时删掉而不留后遗症。
+
+### 预览尺寸是模块常量，不是运行时参数
+
+`latent_preview.py:14` 的 `MAX_PREVIEW_RESOLUTION = args.preview_size` 只在 **import 时**
+读一次，之后跟着每一帧预览发给前端。改 `args.preview_size` 没用，得改这个常量：
+
+```python
+latent_preview.MAX_PREVIEW_RESOLUTION = size   # 记住启动时的原值，无节点时复位
+```
+
+### 几个刻意的取舍
+
+- **`OUTPUT_NODE = True` 且 `RETURN_TYPES = ()`** —— 不加 OUTPUT_NODE 的话，孤立节点
+  根本不会被调度（也就不会被当成「有输出」），单独提交会报 `Prompt has no outputs`。
+  加了之后它自己就是合法终点，用户不用为了「有个输出」再接一根线。
+- **多个本节点取 id 最小的** —— 随便取会让「同一份工作流两次跑出不同预览方式」变成
+  极难复现的 bug。
+- **非法值兜成 `auto`** —— `method` 最终会交给 `LatentPreviewMethod.from_string()`，
+  它认不出就返回 `None`，而 `set_preview_method(None)` 会**静默复位成启动默认**。
+  表现是「选了但没反应」，所以这里先兜一道。
+- **值必须与 CLI 一字不差** —— `auto` / `latent2rgb` / `taesd` / `none`。中文只作显示，
+  靠 `_qg_combo_legacy.py` 的 LEGACY 表反查（顺带让老存档里的中文值也能跑）。
+- **`auto` 目前等于 `latent2rgb`** —— `get_previewer()` 里 `Auto` 直接映射成 `Latent2RGB`。
+  两个选项都留着：哪天上游改成「有 taesd 就用 taesd」，`auto` 才有独立含义。
+
+### 老版本兜底
+
+没有 `extra_data` 这个口子的版本，靠 `latent_preview.set_preview_method` 是否存在来判
+（两者是同一次改动引入的）。判为不支持时，节点 `run()` 里直接改 `cli_args.args.preview_method`
+—— 只能影响它之后执行的采样器，精度差但不会静默失效。
+
+### 面板上的三种状态（上游 2.20.2 的三条，都是真问题）
+
+| 情况 | 以前 | 现在 |
+|---|---|---|
+| 已经开跑、第一帧还没到（模型加载那几秒） | 落到最后的兜底，写「没有可显示的图」，看着像坏了 | 「正在运行，画面一出来就显示在这里」。判据是 `status === "running"` 且没有 `url` |
+| 分块放大在切块采样（Ultimate SD Upscale 在自己节点里切块） | 每一帧都是**一小块**，被当成整图顶上去，画面像被放大到只剩一角 | 整图留着不动，状态栏写「分块放大中 · step 5 / 20」。整图来自哪个节点都行；一上来就是分块、根本没有整图时，才显示第一块 |
+| 最后一步 → 成品图 | `executed` 一到就换 `src`，解码那一下可能闪白 | 先 `new Image()` 解码，`onload` / `decode()` 完成再换；4 秒兜底，`onerror` 照换 —— 拿不到成品也不能装作还在跑 |
+
+🔴 **怎么认出分块帧**：`TILE_NODE_RE = /^UltimateSDUpscale/i`，判的是**发帧那个节点**的类型，
+不是我们自己的节点。`b_preview_with_metadata` 带 `nodeId`，直接用；老接口 `b_preview`
+只有 Blob，退回用 `executing` 事件记下的「当前正在跑哪个节点」。判不出来就当整图 ——
+宁可按老样子显示，也不要因为误判把正常帧藏起来。
+
+🔴 `RUN.whole` 和 `RUN.url` 可能是**同一个** blob 地址，回收必须走 `releaseSoon()` 去重；
+同一个 URL 被 revoke 两次，第二次会把还挂在 `<img>` 上的地址弄坏。
+
+### 哪些采样器吃这套
+
+`--preview-method` 只对**走 `latent_preview.prepare_callback()` 的采样器**有效。实测（真实 SD1.5、
+CPU、64×64）确认这三条路径都会出预览：
+
+| 节点 | 调回调的位置 |
+|---|---|
+| `KSampler` / `KSamplerAdvanced` | `nodes.py:1595` → `latent_preview.prepare_callback(model, steps)` |
+| `SamplerCustom` | `comfy_extras/nodes_custom_sampler.py:774` |
+| `SamplerCustomAdvanced` | 同上 `:1052`（`guider.model_patcher`） |
+
+自己写采样循环、不调 `prepare_callback` 的第三方采样器（手搓 `for i in range(steps)` 那种）
+不会有预览 —— 这不是本节点能解决的，得那个节点自己发。
+
+### 画面有两个去处：采样器节点 + 本节点的面板
+
+`ProgressBar(steps)` 建的时候 `node_id=None`，`main.py` 的全局 hook 补成
+`executing_context.node_id`（实测 WS：`{"node": "5"}` 就是 KSampler 的 id），
+所以 ComfyUI 会把预览画在**采样器节点**上 —— 这一路不用我们管。
+
+本节点的面板是**另一路**：前端自己监听同样的预览帧，接到 `web/step_preview/index.js` 的
+画布上。两处同时显示，互不影响。
+
+前端要点：
+
+- 事件名是 `b_preview_with_metadata`（`detail.blob` + `detail.jobId`）；老版前端发的是
+  `b_preview`，`detail` 直接就是 Blob。**两个都监听**，前端版本不同事件也不同。
+- `progress` 是全流程的，`VAE Decode` 之类也会发且 `max` 常为 1 —— 只收 `max > 1`
+  的，否则「step 8 / 8」会被盖成「step 1 / 1」。
+- 跑完监听 `executed` 拿 `output.images[0]`，换成 `/view?` 的成品图；没有保存节点就保留最后一帧。
+- 用的是 `addDOMWidget` + `fillNodeHeight`（跟 `display_any` 的预览面板同一套），
+  Vue 模式下高度靠 `panel_layout` 的 `holdVuePanelMinHeight` 撑住。
+- 🔴 **`<img>` 必须 `position:absolute; inset:0`**。写成普通块级元素时，图片的固有高度
+  （比如 512×512）会把 stage 撑开，底部状态栏连 STOP 一起被 `overflow:hidden` 裁掉。
+- 🔴 **节点高度要给够**（SIZES 里 400 / minH 300）。面板实际需要 302px：
+  画布 272 + 状态条 22 + 间距。给 360 时状态栏会掉出节点边界。
+- STOP 调 `api.interrupt()`，跟工具栏的取消是同一个接口；中断后 `execution_interrupted`
+  把状态改成「已停止」。
+
+### 实测数据（真采样，不是模拟）
+
+| 场景 | 预览帧 | 说明 |
+|---|---|---|
+| 不带本节点（启动参数 `none`） | **0** | 有 progress 事件，采样确实跑了 |
+| 带本节点 `method=auto`，2 步 | **2 帧**，各 ~7.4 KB | 逐步骤出图 |
+| 带本节点，3 步 | **3 帧** | 帧数 = 步数 |
+| `max_size=512` | 每帧 ~26 KB | |
+| `max_size=128` | 每帧 ~3.8 KB | 缩小 6.8 倍，尺寸参数确实生效 |
+| 带本节点 `method=none`，12 步 | **0** | 但跑完仍有成品图（128×128，来自 `预览图像`） |
+
+🔴 **`none` 关掉的是采样中间帧，不是成品图**。成品图走 `executed` 事件的
+`output.images`，跟 `preview_method` 半点关系没有 —— 所以这一档跑完，面板里照样换成成品。
+面板之所以要单独提示「预览已关闭，跑完显示成品图」，是因为中间那段空白看着像坏了。
+
+🔴 **测的时候两次 seed 必须不同**：同 seed + 同输入会命中节点缓存，KSampler 根本不执行，
+于是「0 帧」看起来像功能失效 —— 我第一版就是这么误判的。`tools/_probe_step_off.cjs`
+里 seed 是 `SP_SEED` 环境变量，换值再跑。
+
+### 隐藏采样器上的缩略图（`hide_sampler`）
+
+需求是「画面只留在我这块面板里，KSampler 上别挂那张小图」。**两条渲染路要走两套做法**：
+
+| 渲染 | 缩略图是什么 | 怎么按 |
+|---|---|---|
+| Nodes 2.0（Vue） | 节点外壳里的一张 `<img src="blob:…">` | 给 `[data-node-id]` 外壳加类，CSS `display:none` |
+| 经典画布 | `node.imgs` 数组，canvas 逐帧绘制 | 在实例上盖 `imgs` 访问器，读出恒为空数组 |
+
+🔴 **经典模式不能「收到帧就清 node.imgs」**：前端是异步解码 blob 之后才写 `imgs` 的，
+我们清完它又填回去，实测采样期间读到的始终是 1。必须用 `Object.defineProperty` 盖访问器 ——
+值照样存（前端逻辑不受影响），读出来永远空。关开关只要把 `__qgSpShow` 置回 true。
+
+🔴 **登记节点不能只靠帧事件**：`b_preview_with_metadata` 的 `detail.nodeId` 要到第一帧才有，
+那时第一帧已经画出来了。所以 `execution_start` 先按 `comfyClass` / `type` 里的 `sampler`
+预登记一遍，帧事件再按 `nodeId` 补（第三方采样器也能罩住）。
+
+🔴 **Vue 里加的类会被重排冲掉**，所以 `progress` 每步补一次；跑完 `execution_success` 再补一次，
+否则 KSampler 上留着的最后一帧会冒回来。
+
+⚠️ 藏了图之后 Vue 节点底部还留着「512 × 512」那行尺寸标注（img 的兄弟元素）。
+刻意没动：它本身是信息，而且用 `img + *` 去藏会波及 resize 手柄那种兄弟节点。
+
+### 三个参数收进齿轮（`web/step_preview/index.js`）
+
+节点上不放控件行，右下角一个 20×20 的齿轮，点开在画面区域盖一层设置面板。
+
+**原生控件必须留着**（值要靠它进存档和 prompt），只是让它不占位置：
+
+| 渲染 | 怎么藏 |
+|---|---|
+| 经典画布 | `hideCanvasWidget()`（`shared/core_preview.mjs`）把 `computeSize` 压成 `[0,-4]` |
+| Nodes 2.0 | 外壳加 `qgtools-sp-nested`，CSS 选 `[data-widget-name="method"]` 等三行 |
+
+🔴 `data-widget-name` 是 Nodes 2.0 给每个 widget 行打的记号（实测存在，
+`data-testid="node-widget"` 也在）。但它只在 Vue 下才有，经典模式那半必须靠 `hideCanvasWidget`。
+
+🔴 浮层里改值写的是 `widget.value`，然后手动调一次 `widget.callback`。Vue 下这条
+**双向同步是通的**：改完 `<input>` 的 DOM 值会跟着变，`graphToPrompt()` 里的 inputs
+也确实是新值（`tools/_probe_step_prompt.cjs` 逐项断言过）。别改成往 store 里写 ——
+`widgetValueStore` 的入口不稳定，镜像这条够用。
+
+🔴 `max_size` 的范围夹取搬到了浮层里做。原生控件被藏起来后没人管它，浮层里
+自己按 64–2048、步长 64 夹（输入 1000 会变成 1024）。
+
+🔴 浮层铺满整个画面而不是只盖一条：只盖上面一条时，下面会露出半截提示文字，看着割裂。
+铺满但内容贴顶 + 底部一句灰字填补空白，别用 `justify-content:center`（三行飘在正中很像加载中）。
+
+尺寸随之从 320×428 收到 **320×360**（少三行控件），`minH` 240。
+
+### 探针
+
+- `tools/probe_step_preview.py`：同进程 import 真模块，逐分支断言（写入 / 不写入 / 尺寸复位 /
+  多节点取最小 id / 非法值 / 中文老值 / 六种脏输入 / 验 `execution.py` 里那行确实存在），8 组全过
+- `tools/probe_ksampler_preview.py`：**真跑 KSampler**（CPU 64×64 2 步），WS 收二进制帧数，
+  对比「带 / 不带本节点」；两次用不同 seed 避免缓存
+- `tools/_probe_step_preview_ui.cjs [classic|vue]`：节点尺寸是否照表（210×78）、
+  下拉 `auto` 是否显示成「自动」、有没有输出槽
+- `tools/_probe_step_panel.cjs`：面板布局体检 —— 塞一张假预览帧，量 `root / stage / img / bar`
+  的 `offsetHeight`，断言状态条没被挤出 root（图片撑高面板时就靠这条抓）
+- `tools/_probe_step_stop.cjs`：跑 40 步，第 3 秒点 STOP，断言状态变「已停止」且按钮变灰
+- `tools/_probe_step_off.cjs`（`SP_METHOD=none|auto`）：数采样帧，再看跑完有没有成品图。
+  `none` 档必须是 **0 帧 + 有成品**，`auto` 档必须是「帧数 = 步数 + 有成品」
+- `tools/_probe_step_height.cjs`（`VUE=1` 切 Nodes 2.0）：量 `root / stage / bar` 的
+  `offsetHeight`，用同一坐标系的 `getBoundingClientRect` 判状态栏有没有溢出 —— 别拿
+  `offsetTop` 比，两边的 `offsetParent` 不是同一个，会误报「状态栏丢了」
+- `tools/_probe_hide_thumb.cjs`（`VUE=1` / `HIDE=1`）：四种组合各跑一遍，断言
+  「采样器缩略图藏没藏」与「面板里有没有图」。🔴 `VUE=0` 时必须显式把
+  `Comfy.VueNodes.Enabled` 写回 false：这个设置存在 user 目录里，上一轮切成 Vue 后会一直留着，
+  不清的话「经典模式」的探针其实还在 Vue 里跑
+- `tools/_probe_step_settings.cjs`（`VUE=1`）：断言三个原生控件不渲染、齿轮能开合、
+  浮层尺寸、以及浮层改值能写回 widget（1000 应被夹成 1024）
+- `tools/_probe_step_prompt.cjs`（`VUE=1`）：走浮层改三个值，然后比 `graphToPrompt()`
+  的 `output[id].inputs` —— 这一步才证明设置不是只改了界面
+- `tools/probe_ksampler_preview.py`：后端侧，数 WS 二进制帧数，对比带 / 不带本节点
+
 ## LoRA Loader 搬家记录
 
 前端 1915 行 + 后端 752 行，是本包里前端最重的节点之一。分三个阶段。
@@ -739,6 +951,76 @@ mountWidgetCard(node, { rows: [
 - `licenses/ComfyUI-AusBoss-LICENSE.txt`：MIT 许可证要求保留。
 
 **改名带来的后果**：节点 ID 变了，含 `AUSBOSS_NODES_LoraLoader` 的工作流需要重新放一次节点。
+
+### 跟上游 2.19 / 2.20 的差异（v0.9.10）
+
+搬过来时对的是 2.12.x，之后上游走到 2.20.2。逐条筛完，只做两条、其余明确不跟：
+
+| 上游 | 我们的做法 |
+|---|---|
+| **2.19.0 选择框可勾多个文件一次加** | ✅ **已做**（`web/lora_loader/index.js` 的 `ticked` / `tickRun` / `addTicked`）。交互按我们自己的手感定：点勾选框或 Ctrl 点整行勾一个、Shift 点整行勾一段（从上次勾的那行连到这儿）、Shift+Enter 是键盘版；底部一条「已勾选 N 个 / 清空 / 加入 N 个」。🔴 勾选**不随搜索清空** —— 可以分几次搜索攒一批。🔴 已在栈里的文件加 `.instack`：不给勾、点了只提示，否则勾上也只会被 `appendFolderRows` 跳过，等于骗人。加到栈里走 `appendFolderRows`（不是逐行 push），去重和行数上限都由它管 |
+| **2.19.2 Civitai 查询失败说清原因** | ✅ **已做**。`civitaiFailureText()` 判 `TypeError`（请求根本没发出去）→ 给出「防火墙 / VPN / 代理」的解释，其余照原样抛出。面板除写进按钮的 `title` 之外**再弹一次 toast** —— title 要悬停才看得见 |
+| **2.19.0 行分组 + 2.19.1 组开关 / Workflow Switches 拥有一个组** | ❌ **不做**。要动 `serializeRows` 的存档格式（每行多一个 group 字段），还要连到 `QG_WorkflowSwitches`，老工作流和新老存档交错时容易错位。要做就得单独排一轮，含存档兼容测试 |
+| **2.19.0 Civitai 预览图下载并存到 LoRA 旁边** | ✅ **已做**（见下节）。齿轮里多一档「Civitai 图片：关 / PG-13 / 任意」，默认 PG-13 |
+
+### Civitai 预览图存盘（v0.9.10）
+
+一次「获取 Civitai 信息」会顺带把这张 LoRA 在 Civitai 的第一张图存成
+`<模型>.preview.jpg`，之后悬停就有图 —— 不用另装 LoRA Previews 插件。
+
+链路是**浏览器下载、服务端只验再写**：
+
+1. 齿轮里选档：`off` / `PG-13`（默认）/ `any`。`PG-13` 跳过 Civitai 标为 R 及以上的图。
+2. 前端 `pickCivitaiPicture()` 从**原始响应**的 `images` 里挑第一张能用的
+   （`type: "image"`、分级够温和、地址在 `image.civitai.com`）。
+   🔴 不能用 `/qg/lora/civitai` 返回的 `saved.info` —— 那是归一化后的，**没有 `images` 字段**。
+3. `smallPictureUrl()` 把地址里的 `width=` 段换成 450（没有就插一段）再下载；
+   `credentials: "omit"` + `referrerPolicy: "no-referrer"`，不带 cookie。
+4. **跳转之后才验来源**：这个请求用默认的 `follow`（Civitai 会跳到自家文件库），
+   拿到 `response.url` 再用 `isCivitaiAddress()` 判 `civitai.com` / `*.civitai.com` + https。
+   🔴 别照抄查 hash 那条路的 `redirect: "error"` —— 那会把正常跳转一起拒掉。
+5. `POST /qg/lora/picture?name=` 交字节；服务端 `save_civitai_picture()`
+   **重新解码**、转 RGB、缩到 768、质量 88 存 JPEG（Civitai 塞在 EXIF 里的东西一概不落地）。
+
+🔴 服务端三道闸，缺一不可：
+- `MAX_PICTURE_BYTES = 8 MB`（`content_length` 先挡，读完再按实际长度挡一次）
+- `MAX_PICTURE_PIXELS = 4000 万` —— 解压炸弹防线。20000×20000 的 PNG 只有几百 KB，
+  解开要 1.2 GB，**只按字节数限制挡不住**。
+- `open(target, "xb")` 独占创建 —— 已有预览图的 LoRA **永不覆盖**，两个请求同时到达也覆盖不了。
+  用户自己放的那张比 Civitai 的珍贵。
+
+🔴 「先查有没有预览图，再解码」—— 顺序别反，已有的文件连解码都省了。
+
+存好之后 `pictureSaved()` 把 `thumbVersion` +1。悬停缩略图和信息卡里的 `<img>` 都带这个版本号，
+否则浏览器手里那张 404 会一直留着（`/qg/lora/thumb` 的 404 响应没有 Cache-Control）。
+
+验证：`tools/_check_civitai_picture.py`（17 项，临时目录替身，不碰真实 LoRA）、
+`tools/_check_civitai_picture.mjs`（30 项纯函数）、`tools/_probe_civitai_picture.py`
+（真路由端到端，自己造文件自己删）、`tools/_probe_lora_picture_post.cjs`（浏览器 Blob 直传）。
+
+### 全插件中文覆盖普查（v0.9.10）
+
+「面板还有英文」这种事不能再靠印象判断，用工具查：
+
+- **`tools/audit_zh_keys.py`**（已进 `regress`）—— 扫 `web/**/*.{js,mjs}` 里所有
+  `zh()` / `zhCount()` 的**字符串字面量键**，逐个查「全节点 `ui` 拍平合并」后的词典。
+  现 **273 处调用、0 条缺口**。
+  🔴 `zhPair(英文, 中文)` 的英文参数**不算缺口** —— 它自带中文，英文那份只给英文界面用。
+  把 zhPair 也算进去会报一堆假账（第一版就这么错，LoRA 面板被误报 9 条）。
+- **`tools/_probe_lora_zh_scan.cjs`** —— 运行时扫描：依次打开面板 / 齿轮 / 选择框，
+  收集所有「有 ASCII、没汉字」的可见文本，外加 `title` / `aria-label` / `placeholder`
+  （这三个属性汉化插件的 MutationObserver 看不到）。中文界面下只剩 `+ LoRA`、`PG-13`
+  和三个文件名，都该保留。
+
+这轮补掉的 11 条：遮罩编辑器的 9 条 `Overlay colour: *`、`Write the mask into a new file
+and use it.`、导出节点的 `Export settings`。
+
+🔴 **`mask_editor.mjs` 的 `TINT_TIP` 是模块顶层求值**，靠「这个模块只在点『编辑遮罩』时
+动态 import」才拿到已就绪的字典。代码里已经写了警告 —— **别把那条 import 改成静态的**，
+否则那九条提示会永久留在英文。
+
+📌 核对汉化包之前先刷快照：`fetch_qg_object_info.py --port 8199`。`audit_zh_pack.py` 读的是
+`reports/qg_object_info.json` 这份**快照**而不是活实例，忘了刷会报一堆假的「僵尸条目」。
 
 ## 说明卡 / 开关 搬家记录（v0.4.0）
 
@@ -1251,6 +1533,47 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
   `tools/probe_compare_erase.py`（CDP 真机，62+ 项：真画一笔、撤销、清空、真保存并下载回来、
   `filename` 接线后名字框变灰）。
 
+## 遮罩裁剪 / 裁剪恢复 / 遮罩对齐（自写，2026-10-29）
+
+三个节点一套流程，对着孤海「遮罩裁剪V2 + 裁剪恢复 + 遮罩对齐V2」的**用法**重写，代码没抄：
+几何全在 `nodes/_qg_mask_crop_helpers.py` 的纯函数里（`plan_crop` 一函数包办四方向扩展、
+三种取景、multiple 取整），不依赖 PIL / cv2 / scipy；`QG_CropRestore` 靠 `QG_MaskCrop`
+给的 `seam` 字典（`SEAM_TYPE = "QGSeam"`）回贴，只写落在画面内的部分。
+
+### 🔴 「没画遮罩」必须判在尺寸检查之前
+
+`ComfyUI` 原生 `LoadImage` 在图片**没有 alpha** 时给的是 **64×64 全零占位遮罩**
+（`torch.zeros((64, 64))`），不是图像尺寸。于是「用户还没画遮罩」这个状态，表现出来
+就是**尺寸对不上**。
+
+`crop()` 原本先查尺寸、再查 `mask_bounds() is None`，结果那条「没画就整图直通」的
+分支**永远走不到** —— 64×64 的占位遮罩在第一道检查就被 `mask_size_mismatch()` 拦下，
+抛 `No mask painted`，整个 prompt 崩掉。2026-10-29 用户实拍报的就是这个：
+
+```
+ValueError: No mask painted: right-click your picture, choose Open in MaskEditor...
+  at nodes/qg_mask_crop.py:225  raise ValueError(mask_size_mismatch(mask[0], height, width))
+```
+
+修法：`is_unpainted_mask(mask[0])` 命中（64×64 且全零）时**先换成同尺寸的全零遮罩**，
+让后面既有的「没画 → 整图直通 + `warn_once`」分支接住。真正的尺寸错误（比如 100×100
+的空白遮罩配 768×512 的图）仍然抛错，文案带两个尺寸。
+
+- 这不是「宽容过头」：遮罩没画是用户**还没走到那一步**，不是图画坏了。为此中断整条
+  工作流代价太大，直通则下游立刻能看出没裁剪。
+- `QG_MaskRefine` / `Crop For Inpaint` 不适用这条 —— 它们**必须**有遮罩才能干活，
+  报错是对的。只有 `QG_MaskCrop` 的语义允许「无遮罩 = 整图」。
+- 断言在 `tools/_check_mask_crop_align.py` 的 `test_unpainted_mask_passes_through`：
+  64×64 占位 → 不抛、输出等于原图、回贴逐像素差 0；100×100 空白 → 仍然报错。
+
+### 两个配套约束
+
+- `SEAM_TYPE` 写 `"QGSeam"`，**别写 `QG_SEAM`** —— `verify_display_names` 会把带下划线
+  的大写串当成节点 ID。
+- 模块级辅助函数别放 class 前面：`verify_bilingual` 会向上 40 行找 `"name": (`，把函数体
+  里的 `if anchor == "center":` 读成输入名（`QG_MaskAlign` 踩过，已把 `_anchor_offset`
+  挪到 class 之后）。
+
 ## 导出图像（`QG_ExportImage`）：JPEG 参数到底怎么选
 
 ### 为什么要有这个节点
@@ -1336,7 +1659,7 @@ python tools/gen_muye_i18n.py --apply   # 写 nodeDefs.json + 汉化插件字典
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.9  |  41 nodes loaded  |  8 categories
+  QG-tools v0.9.10  |  45 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

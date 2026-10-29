@@ -3,10 +3,10 @@
 // 渲染引擎：md_render.js（解析 → 排版 → 绘制）
 // 共用代码：label_common.js（编辑面板 + 画布钩子）
 import { openLabelEditorModal, registerLabelCanvasHooks, getMeasureCtx, DEFAULT_MD_BG,
-         DEFAULT_MD_PAD, DEFAULT_MD_RADIUS } from "./label_common.mjs?v=2026102706";
-import { MD_DEFAULT_MAX_WIDTH, getLabelLayout, drawLabelBlocks } from "./md_render.mjs?v=2026102706";
-import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102706";
-import { sizeFor } from "./node_width.mjs?v=2026102706";
+         DEFAULT_MD_PAD, DEFAULT_MD_RADIUS } from "./label_common.mjs?v=2026102915";
+import { MD_DEFAULT_MAX_WIDTH, getLabelLayout, drawLabelBlocks } from "./md_render.mjs?v=2026102915";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102915";
+import { sizeFor } from "./node_width.mjs?v=2026102915";
 
 const MD_NODE_TYPE = "QG_MarkdownNote";
 

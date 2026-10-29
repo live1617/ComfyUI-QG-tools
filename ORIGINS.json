@@ -1,14 +1,14 @@
 {
   "pack": "ComfyUI-QG-tools",
-  "updated": "2026-10-24",
+  "updated": "2026-10-28",
   "about": "每个节点的来源清单。发布前由 tools/verify_origin.py 校验：本文件的 ID 集合必须等于实际注册的节点集合；README「节点来源」表与本表必须一致；搬运节点的源文件头必须保留上游出处。",
   "legend": {
     "original": "原创 —— 代码是自己写的，三种都算：① 从零实现；② 参考过上游的用法/思路后自己重写（reference.relation = idea）；③ 合并作者自己的旧插件（relation = own）。reference 只记录参考对象，不代表代码来自上游",
     "ported": "搬运 —— 整段照抄上游代码，只改类名 / 节点 ID / 分类 / 显示名 / 中文文案，逻辑一行没动"
   },
   "counts": {
-    "total": 41,
-    "original": 15,
+    "total": 45,
+    "original": 19,
     "ported": 26
   },
   "upstreams": {
@@ -565,6 +565,56 @@
         "relation": "idea"
       },
       "note": "契约照孤海那支定：两个输出（图像 / 遮罩）、一个「保留透明通道」开关、编辑器存「原图副本 + alpha 带遮罩的成品」两个文件、读回时用副本的 alpha 换掉成品的 alpha，所以遮罩默认不进画面。带色图做成可选开关（孤海是二选一的档位），颜色与浓度直接吃编辑器里的九色板和透明度滑块，存盘时回写到这两个控件。实现自写：配对靠文件名里的 13 位时间戳（孤海靠像素比对 + 修改时间反查），只写两个文件，读写复用 _qg_media_helpers"
+    },
+    {
+      "id": "QG_StepPreview",
+      "display": "采样预览",
+      "file": "nodes/qg_step_preview.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。只用 ComfyUI 官方机制，没有搬任何插件的代码：开关靠 PromptServer.add_on_prompt_handler 在排队前改写 extra_data[\"preview_method\"]（PromptExecutor.execute_async 会读它），预览尺寸改 latent_preview.MAX_PREVIEW_RESOLUTION，老版本没有 override 时退化成直接改 cli_args.args.preview_method。前端面板自写（web/step_preview/index.js）：监听 b_preview* 事件把帧画进节点，带步骤计数与 STOP（调 api.interrupt），面板结构与高度自适应复用本插件自己的 panel_layout，未用任何上游代码"
+    },
+    {
+      "id": "QG_MaskCrop",
+      "display": "遮罩裁剪",
+      "file": "nodes/qg_mask_crop.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "孤海工具箱 Goohaitools-comfyui",
+        "node": "GH_MaskCropV2",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      },
+      "note": "自写。功能对位孤海「遮罩裁剪V2」，代码一行没抄：几何全在 nodes/_qg_mask_crop_helpers.py 的纯函数里（plan_crop 负责四方向按最短边倍数扩展、native / square / custom 三种取景、multiple 向上取整），不依赖 PIL / cv2 / scipy；越界部分按方向取边缘众数色或边缘拉伸填充（孤海是 PIL putpixel 逐像素写）；custom 用 cover 语义先扩矩形再 resize，不会像 fit 那样把主体压窄；整批共用并集包围盒，视频帧不抖"
+    },
+    {
+      "id": "QG_CropRestore",
+      "display": "裁剪恢复",
+      "file": "nodes/qg_mask_crop.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "孤海工具箱 Goohaitools-comfyui",
+        "node": "GH_CropRestore",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      },
+      "note": "自写。功能对位孤海「裁剪恢复」，代码重写：像素级 expand / feather 取代百分比；只写落在画面内的部分，遮罩外像素与原件逐像素相同（同尺寸回贴实测差 0）；另加可选的整体中位配色对齐，孤海那套排除重绘区的加权最小二乘没有照搬"
+    },
+    {
+      "id": "QG_MaskAlign",
+      "display": "遮罩对齐",
+      "file": "nodes/qg_mask_align.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "孤海工具箱 Goohaitools-comfyui",
+        "node": "孤海-遮罩对齐",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      },
+      "note": "自写。功能对位孤海「遮罩对齐v2」，代码重写：两个轴各给四个锚点（center / left / right / top / bottom / none），不是开关二选一；搬移保留原始软边，不重画成矩形；整批只算一个偏移（包围盒取并集），视频帧不漂；aligned 与 bbox 拆成两个输出，union_bbox 才与参考取并集"
     }
   ],
   "sections": [
@@ -807,6 +857,25 @@
       "anchor": "## 遮罩精修",
       "nodes": [
         "QG_MaskRefine"
+      ]
+    },
+    {
+      "anchor": "## 遮罩裁剪 / 裁剪恢复",
+      "nodes": [
+        "QG_MaskCrop",
+        "QG_CropRestore"
+      ]
+    },
+    {
+      "anchor": "## 遮罩对齐",
+      "nodes": [
+        "QG_MaskAlign"
+      ]
+    },
+    {
+      "anchor": "## 采样预览",
+      "nodes": [
+        "QG_StepPreview"
       ]
     }
   ]

@@ -13,7 +13,7 @@
 // 函数拖进上千行。
 // 后端对应文件：nodes/_qg_compare_helpers.py（两边数字必须一致）。
 
-import { BRUSH_SOFT_DEFAULT, clampBrushSize, clampSoft, steppedBrushSize } from "./brush.mjs?v=2026102706";
+import { BRUSH_SOFT_DEFAULT, clampBrushSize, clampSoft, steppedBrushSize } from "./brush.mjs?v=2026102915";
 
 // 画笔本身就是全包共用那一支（brush.mjs）。
 export {
@@ -27,7 +27,7 @@ export {
   moveAdjust,
   startAdjust,
   steppedSoft,
-} from "./brush.mjs?v=2026102706";
+} from "./brush.mjs?v=2026102915";
 
 export const ERASE_SIZE = [2, 2000];
 export const ERASE_MAX_STROKES = 400;
@@ -167,6 +167,9 @@ export function fitRect(boxWidth, boxHeight, width, height) {
   const fitHeight = height * scale;
   return { left: (boxWidth - fitWidth) / 2, top: (boxHeight - fitHeight) / 2, width: fitWidth, height: fitHeight, scale };
 }
+
+// 带透明部分的图铺在棋盘格上看，跟编辑软件一样：格子的边长（CSS 像素）和两种颜色。
+export const CHECKER = { side: 8, light: "#4d4d4d", dark: "#383838" };
 
 // 盒子里的一个位置，换成图上的位置（图上像素）。
 export function toPicture(fit, x, y) {

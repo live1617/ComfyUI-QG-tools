@@ -18,7 +18,7 @@
 // 本模块只管 DOM 生命周期，帮助卡内容与打开方式由调用方传入（onOpen），
 // 这样 help_badge.mjs 能继续保持纯函数、可被 node:test 直接跑。
 
-import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102706";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102915";
 
 const BADGE_CLASS = "qgtools-help-badge";
 const STYLE_ID = "qgtools-help-badge-style";

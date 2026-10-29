@@ -24,8 +24,8 @@
 // at 1 goes 8, 16, 24 instead of 9, 17, 25, and back down to its minimum.
 // Shift's fine step and typed values are never snapped.
 
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102706";
-import { zh } from "./zh.mjs?v=2026102706";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102915";
+import { zh } from "./zh.mjs?v=2026102915";
 
 // Keep in sync with BRAND in shared/index.mjs - importing it would pull
 // /scripts/app.js into node:test, and this module's math must stay testable.

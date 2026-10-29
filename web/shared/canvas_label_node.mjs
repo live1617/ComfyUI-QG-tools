@@ -3,10 +3,10 @@
 // Markdown 相关的渲染已拆到独立节点「Markdown 文本」；本节点保持纯文本，不做语法解析。
 // 共用代码：label_common.js（编辑面板 + 画布钩子）
 import { openLabelEditor, registerLabelCanvasHooks, getMeasureCtx, DEFAULT_LABEL_BG,
-         DEFAULT_LABEL_PAD, DEFAULT_LABEL_RADIUS } from "./label_common.mjs?v=2026102706";
-import { syncCanvasLabelMode } from "./canvas_label_dom.mjs?v=2026102706";
-import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102706";
-import { sizeFor } from "./node_width.mjs?v=2026102706";
+         DEFAULT_LABEL_PAD, DEFAULT_LABEL_RADIUS } from "./label_common.mjs?v=2026102915";
+import { syncCanvasLabelMode } from "./canvas_label_dom.mjs?v=2026102915";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026102915";
+import { sizeFor } from "./node_width.mjs?v=2026102915";
 
 const NODE_TYPE = "QG_CanvasLabel";
 

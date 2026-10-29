@@ -1,21 +1,21 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026102706";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102706";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026102706";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026102915";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102915";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026102915";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102706";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026102706";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102706";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026102706";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026102706";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102706";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026102706";
+} from "../shared/settings_menu.mjs?v=2026102915";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026102915";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102915";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026102915";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026102915";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102915";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026102915";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -71,8 +71,8 @@ import {
   loraFolders,
   loraPickerEntries,
   loraStackKeyAction,
-} from "../shared/lora_stack.mjs?v=2026102706";
-import { civitaiButtonLabel, civitaiByHashUrl, parseCivitaiBody } from "../shared/civitai_lookup.mjs?v=2026102706";
+} from "../shared/lora_stack.mjs?v=2026102915";
+import { civitaiButtonLabel, civitaiByHashUrl, civitaiFailureText, civitaiUnreachable, isCivitaiAddress, MAX_PICTURE_BYTES, parseCivitaiBody, pickCivitaiPicture, smallPictureUrl } from "../shared/civitai_lookup.mjs?v=2026102915";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -157,6 +157,13 @@ const SETTINGS_SCHEMA = [
     hint: "Offer a Fetch Civitai info button in the info card. Clicking it "
       + "asks civitai.com about that one file, from this browser, and saves "
       + "the answer next to the LoRA. Nothing is sent until you click.",
+  },
+  {
+    key: "civitai_picture", label: "Civitai picture", type: "choice",
+    options: ["off", "PG-13", "any"], default: "PG-13",
+    hint: "Fetch Civitai info also saves the LoRA's first picture next to the "
+      + "file, so hovering the LoRA shows it. PG-13 skips pictures Civitai "
+      + "rates R or above. A picture you already have is never replaced.",
   },
   {
     key: "name_cut", label: "Long names", type: "choice",
@@ -357,6 +364,31 @@ function installStyles() {
     overflow: hidden; }
   .qgtools-lora-option.highlight, .qgtools-lora-folder-option:hover { background: #2c3238; }
   .qgtools-lora-option.current { color: ${BRAND}; }
+  /* 多选：每个文件行左边一个勾选框。勾上的行淡淡亮着，一眼能数出来。 */
+  .qgtools-lora-option.tickable { position: relative; }
+  .qgtools-lora-tick { position: absolute; top: 50%; width: 15px; height: 15px;
+    margin-top: -7.5px; border: 1.5px solid #5c666f; border-radius: 3px;
+    background: #2a3036; cursor: pointer; box-sizing: border-box; }
+  .qgtools-lora-option.tickable:hover .qgtools-lora-tick { border-color: #b6bec6; }
+  .qgtools-lora-tick:hover { border-color: ${BRAND} !important; }
+  .qgtools-lora-tick.on { background: ${BRAND}; border-color: ${BRAND}; }
+  .qgtools-lora-tick.on::after { content: ""; position: absolute; left: 3px; top: 1px;
+    width: 5px; height: 9px; border: solid #06211f; border-width: 0 2px 2px 0;
+    transform: rotate(45deg); }
+  .qgtools-lora-option.ticked { background: rgba(0, 180, 170, .14); }
+  /* 已经在栈里的文件不给勾：点了也只会被跳过，勾上就是骗人。 */
+  .qgtools-lora-option.instack { opacity: .5; cursor: default; }
+  .qgtools-lora-option.instack:hover { background: none; }
+  .qgtools-lora-tickbar { display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-top: 1px solid #2c3238; }
+  .qgtools-lora-tickcount { flex: 1 1 auto; min-width: 0; color: #9ba2aa; font-size: 11px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qgtools-lora-tickbar button { flex: none; height: 26px; padding: 0 10px;
+    border: 1px solid #3a4047; border-radius: 6px; background: #23272c; color: #d7dde2;
+    font-size: 11.5px; cursor: pointer; }
+  .qgtools-lora-tickbar button:hover { border-color: #9ba2aa; }
+  .qgtools-lora-tickbar .qgtools-lora-tickadd { background: ${BRAND};
+    border-color: ${BRAND}; color: #06211f; font-weight: 600; }
   .qgtools-lora-empty { padding: 10px; color: #9ba2aa; font-style: italic; }
   .qgtools-lora-menu { min-width: 140px; padding: 4px; }
   /* Direct children only - those are the plain list rows. Buttons that sit
@@ -559,6 +591,20 @@ function closePopup() {
 // loads, so a LoRA without a sidecar preview shows nothing at all.
 let hoverThumb = null;
 
+// 存过新预览图之后，浏览器手里那张「404」还留着 —— 加个版本号它才肯重新问。
+let thumbVersion = 0;
+
+function thumbUrl(name) {
+  const suffix = thumbVersion ? `&v=${thumbVersion}` : "";
+  return api.apiURL(`/qg/lora/thumb?name=${encodeURIComponent(name)}${suffix}`);
+}
+
+// 一张新图刚落盘：下次悬停和已经打开的信息卡都得重新取。
+function pictureSaved() {
+  thumbVersion += 1;
+  if (hoverThumb) delete hoverThumb.dataset.name;
+}
+
 function ensureHoverThumb() {
   if (hoverThumb) return hoverThumb;
   hoverThumb = el("img", "qgtools-lora-hoverthumb");
@@ -586,8 +632,7 @@ function showHoverThumb(state, name, x, y) {
   if (thumb.dataset.name !== name) {
     thumb.dataset.name = name;
     thumb.style.display = "none";
-    thumb.src = api.apiURL(
-      `/qg/lora/thumb?name=${encodeURIComponent(effectiveLoraName(state, name))}`);
+    thumb.src = thumbUrl(effectiveLoraName(state, name));
   } else if (thumb.complete && thumb.naturalWidth > 0) {
     thumb.style.display = "";
   }
@@ -935,7 +980,9 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
   const list = el("div", "qgtools-lora-list");
   list.append(el("div", "qgtools-lora-empty", "Loading..."));
   if (adding) pop.append(el("div", "qgtools-lora-picker-note",
-    "Use the arrows to fold folders. Click a file to add one, or a folder name to add all, including nested folders. Skips files already in this stack."));
+    zhPair(
+      "Use the arrows to fold folders. Click a file to add one, Ctrl-click or Shift-click to tick several, or a folder name to add all. Skips files already in this stack.",
+      "箭头可以折叠文件夹。点文件加一个；Ctrl 点勾多个、Shift 点勾一段；点文件夹名加整个文件夹。已在栈里的文件会跳过。")));
   pop.append(search, list);
   const anchorRect = anchor.getBoundingClientRect();
   const fitWidth = () => pickerWidth(widestPickerLabel, anchorRect.width, window.innerWidth);
@@ -952,6 +999,111 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
   let options = [];
   let loadError = false;
   let highlight = -1;
+
+  // 一次勾几个文件一起加。勾选不随搜索清空 —— 可以把几次搜索的结果攒成一批。
+  const ticked = [];
+  // 上一次单独勾的那一行，Shift 点另一下就从它勾到这里。
+  let tickAnchor = null;
+  let tickBar = null;
+
+  const inStack = (name) => state.rows.some((row) => row.name === name);
+
+  const updateTickBar = () => {
+    if (!ticked.length) {
+      tickBar?.remove();
+      tickBar = null;
+      return;
+    }
+    if (!tickBar) {
+      tickBar = el("div", "qgtools-lora-tickbar");
+      const clear = el("button", "qgtools-lora-tickclear", zhPair("Clear", "清空"));
+      clear.type = "button";
+      clear.title = zhPair("Untick every file", "取消全部勾选");
+      clear.addEventListener("click", () => {
+        ticked.length = 0;
+        tickAnchor = null;
+        renderTicks();
+        search.focus({ preventScroll: true });
+      });
+      const add = el("button", "qgtools-lora-tickadd");
+      add.type = "button";
+      add.addEventListener("click", () => addTicked({ pointer: true }));
+      tickBar.append(el("span", "qgtools-lora-tickcount"), clear, add);
+      pop.append(tickBar);
+    }
+    const count = ticked.length;
+    tickBar.querySelector(".qgtools-lora-tickcount").textContent =
+      zhPair(`${count} ticked`, `已勾选 ${count} 个`);
+    tickBar.querySelector(".qgtools-lora-tickadd").textContent =
+      zhPair(`Add ${count} LoRA${count === 1 ? "" : "s"}`, `加入 ${count} 个`);
+    // 底下多了一行，弹出框得重新量高度、重新摆。
+    place();
+  };
+
+  const renderTicks = () => {
+    for (const option of list.querySelectorAll(".qgtools-lora-option.tickable")) {
+      const name = option.dataset.qgFile;
+      const on = ticked.includes(name);
+      option.classList.toggle("ticked", on);
+      option.querySelector(".qgtools-lora-tick")?.classList.toggle("on", on);
+    }
+    updateTickBar();
+  };
+
+  const toggleTick = (name) => {
+    const at = ticked.indexOf(name);
+    if (at >= 0) ticked.splice(at, 1);
+    else ticked.push(name);
+    tickAnchor = name;
+    renderTicks();
+  };
+
+  // Shift：从上次勾的那一行勾到这一行，一次挑一段。
+  const tickRun = (name) => {
+    const shown = [...list.querySelectorAll(".qgtools-lora-option.tickable:not(.instack)")]
+      .map((option) => option.dataset.qgFile);
+    const from = shown.indexOf(tickAnchor);
+    const to = shown.indexOf(name);
+    if (from < 0 || to < 0) {
+      toggleTick(name);
+      return;
+    }
+    for (const file of shown.slice(Math.min(from, to), Math.max(from, to) + 1)) {
+      if (!ticked.includes(file)) ticked.push(file);
+    }
+    tickAnchor = name;
+    renderTicks();
+  };
+
+  const tickWith = (event, name) => {
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey) tickRun(name);
+    else toggleTick(name);
+  };
+
+  function addTicked({ pointer = false } = {}) {
+    const result = appendFolderRows(state.rows, ticked, state.settings?.default_strength ?? 1);
+    if (!result.added) {
+      loraToast(result.needed > result.room
+        ? zhPair(
+          `You ticked ${result.needed} new LoRA${result.needed === 1 ? "" : "s"}, but only ${result.room} of ${MAX_ROWS} rows are free. Nothing was added. Untick some or remove rows.`,
+          `你勾了 ${result.needed} 个新 LoRA，但 ${MAX_ROWS} 行里只剩 ${result.room} 行空位，什么都没加。少勾几个，或先删几行。`)
+        : zhPair("Every ticked LoRA is already in this stack. Nothing was added.",
+          "勾的这些都已在栈里，什么都没加。"));
+      return;
+    }
+    const firstAdded = state.rows.length;
+    ticked.length = 0;
+    tickAnchor = null;
+    closePopup();
+    commitRows(state, result.rows, { structural: true });
+    fitNode(state);
+    loraToast(zhPair(
+      `Added ${result.added} LoRA${result.added === 1 ? "" : "s"}`
+        + (result.skipped ? `, skipped ${result.skipped} already in this stack.` : "."),
+      `已加入 ${result.added} 个`
+        + (result.skipped ? `，跳过 ${result.skipped} 个已在栈里的。` : "。")));
+    if (!pointer) backToStack(firstAdded);
+  }
 
   const collapsedFolders = loadCollapsedFolders();
   // Search reveals matches without losing the user's usual folded view.
@@ -1057,6 +1209,26 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
       option.title = zh("Add all LoRAs in this folder, including nested folders. Files already in this stack are skipped.");
     }
     if (!folder && name === state.rows[index]?.name) option.classList.add("current");
+    // 已经是栈里的一行：不给勾，点了也只提示一下。勾上是骗人的 —— 加进去也会被跳过。
+    const already = !folder && inStack(name);
+    if (!folder && adding) {
+      option.classList.add("tickable");
+      option.dataset.qgFile = name;
+      if (already) option.classList.add("instack");
+      const tick = el("span", "qgtools-lora-tick" + (!already && ticked.includes(name) ? " on" : ""));
+      tick.style.left = "6px";
+      tick.title = already
+        ? zhPair("Already in this stack", "已在栈里")
+        : zhPair("Ctrl-click several files, Shift-click a run", "Ctrl 点选多个，Shift 点选一段");
+      tick.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (already) return;
+        tickWith(event, name);
+        search.focus({ preventScroll: true });
+      });
+      option.prepend(tick);
+      if (!already && ticked.includes(name)) option.classList.add("ticked");
+    }
     option.addEventListener("pointerenter", (event) => {
       // Pointing at a folder never chooses it for Enter or for the Left and
       // Right keys: a pointer that only rests on the list would otherwise
@@ -1078,7 +1250,24 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
       if (!folder) showHoverThumb(state, name, event.clientX, event.clientY);
     });
     option.addEventListener("pointerleave", hideHoverThumb);
-    option.addEventListener("click", () => pick(entry, { pointer: true }));
+    option.addEventListener("click", (event) => {
+      if (already) {
+        loraToast(zhPair("This LoRA is already in the stack.", "这个 LoRA 已经在栈里了。"));
+        return;
+      }
+      // Ctrl / Cmd 点整行 = 勾上，Shift 点整行 = 勾一段。都不用瞄准那个小方框。
+      if (!folder && adding) {
+        if (event.ctrlKey || event.metaKey) {
+          toggleTick(name);
+          return;
+        }
+        if (event.shiftKey) {
+          tickRun(name);
+          return;
+        }
+      }
+      pick(entry, { pointer: true });
+    });
     option.dataset.qgFlat = String(flatIndex);
     list.append(option);
   };
@@ -1136,7 +1325,13 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
       event.preventDefault();
       // Typing a filename then Enter keeps picking one file. A folder is
       // selected deliberately by a click or by moving the highlight to it.
-      pick(options[highlight] ?? options.find((entry) => entry.kind === "file"));
+      const entry = options[highlight] ?? options.find((e) => e.kind === "file");
+      // Shift + Enter 是键盘版的「连勾一段」，和 Shift 点行一个意思。
+      if (adding && event.shiftKey && entry?.kind === "file" && !inStack(entry.name)) {
+        tickRun(entry.name);
+        return;
+      }
+      pick(entry);
     }
   });
 
@@ -1251,7 +1446,8 @@ function installStackKeyboard(state) {
 // about that hash, and the server saves the answer beside the LoRA after
 // checking it describes the same file. Returns false when Civitai does not
 // know the file (unpublished or hidden models answer 404).
-async function lookUpOnCivitai(serverName) {
+// `picture` is the gear option: "off", "PG-13" or "any".
+async function lookUpOnCivitai(serverName, picture = "PG-13") {
   const hashed = await (await api.fetchApi(
     `/qg/lora/hash?name=${encodeURIComponent(serverName)}`
   )).json();
@@ -1268,7 +1464,56 @@ async function lookUpOnCivitai(serverName) {
     body: JSON.stringify({ name: serverName, info }),
   })).json();
   if (!saved.ok) throw new Error(saved.error || "Could not save the Civitai info.");
+  if (picture !== "off") {
+    // 图没存成不该把「信息已经存好了」这件事也报成失败。
+    await saveCivitaiPicture(serverName, info, picture === "any").catch((error) =>
+      loraToast(zhPair(
+        `Saved the Civitai info, but not its picture: ${error?.message || error}`,
+        `Civitai 信息已存下，但图没存成：${error?.message || error}`)));
+  }
   return true;
+}
+
+// The LoRA's first picture on Civitai, saved beside it as its preview. The
+// browser downloads a 450-pixel copy from Civitai's picture server without
+// cookies or a referrer; the server decodes it again and never replaces an
+// existing picture.
+async function saveCivitaiPicture(serverName, info, anyRating) {
+  const picture = pickCivitaiPicture(info, anyRating);
+  if (!picture) {
+    loraToast(anyRating
+      ? zhPair("Civitai has no picture of this LoRA to save.", "这张 LoRA 在 Civitai 上没有可存的图。")
+      : zhPair("Civitai has no picture of this LoRA rated PG-13 or milder.",
+        "这张 LoRA 在 Civitai 上没有 PG-13 及以下的图。"));
+    return;
+  }
+  // 默认跟随重定向（Civitai 会跳到自己的文件库），跳完再验一次落点。
+  const response = await fetch(smallPictureUrl(picture.url), {
+    credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`Civitai's picture server answered ${response.status}.`);
+  if (!isCivitaiAddress(response.url)) {
+    throw new Error("The picture came from somewhere other than Civitai.");
+  }
+  if (!(response.headers.get("content-type") || "").startsWith("image/")) {
+    throw new Error("Civitai did not send a picture.");
+  }
+  if (Number(response.headers.get("content-length") || 0) > MAX_PICTURE_BYTES) {
+    throw new Error("The picture is too large.");
+  }
+  const blob = await response.blob();
+  if (blob.size > MAX_PICTURE_BYTES) throw new Error("The picture is too large.");
+  const saved = await (await api.fetchApi(
+    `/qg/lora/picture?name=${encodeURIComponent(serverName)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": blob.type || "application/octet-stream" },
+      body: blob,
+    }
+  )).json();
+  if (!saved.ok) throw new Error(saved.error || "Could not save the picture.");
+  pictureSaved();
+  loraToast(zhPair("Saved the LoRA's Civitai picture.", "已存下这张 LoRA 在 Civitai 的图。"));
 }
 
 // ---------- info card ----------
@@ -1287,7 +1532,7 @@ function openInfo(state, index, anchor) {
     card.textContent = "";
     const image = el("img");
     image.alt = "";
-    image.src = api.apiURL(`/qg/lora/thumb?name=${encodeURIComponent(serverName)}`);
+    image.src = thumbUrl(serverName);
     image.addEventListener("error", () => image.remove());
     if (info.has_preview) card.append(image);
     card.append(el("h4", "", info.civitai_title || rowLabel(state, row.name)));
@@ -1349,18 +1594,23 @@ function openInfo(state, index, anchor) {
       fetchButton.title = zh("Asks civitai.com about this one file, from this browser.");
       fetchButton.addEventListener("click", async () => {
         fetchButton.disabled = true;
-        fetchButton.textContent = "Fetching...";
+        fetchButton.textContent = zhPair("Fetching...", "正在查询…");
         retranslate(card);
         try {
-          if (!(await lookUpOnCivitai(serverName))) {
-            fetchButton.textContent = "Not found on Civitai";
+          if (!(await lookUpOnCivitai(serverName, state.settings?.civitai_picture ?? "PG-13"))) {
+            fetchButton.textContent = zhPair("Not found on Civitai", "Civitai 上没有这个文件");
             retranslate(card);
             return;
           }
           load();
         } catch (error) {
-          fetchButton.textContent = "Civitai lookup failed";
-          fetchButton.title = String(error?.message || error);
+          fetchButton.textContent = zhPair("Civitai lookup failed", "Civitai 查询失败");
+          fetchButton.title = civitaiFailureText(error);
+          // 原因也弹一次：title 要悬停才看得到，很多人根本不会去悬停。
+          loraToast(civitaiUnreachable(error)
+            ? zhPair(civitaiFailureText(error),
+              "连不上 civitai.com。防火墙、VPN 或代理都可能拦住它，ComfyUI 其余功能不受影响。")
+            : String(error?.message || error));
           retranslate(card);
         }
       });

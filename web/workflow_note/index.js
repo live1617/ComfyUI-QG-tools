@@ -11,15 +11,15 @@
 // URLs become buttons or links (the parser already filtered them).
 
 import { api } from "/scripts/api.js";
-import { zh } from "../shared/zh.mjs?v=2026102706";
+import { zh } from "../shared/zh.mjs?v=2026102915";
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102706";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026102706";
-import { collectGraphNodes } from "../shared/appearance.mjs?v=2026102706";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102706";
-import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026102706";
-import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026102706";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102706";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102915";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026102915";
+import { collectGraphNodes } from "../shared/appearance.mjs?v=2026102915";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102915";
+import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026102915";
+import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026102915";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102915";
 import {
   COMMON_FOLDERS,
   INPUT_FOLDER,
@@ -39,9 +39,9 @@ import {
   rowFromCells,
   serializeNote,
   subfolderOf,
-} from "../shared/workflow_note.mjs?v=2026102706";
-import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026102706";
-import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026102706";
+} from "../shared/workflow_note.mjs?v=2026102915";
+import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026102915";
+import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026102915";
 
 const NODE_CLASS = "QG_WorkflowNote";
 const CSS_ID = "qgtools-workflow-note-css";

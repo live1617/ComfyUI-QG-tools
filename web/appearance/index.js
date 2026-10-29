@@ -10,18 +10,19 @@ import {
   shouldRecolor,
   titleInk,
   wearsLegacyScheme,
-} from "../shared/appearance.mjs?v=2026102706";
-import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026102706";
+} from "../shared/appearance.mjs?v=2026102915";
+import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026102915";
 import {
   BADGE_RADIUS,
   badgeCenter,
   helpSections,
   hitsBadge,
   showBadge,
-} from "../shared/help_badge.mjs?v=2026102706";
-import { mountHelpBadge, unmountHelpBadge } from "../shared/help_badge_dom.mjs?v=2026102706";
-import { closeSettingsMenu, openInfoCard } from "../shared/settings_menu.mjs?v=2026102706";
-import { zh, zhOn, zhReady } from "../shared/zh.mjs?v=2026102706";
+} from "../shared/help_badge.mjs?v=2026102915";
+import { mountHelpBadge, unmountHelpBadge } from "../shared/help_badge_dom.mjs?v=2026102915";
+import { closeSettingsMenu, openInfoCard } from "../shared/settings_menu.mjs?v=2026102915";
+import { zh, zhOn, zhReady, wantsChinese } from "../shared/zh.mjs?v=2026102915";
+import { ZH_NODE_DEFS } from "../shared/zh_node_defs.mjs?v=2026102915";
 
 const SETTING_ID = "QG.Appearance.NodeColor";
 const CUSTOM_SETTING_ID = "QG.Appearance.CustomColor";
@@ -235,7 +236,11 @@ function openHelpCard(node, event) {
   // (help_badge.mjs stays a pure, testable module). The card hangs off <body>
   // and its text is written once — the zh plugin's per-node DOM pass never
   // sees it, so leaving any of it bare leaves it English.
-  const sections = helpSections(nodeData).map((section) => ({
+  // 帮助卡正文取自后端 schema（一律英文），中文只存在于 locales/zh/nodeDefs.json。
+  // 中文界面下把那份表传进去，卡片才整张中文；英文界面传 null 保持英文。
+  // zh() 那层保留：它查的是汉化插件的 ui 字典，能翻掉标题之类零散词条，
+  // 查不到就原样返回，不会把已经中文的内容弄坏。
+  const sections = helpSections(nodeData, wantsChinese() ? ZH_NODE_DEFS : null).map((section) => ({
     ...section,
     ...(section.heading ? { heading: zh(section.heading) } : {}),
     ...(section.text ? { text: zh(section.text) } : {}),

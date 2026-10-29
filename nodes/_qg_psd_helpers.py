@@ -73,12 +73,14 @@ def _record(name: str, height: int, width: int, has_mask: bool) -> bytes:
     return record + struct.pack(">I", len(extra)) + extra
 
 
-def write_psd(path, layers, composite) -> Path:
+def write_psd(path, layers, composite, alpha=None) -> Path:
     """把 ``layers``（最底层在前）和扁平图 ``composite`` 写进 ``path``。
 
-    一层是 ``{"name": str, "rgb": HxWx3 uint8, "mask": HxW uint8 或 None}``。
-    蒙版白的地方露出这一层、黑的地方藏起来，和各家编辑软件一致。所有图的
-    尺寸必须一样。
+    一层是 ``{"name": str, "rgb": HxWx3 uint8, "alpha": HxW uint8 或 None,
+    "mask": HxW uint8 或 None}``。``alpha`` 是每个像素的实心程度，255 表示
+    完全在那里；不给就是整层实心。蒙版白的地方露出这一层、黑的地方藏起来，
+    和各家编辑软件一致。``alpha`` 挨着 ``composite`` 时是扁平图自己的透明
+    通道。所有图的尺寸必须一样。
     """
     flat = _rgb(composite, "扁平图")
     height, width = flat.shape[:2]
@@ -97,11 +99,21 @@ def write_psd(path, layers, composite) -> Path:
         if rgb.shape[:2] != (height, width):
             raise ValueError(f"{source} 必须是 {width}x{height}，和扁平图一样大。")
         mask = layer.get("mask")
+        solid = layer.get("alpha")
         records.append(_record(layer.get("name", ""), height, width, mask is not None))
-        planes.append(opaque)
+        planes.append(opaque if solid is None else _plane(solid, height, width, f"{source}的透明通道"))
         planes.extend(rgb[:, :, channel] for channel in range(3))
         if mask is not None:
             planes.append(_plane(mask, height, width, f"{source}的蒙版"))
+
+    if alpha is not None:
+        solid = _plane(alpha, height, width, "扁平图的透明通道")
+        # Photoshop 把带透明通道的扁平图压在白底上存，读的时候再靠 alpha 把白底去掉。
+        weight = solid[:, :, None].astype(np.float32) / 255.0
+        flat = np.round(flat * weight + 255.0 * (1.0 - weight)).astype(np.uint8)
+    flat_planes = [flat[:, :, channel] for channel in range(3)]
+    if alpha is not None:
+        flat_planes.append(solid)
 
     plane_bytes = len(RAW) + height * width
     layer_info = 2 + sum(len(record) for record in records) + plane_bytes * len(planes)
@@ -112,13 +124,14 @@ def write_psd(path, layers, composite) -> Path:
 
     target = Path(path)
     with open(target, "wb") as file:
-        # 版本 1、三通道、每通道 8 位、RGB。
-        file.write(b"8BPS" + struct.pack(">H6xHIIHH", 1, 3, height, width, 8, 3))
+        # 版本 1、每通道 8 位、RGB；通道数是 3，带扁平图透明通道时 4。
+        file.write(b"8BPS" + struct.pack(">H6xHIIHH", 1, len(flat_planes), height, width, 8, 3))
         file.write(struct.pack(">I", 0))  # 没有颜色表
         file.write(struct.pack(">I", 0))  # 没有图像资源
         # 图层块：块长、图层清单，然后是一个空的整份文档蒙版设置。
+        # 图层数写负数表示扁平图的第四个通道是透明通道。
         file.write(struct.pack(">I", 4 + layer_info + 4))
-        file.write(struct.pack(">Ih", layer_info, len(records)))
+        file.write(struct.pack(">Ih", layer_info, -len(records) if alpha is not None else len(records)))
         for record in records:
             file.write(record)
         for plane in planes:
@@ -126,10 +139,10 @@ def write_psd(path, layers, composite) -> Path:
             file.write(plane.tobytes())
         file.write(b"\x00" * padding)
         file.write(struct.pack(">I", 0))
-        # 扁平图：一个压缩标记，然后红绿蓝。
+        # 扁平图：一个压缩标记，然后红绿蓝（带透明通道时再加一路）。
         file.write(RAW)
-        for channel in range(3):
-            file.write(np.ascontiguousarray(flat[:, :, channel]).tobytes())
+        for plane in flat_planes:
+            file.write(np.ascontiguousarray(plane).tobytes())
     return target
 
 

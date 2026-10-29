@@ -616,7 +616,10 @@ def apply_stitch(
         # Qwen Image 2.1's VAE decodes RGBA; an RGB source has nowhere to
         # put the alpha, so it goes rather than failing the run.
         inpainted = inpainted[..., :3]
-    if inpainted.shape[3] != canvas.shape[3]:
+    # Most models paint RGB. Over a picture with see-through parts the patch
+    # takes the picture's own alpha where it lands, so they stay as they were.
+    keep_alpha = inpainted.shape[3] == 3 and canvas.shape[3] == 4
+    if inpainted.shape[3] != canvas.shape[3] and not keep_alpha:
         raise ValueError(
             f"Inpainted channels ({inpainted.shape[3]}) do not match the "
             f"cropped image ({canvas.shape[3]})."
@@ -630,6 +633,8 @@ def apply_stitch(
     patch = inpainted.to(dtype=out.dtype, device=out.device)
     if (patch.shape[1], patch.shape[2]) != (ch, cw):
         patch = _resize_image(patch, cw, ch, stitcher.get("algorithm", "bilinear"))
+    if keep_alpha:
+        patch = torch.cat([patch, out[:, cy : cy + ch, cx : cx + cw, 3:]], dim=-1)
 
     if seam == SEAM_BLEND_IN:
         plan = seam_plan(stitcher)
@@ -681,7 +686,8 @@ def apply_stitch(
         # of the drift below the picture - a faint dark line along the seam.
         patch = shift_tone(patch, field * alpha.unsqueeze(-1), min(1.0, float(color_match)))
     if fix_edge_halo:
-        patch = spread_edge_colors(patch, alpha)
+        # The colours only: a see-through channel is not a colour to spread.
+        patch = torch.cat([spread_edge_colors(patch[..., :3], alpha), patch[..., 3:]], dim=-1)
     weights = alpha.unsqueeze(-1)
     region = out[:, cy : cy + ch, cx : cx + cw, :]
     # canvas + blend * (inpainted - canvas): identical input reproduces the

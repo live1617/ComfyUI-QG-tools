@@ -5,7 +5,7 @@
 // and specializes the slot type to the connected input type so links validate.
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102706";
+import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
 
 const MAX_INPUTS = 16;
 const MIN_INPUTS = 2;

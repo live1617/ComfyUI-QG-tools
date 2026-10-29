@@ -28,7 +28,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026102706";
+import { chainCallback } from "./index.mjs?v=2026102915";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════
@@ -41,6 +41,9 @@ export const SIZES = {
     QG_EmptyLatentResolution: { w: 210, minW: 140, h: 194, minH: 194 },
     QG_Exists: { w: 210, minW: 140, h: 46, minH: 46 },
     QG_FreeMemory: { w: 210, minW: 140, h: 26, minH: 26 },
+    // 预览面板：标题 30 + 两个控件 92 + 画布 150 + 状态条 22 + 内边距。
+    // 高度给不够时，CSS 的 overflow:hidden 会把状态条连 STOP 一起裁掉（实测过）。
+    QG_StepPreview: { w: 320, minW: 270, h: 360, minH: 240 },
     QG_IfElse: { w: 210, minW: 140, h: 78, minH: 78 },
     QG_ImageGrid: { w: 270, minW: 140, h: 130, minH: 130 },
     QG_ImageOrLatentSize: { w: 210, minW: 140, h: 46, minH: 46 },
@@ -49,6 +52,10 @@ export const SIZES = {
     QG_MaskColorize: { w: 270, minW: 140, h: 98, minH: 98 },
     QG_MaskConcat: { w: 270, minW: 140, h: 102, minH: 102 },
     QG_MaskRefine: { w: 270, minW: 140, h: 270, minH: 270 },
+    // 12 个控件（尺寸四件套 + 四方向扩展 + 倍数 + 补洞 + 填充）铺满 315 高。
+    QG_MaskCrop: { w: 270, minW: 160, h: 315, minH: 315 },
+    QG_CropRestore: { w: 270, minW: 160, h: 170, minH: 170 },
+    QG_MaskAlign: { w: 270, minW: 160, h: 150, minH: 150 },
     QG_RouteBlocker: { w: 210, minW: 140, h: 82, minH: 82 },
     QG_SizeSelector: { w: 270, minW: 140, h: 310, minH: 310 },
     QG_TextConcat: { w: 270, minW: 140, h: 78, minH: 78 },
