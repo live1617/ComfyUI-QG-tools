@@ -8,10 +8,10 @@
 //                        title: "LoRA Loader settings",
 //                        onChange: (values, key) => rerender(values) });
 
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102915";
-import { BRAND } from "./index.mjs?v=2026102915";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026102915";
-import { zh } from "./zh.mjs?v=2026102915";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026103135";
+import { BRAND } from "./index.mjs?v=2026103135";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026103135";
+import { zh } from "./zh.mjs?v=2026103135";
 import {
   isOverrideActive,
   isOverrideEntry,
@@ -19,7 +19,7 @@ import {
   overrideEnableValue,
   overrideIsCustom,
   schemaDefaults,
-} from "./node_settings.mjs?v=2026102915";
+} from "./node_settings.mjs?v=2026103135";
 
 const CSS_ID = "qgtools-settings-css";
 
@@ -88,6 +88,12 @@ function ensureSettingsCss() {
     border: 1px solid #3a4047; border-radius: 7px; box-shadow: 0 8px 28px rgba(0,0,0,.5);
     font: 12px system-ui; color: #d7dde2; display: flex; flex-direction: column; }
   .qgtools-set-pop * { box-sizing: border-box; }
+  /* 🔴 表单控件不继承字体（与 LoRA 面板那条同源）：不写这一条，菜单里的按钮和
+     输入框算出来是浏览器默认的 13.33px Arial，而周围是 12px system-ui —— 中文
+     界面上两套字形并排。:where() 让特异性归零，别盖掉 .qgtools-set-close 自己
+     写死的 14px 之类。 */
+  :where(.qgtools-set-pop) :where(button, input, select, textarea) {
+    font-family: inherit; font-size: inherit; }
   .qgtools-set-head { display: flex; align-items: center; gap: 7px; padding: 9px 10px;
     border-bottom: 1px solid #2c3238; color: ${BRAND}; font-weight: 600; }
   .qgtools-set-head svg { flex: none; }

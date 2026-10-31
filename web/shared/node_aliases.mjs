@@ -108,6 +108,16 @@ export const NODE_ALIASES = {
         "mask align", "maskalign", "align mask", "center mask", "centre mask", "mask position", "move mask", "mask bbox",
         "遮罩对齐", "遮罩居中", "居中", "对齐", "位置对齐", "遮罩定位",
     ],
+    QG_CropForInpaint: [
+        "crop for inpaint", "cropforinpaint", "inpaint crop", "context crop", "crop and stitch",
+        "masked region", "zoom inpaint", "outpaint", "extend image", "inpaint",
+        "重绘裁剪", "扩图裁剪", "上下文裁剪", "重绘", "扩图", "外扩",
+    ],
+    QG_StitchInpaint: [
+        "stitch inpaint", "stitchinpaint", "paste back", "paste inpaint", "recompose", "stitch back",
+        "seam", "inpaint", "stitch",
+        "重绘缝合", "缝合", "贴回", "贴回原位", "接缝", "接回去",
+    ],
     QG_ImageCropRotatePad: [
         "crop", "rotate", "pad", "crop rotate pad", "croprotatepad", "outpaint", "canvas", "straighten", "deskew", "image", "图像裁剪旋转补边", "裁剪旋转补边", "裁剪", "旋转", "补边", "扩图",
     ],

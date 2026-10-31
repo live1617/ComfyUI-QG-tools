@@ -1,7 +1,14 @@
 // QG shared: bridge pointer/keyboard events from DOM widgets to the native
-// LiteGraph canvas, so DOM previews can still drag the node / zoom the canvas.
+// LiteGraph canvas, so DOM previews can still drag the node.
 // Ported from Goohaitools-comfyui (goohai_dom_native_interaction.js), GPL-3.0.
 // Original by 孤海 (Goohaitools).
+//
+// 🔴 原版的滚轮转发（forwardWheel：在面板 root 上 capture wheel →
+//    app.canvas.processMouseWheel）已经删掉，改由 web/canvas_passthrough/
+//    统一接管。原因：那一套是逐面板接线，面板里再套一层自己的滚轮语义
+//    （编辑器缩放、列表滚动、多行文本框）时判断会重复且互相打架；
+//    全局入口只装一次，按「面板内部先 preventDefault 就让」放行，
+//    不需要维护「谁有资格要滚轮」的名单。别在这儿把 wheel 加回来。
 
 import { app } from "/scripts/app.js";
 
@@ -93,18 +100,8 @@ export function installNativeNodePointerBridge(root, {
     shouldForwardLeft = () => false,
     shouldStartImmediately = () => false,
     onTap = null,
-    forwardWheel = true,
 } = {}) {
     let active = null;
-
-    if (forwardWheel) {
-        root.addEventListener("wheel", (event) => {
-            if (!app.canvas?.processMouseWheel) return;
-            event.preventDefault();
-            event.stopPropagation();
-            app.canvas.processMouseWheel(event);
-        }, { capture: true, passive: false });
-    }
 
     root.addEventListener("pointerdown", (event) => {
         const middle = event.button === 1;

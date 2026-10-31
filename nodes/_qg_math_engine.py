@@ -199,6 +199,9 @@ def round_half_away(value):
     不用 ``floor(x + 0.5)``：``0.49999999999999994 + 0.5`` 会进到 1.0，
     那个经典浮点坑会把 0.4999… 舍成 1。
     """
+    if not math.isfinite(value):
+        # round(inf) 在 math.floor 里抛的是裸 OverflowError，红框会显示英文回溯。
+        raise MathError("round() 需要有限数，收到 %r" % (value,))
     lower = math.floor(value)
     diff = value - lower
     if diff > 0.5:
@@ -222,8 +225,11 @@ def _round(x, digits=None):
 
 def _factorial(x):
     number = int(_number(x, "factorial"))
-    if not 0 <= number <= 300:
-        raise MathError("factorial() 只接受 0 到 300 的整数")
+    # 170! ≈ 7.3e306 是 double 装得下的最后一个阶乘，171! 就溢出了。上限原本
+    # 写到 300，可节点输出是 float：171 以上会在节点层的 float(result) 里抛
+    # 裸 OverflowError，红框里是英文回溯而不是这里设计的提示。
+    if not 0 <= number <= 170:
+        raise MathError("factorial() 只接受 0 到 170 的整数（更大的阶乘超出双精度范围）")
     return math.factorial(number)
 
 
@@ -509,6 +515,9 @@ def _eval(node, scope):
             elif isinstance(op, (ast.In, ast.NotIn)):
                 if not isinstance(right, (str, list)):
                     raise MathError("in 的右边只能是文本或列表，收到 %r" % (right,))
+                if isinstance(right, str) and not isinstance(left, str):
+                    # `5 in "abc"` 在 Python 里抛 TypeError，那会一路穿到红框。
+                    raise MathError("右边是文本时，左边也得是文本，收到 %r" % (left,))
                 ok = left in right
                 if isinstance(op, ast.NotIn):
                     ok = not ok

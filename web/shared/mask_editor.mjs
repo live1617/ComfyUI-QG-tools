@@ -17,7 +17,7 @@
 // 2048 长边足够；不压的话 4000 × 3000 的图每笔都要在 1200 万像素上做模糊。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026102915";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026103135";
 import {
   brushAdjusts,
   brushCore,
@@ -32,10 +32,10 @@ import {
   steppedSoft,
   startAdjust,
   moveAdjust,
-} from "./brush.mjs?v=2026102915";
-import { defaultBrushSize } from "./compare_erase.mjs?v=2026102915";
-import { encodeRgbaPng } from "./png_encode.mjs?v=2026102915";
-import { zh, zhPair } from "./zh.mjs?v=2026102915";
+} from "./brush.mjs?v=2026103135";
+import { defaultBrushSize } from "./compare_erase.mjs?v=2026103135";
+import { encodeRgbaPng } from "./png_encode.mjs?v=2026103135";
+import { zh, zhPair } from "./zh.mjs?v=2026103135";
 
 const CSS_ID = "qgtools-mask-editor-css";
 
@@ -201,6 +201,19 @@ function pushPoint(points, x, y, gap) {
   return true;
 }
 
+// 浏览器的 canvas 有硬上限：单边 16384，总面积约 2^28（Chrome / Edge / Safari
+// 都在这个量级）。超了 `canvas.width = …` 是**静默失败** —— 画布保持原来的
+// 尺寸（或变成 0），接着 getImageData 抛 IndexSizeError，或者在错尺寸上画出
+// 一张只有左上角的图。存盘要按原图尺寸合成，所以先算一个缩放比。
+const MAX_CANVAS_SIDE = 16384;
+const MAX_CANVAS_AREA = 268435456;
+
+function saveScaleFor(width, height) {
+  if (!(width > 0) || !(height > 0)) return 1;
+  return Math.min(1, MAX_CANVAS_SIDE / Math.max(width, height),
+    Math.sqrt(MAX_CANVAS_AREA / (width * height)));
+}
+
 // 一张图整个居中放进一个盒子时占哪块地方。
 function fitRect(boxWidth, boxHeight, width, height) {
   if (!(boxWidth > 0) || !(boxHeight > 0) || !(width > 0) || !(height > 0)) {
@@ -247,11 +260,10 @@ export function openMaskEditor({
   nameEl.textContent = name || "";
   const spacer = document.createElement("span");
   spacer.className = "qgtools-mask-spacer";
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "qgtools-mask-btn";
-  close.textContent = zh("Close");
-  head.append(titleEl, nameEl, spacer, close);
+  // 保存 / 取消放在标题行右侧。取消兼作关闭 —— 原来标题行另有一个「关闭」，
+  // 和底部的取消做的是同一件事（都是 controller.abort()），摆两个只是让人犹豫。
+  // 按钮在下面才创建（要先有 save() 和 syncTools 的状态），所以先只把左半边排好。
+  head.append(titleEl, nameEl, spacer);
 
   const bars = document.createElement("div");
   bars.className = "qgtools-mask-bars";
@@ -265,8 +277,13 @@ export function openMaskEditor({
   frame.className = "qgtools-mask-frame";
   const baseLayer = document.createElement("canvas");
   const tintLayer = document.createElement("canvas");
+  // 类名给样式和探针用：baseLayer 是原图，tintLayer 是「遮罩色」那一层。
+  baseLayer.className = "qgtools-mask-base";
+  tintLayer.className = "qgtools-mask-tint";
   // 笔尖圈不进 frame —— 缩放的只是画面，圈得保持 1px 线宽、跟着指针走。
   const view = document.createElement("canvas");
+  // 给个类名：它是这层「只画笔尖圈」的画布，样式和探针都要能选到它。
+  view.className = "qgtools-mask-view";
   const busy = document.createElement("div");
   busy.className = "qgtools-mask-busy";
   busy.hidden = true;
@@ -483,6 +500,12 @@ export function openMaskEditor({
       for (const canvas of ed.fillLayers.values()) {
         paintStroke(canvas.getContext("2d"), stroke, ed.maskScale);
       }
+      // 打开已有遮罩时那层碎色（baseLayers）也要挖。它画在整组的最底下，
+      // 不挖的话屏幕上那块颜色永远擦不掉，而 ed.mask 里的 alpha 已经擦掉了
+      // —— 用户以为没擦成，存出去却真的没了。
+      for (const canvas of ed.baseLayers.values()) {
+        paintStroke(canvas.getContext("2d"), stroke, ed.maskScale);
+      }
       return;
     }
     const name = colourName(stroke);
@@ -563,16 +586,28 @@ export function openMaskEditor({
   }
 
   // 三层用的是同一套尺寸，跟 stage 的内容盒对齐。
+  // 🔴 底图脏标记：`drawBase()` 一帧都没必要重画 —— 原图不变、fit 不变、
+  // 缩放/平移走的是 CSS transform。以前每帧都 drawImage 一次整张原图，
+  // 用户那张 8000×6000 的照片等于每帧重采样 4800 万像素（实测每帧绘制
+  // 峰值 72ms、p95 18ms，拖笔就是一顿一顿的）。现在只有真变了才画。
+  let baseDirty = true;
+
   function layerContext(canvas) {
-    return sized(
-      canvas,
-      Math.max(1, Math.round(stage.clientWidth)),
-      Math.max(1, Math.round(stage.clientHeight)),
-    );
+    const width = Math.max(1, Math.round(stage.clientWidth));
+    const height = Math.max(1, Math.round(stage.clientHeight));
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+      // 设 canvas 尺寸会顺带清空画布，底图必须补画一次。
+      if (canvas === baseLayer) baseDirty = true;
+    }
+    return canvas.getContext("2d");
   }
 
   // 底图：换图 / 改尺寸 / 切显示方式时才重画。
   function drawBase() {
+    if (!baseDirty) return;
+    baseDirty = false;
     const fit = ed.fit;
     const ctx = layerContext(baseLayer);
     ctx.clearRect(0, 0, baseLayer.width, baseLayer.height);
@@ -664,6 +699,7 @@ export function openMaskEditor({
   // 三层一起重画（换图、改尺寸这类大动作）。
   function draw() {
     tintMask();
+    baseDirty = true; // 大动作里底图必须重画，别被脏标记挡住
     drawBase();
     drawTint();
     drawCursor();
@@ -672,6 +708,8 @@ export function openMaskEditor({
   function relayout() {
     if (!ed.picture) return;
     ed.fit = fitRect(stage.clientWidth, stage.clientHeight, ed.width, ed.height);
+    // fit 变了底图就得按新位置重画，否则窗口一缩底图会停在旧位置。
+    baseDirty = true;
     schedule();
   }
 
@@ -726,6 +764,29 @@ export function openMaskEditor({
     schedule();
   }
 
+  // 笔画多到要丢最早那几笔时，先把它们烘进基线。它们已经画在 ed.mask 上了，
+  // 但 rebuild() 是从 base + strokes 重算的 —— 直接 splice 掉，下一次撤销
+  // （或 pointercancel）就会把它们从遮罩里抹掉，而且撤销不回来。
+  function bakeStrokes(list) {
+    if (!list.length) return;
+    const canvas = document.createElement("canvas");
+    const ctx = sized(canvas, ed.maskW, ed.maskH);
+    if (ed.base) ctx.putImageData(ed.base, 0, 0);
+    for (const stroke of list) paintStroke(ctx, stroke, ed.maskScale);
+    ed.base = ctx.getImageData(0, 0, ed.maskW, ed.maskH);
+    // 屏幕层也要跟着留一份：否则烘进去的笔迹会从画面上突然消失。
+    for (const stroke of list) {
+      const name = colourName(stroke);
+      let layer = ed.baseLayers.get(name);
+      if (!layer) {
+        layer = document.createElement("canvas");
+        sized(layer, ed.maskW, ed.maskH);
+        ed.baseLayers.set(name, layer);
+      }
+      paintStroke(layer.getContext("2d"), stroke, ed.maskScale, TINT_HEX[name]);
+    }
+  }
+
   function endStroke(cancelled) {
     const stroke = ed.stroke;
     ed.stroke = null;
@@ -735,10 +796,25 @@ export function openMaskEditor({
     } else {
       // 一笔只有起点（只是点了一下）也要留着：那就是一个圆点。
       ed.strokes.push(stroke);
-      if (ed.strokes.length > MAX_UNDO * 4) ed.strokes.splice(0, ed.strokes.length - MAX_UNDO * 4);
+      // 🔴 烘基线是一次同步的 getImageData(2048×1536)，60~100ms —— 画着画着
+      // 卡一下就是它。所以这里只能「尽量少烘」：留 240 笔（= MAX_UNDO 的 4 倍）
+      // 时几乎碰不到，撤销栈也足够深。
+      // 曾经把它降到 80 笔想让 rebuild 更快，结果烘基线从「很少」变成
+      // 「每 20 笔一次」，反而把偶发卡顿变成了规律卡顿（用户 2026-11-01 报
+      // 「画着就跳一下」）—— 已改回 240。
+      if (ed.strokes.length > MAX_UNDO * 4) {
+        const drop = ed.strokes.length - MAX_UNDO * 4;
+        bakeStrokes(ed.strokes.slice(0, drop));
+        ed.strokes.splice(0, drop);
+      }
       ed.dirty = true;
-      // 这一笔可能把某个口子合上了，洞要重新算。
-      scheduleFill();
+      // 🔴 软笔落笔时是按「最后一段」补画的（extendTo），blur 在接缝处叠了
+      // 两次 —— 屏幕上比「整条一次画出来」更浓，而撤销一步 / 重开 / 存盘走的
+      // 都是整条重画，于是抬笔后颜色会突然变淡，存出去的和画的时候看到的也
+      // 不是一个浓度。抬笔就整条重画一次，两者从此一致。硬笔不会累加（alpha
+      // 饱和），不必为此付一次全量重画。
+      if (stroke.s > 0) rebuild();
+      else scheduleFill();
     }
     syncTools();
   }
@@ -772,6 +848,11 @@ export function openMaskEditor({
     if (ed.base) {
       const base = ed.base;
       for (let index = 3; index < base.data.length; index += 4) base.data[index] = 255 - base.data[index];
+    } else {
+      // 普通不透明图没有基线（ed.base 是 null）。不把反色结果立成基线的话，
+      // 下一次 rebuild（撤销一笔、pointercancel）会从「没有 base、也没有笔画」
+      // 重算 —— 整张遮罩被抹成空白，用户画的洞全没了。
+      ed.base = image;
     }
     ed.strokes.length = 0;
     ed.undone.length = 0;
@@ -780,14 +861,12 @@ export function openMaskEditor({
     clearColourLayers();
     clearFillLayers();
     ed.layerOrder.clear();
-    const layer = colourLayer(ed.tint);
-    const lctx = sized(layer, ed.maskW, ed.maskH);
-    lctx.clearRect(0, 0, ed.maskW, ed.maskH);
-    lctx.drawImage(ed.mask, 0, 0);
-    lctx.globalCompositeOperation = "source-in";
-    lctx.fillStyle = TINT_HEX[ed.tint];
-    lctx.fillRect(0, 0, ed.maskW, ed.maskH);
-    lctx.globalCompositeOperation = "source-over";
+    // 🔴 铺的这一层必须进 baseLayers，不能进 colours。rebuild() 的第一件事
+    //    就是 clearColourLayers()（撤销一笔要从 base + strokes 重算），铺在
+    //    colours 里的那张一被清，屏幕就只剩空白，而 ed.mask 里内容还在 ——
+    //    正是「屏幕看着没了、存出去却还在」那种分叉。baseLayers 不会被
+    //    rebuild 清，反色结果放在这里才留得住。
+    baseFallbackColour();
     ed.dirty = true;
     scheduleFill();
     schedule();
@@ -996,15 +1075,30 @@ export function openMaskEditor({
     ed.fillCount = total;
   }
 
-  // 抬笔后才算，并且一帧只算一次 —— 拖动过程中每次都灌一遍全图太贵。
-  let fillFrame = 0;
+  // 抬笔后才算。🔴 必须等手停下来再算，不能每帧一次 —— `refreshFill()` 要
+  // getImageData 整张遮罩、逐色泛洪、再 putImageData 回去，长边 2048 时单次
+  // 60~100ms。实测（90 笔、4800 万像素的图）：每笔都触发一个 >50ms 的长任务，
+  // 连续画时主线程一直被占着，笔迹就跟不上手。
+  //
+  // 🔴 这里必须是 **debounce**（每笔重置计时），不能是 throttle（`if (timer) return`）：
+  // throttle 在连续画时每 250ms 必定算一次 100ms —— 那就是「画着就跳一下」
+  // （用户 2026-11-01 原话）。debounce 让连续画时一次都不算，停手才算；
+  // 但连画太久也要有兜底，最多压 1.5 秒必算一次，免得洞一直不更新。
+  let fillTimer = 0;
+  let fillFirst = 0;
+  const FILL_DELAY = 250;
+  const FILL_MAX_WAIT = 1500;
   function scheduleFill() {
-    if (fillFrame) return;
-    fillFrame = requestAnimationFrame(() => {
-      fillFrame = 0;
+    const now = performance.now();
+    if (!fillFirst) fillFirst = now;
+    if (fillTimer) clearTimeout(fillTimer);
+    const wait = now - fillFirst > FILL_MAX_WAIT ? 0 : FILL_DELAY;
+    fillTimer = setTimeout(() => {
+      fillTimer = 0;
+      fillFirst = 0;
       refreshFill();
       schedule();
-    });
+    }, wait);
   }
 
   // ---- 存盘 ----------------------------------------------------------------
@@ -1054,8 +1148,13 @@ export function openMaskEditor({
   // canvas 是预乘 alpha 的，正好说明这里不能拿它当「原图副本」用来看颜色。
   function sourceBlob() {
     const out = document.createElement("canvas");
-    const ctx = sized(out, ed.width, ed.height);
-    ctx.drawImage(ed.picture, 0, 0, ed.width, ed.height);
+    // 与 save() 用同一个比例：两份图（原图副本 / 成品）必须一样大，后端按
+    // alpha 换回来的时候才是逐像素对得上的。
+    const scale = saveScaleFor(ed.width, ed.height);
+    const width = Math.max(1, Math.round(ed.width * scale));
+    const height = Math.max(1, Math.round(ed.height * scale));
+    const ctx = sized(out, width, height);
+    ctx.drawImage(ed.picture, 0, 0, width, height);
     return new Promise((resolve, reject) => {
       out.toBlob((made) => (made ? resolve(made) : reject(new Error(zh("The browser could not make this image.")))), "image/png");
     });
@@ -1068,31 +1167,43 @@ export function openMaskEditor({
     busy.textContent = zh("Saving…");
     syncTools();
     try {
-      // 保存前把填充同步算一次：抬笔后那次是排在一帧之后的，用户可能紧接着
-      // 就点了保存，不能存出一张还没填的图。
+      // 保存前把填充同步算一次：抬笔后那次是延后 250ms 的，用户可能紧接着
+      // 就点了保存，不能存出一张还没填的图。顺手把挂着的那个定时器撤掉，
+      // 免得算完 250ms 又白算一遍。
+      if (fillTimer) {
+        clearTimeout(fillTimer);
+        fillTimer = 0;
+      }
       refreshFill();
       const maskSource = ed.filled || ed.mask;
 
       // ① 画面 + 多色：全部是不透明绘制，做出来的 RGB 就是成品要留的颜色。
       //    颜色按「底栏滑条那个百分比」混，所以成品里的色和屏幕上看到的一致。
+      // 🔴 超大图（长边 > 16384，或面积超过浏览器的 canvas 上限）按原尺寸建
+      //    画布会静默失败：画布尺寸不变，接着画出来的是一张错图，或者在
+      //    getImageData 上直接抛 IndexSizeError。按一个比例缩下来，最后告诉
+      //    用户成品是缩过的 —— 静默存一张坏图比「存小了」糟得多。
+      const scale = saveScaleFor(ed.width, ed.height);
+      const outW = Math.max(1, Math.round(ed.width * scale));
+      const outH = Math.max(1, Math.round(ed.height * scale));
       const out = document.createElement("canvas");
-      const ctx = sized(out, ed.width, ed.height);
-      ctx.drawImage(ed.picture, 0, 0, ed.width, ed.height);
+      const ctx = sized(out, outW, outH);
+      ctx.drawImage(ed.picture, 0, 0, outW, outH);
       const strength = Math.min(1, Math.max(0, ed.alpha / 100));
       if (strength > 0) {
         ctx.globalAlpha = strength;
         // 与屏幕同一套层序：每色的 底 → 笔画 → 洞 一组，组间按落笔先后。
         for (const name of paintOrder()) {
           const base = ed.baseLayers.get(name);
-          if (base) ctx.drawImage(base, 0, 0, ed.width, ed.height);
+          if (base) ctx.drawImage(base, 0, 0, outW, outH);
           const layer = ed.colours.get(name);
-          if (layer) ctx.drawImage(layer, 0, 0, ed.width, ed.height);
+          if (layer) ctx.drawImage(layer, 0, 0, outW, outH);
           const fill = ed.fillLayers.get(name);
-          if (fill) ctx.drawImage(fill, 0, 0, ed.width, ed.height);
+          if (fill) ctx.drawImage(fill, 0, 0, outW, outH);
         }
         ctx.globalAlpha = 1;
       }
-      const pixels = ctx.getImageData(0, 0, ed.width, ed.height);
+      const pixels = ctx.getImageData(0, 0, outW, outH);
       const data = pixels.data;
 
       // ② alpha 单独算：遮罩处归零（MASK 读的就是 1 - alpha）。
@@ -1103,22 +1214,22 @@ export function openMaskEditor({
       //    浏览器读回 PNG 时会把透明像素的 RGB 清零，颜色就丢了 —— 二次编辑时
       //    反解只能落到灰（实测 50% 绿的圆重开变成 128,128,128）。多存一份
       //    `qg-view`，只给编辑器取颜色用，不参与 IMAGE / MASK。
-      const viewBlob = (await encodeRgbaPng(ed.width, ed.height, data))
+      const viewBlob = (await encodeRgbaPng(outW, outH, data))
         ?? await new Promise((resolve, reject) => {
           out.toBlob((made) => (made ? resolve(made) : reject(new Error(zh("The browser could not make this image.")))), "image/png");
         });
 
       const cover = document.createElement("canvas");
-      const coverCtx = sized(cover, ed.width, ed.height);
-      coverCtx.drawImage(maskSource, 0, 0, ed.width, ed.height);
-      const covered = coverCtx.getImageData(0, 0, ed.width, ed.height).data;
+      const coverCtx = sized(cover, outW, outH);
+      coverCtx.drawImage(maskSource, 0, 0, outW, outH);
+      const covered = coverCtx.getImageData(0, 0, outW, outH).data;
       for (let i = 0; i < data.length; i += 4) {
         data[i + 3] = 255 - covered[i + 3];
       }
       ctx.putImageData(pixels, 0, 0);
 
       // canvas.toBlob 写不出「透明 + 带颜色」，所以自己编码；编不了就退回它。
-      const blob = (await encodeRgbaPng(ed.width, ed.height, data))
+      const blob = (await encodeRgbaPng(outW, outH, data))
         ?? await new Promise((resolve, reject) => {
           out.toBlob((made) => (made ? resolve(made) : reject(new Error(zh("The browser could not make this image.")))), "image/png");
         });
@@ -1130,10 +1241,17 @@ export function openMaskEditor({
       await uploadPng(viewBlob, `qg-view-${stamp}.png`);
       const stored = await uploadPng(blob, `qg-painted-${originalStem()}-${stamp}.png`);
 
+      // 缩小过就说一句：用户拿到的成品比原图小，不说会以为是自己没存对。
+      const shrinkNote = scale < 1
+        ? zhPair(
+          ` The picture is larger than the browser can compose, so it was saved at ${Math.round(scale * 100)}%.`,
+          ` 图超过了浏览器能合成的尺寸，已按 ${Math.round(scale * 100)}% 保存。`,
+        )
+        : "";
       showToast({
         severity: "success",
         summary: zh("Mask editor"),
-        detail: zh("Saved as {name}.").replace("{name}", stored),
+        detail: zh("Saved as {name}.").replace("{name}", stored) + shrinkNote,
         life: 4000,
       });
       ed.dirty = false;
@@ -1382,17 +1500,15 @@ export function openMaskEditor({
   cancel.addEventListener("click", () => controller.abort(), { signal });
   saveBtn.addEventListener("click", () => save(), { signal });
 
-  const footSpacer = document.createElement("span");
-  footSpacer.className = "qgtools-mask-spacer";
+  // 底部只剩笔参数：笔宽 / 软度 / 透明度 / 颜色。保存与取消已经搬到标题行。
   foot.append(
     sizeBox.root,
     softBox.root,
     alphaBox.root,
     swatches,
-    footSpacer,
-    cancel,
-    saveBtn,
   );
+  // 保存靠左、取消靠右：跟标题行的阅读方向一致，也让「保存」不至于贴着窗口边缘。
+  head.append(saveBtn, cancel);
 
   function syncTools() {
     toolPaint.classList.toggle("on", ed.tool === "paint");
@@ -1439,6 +1555,11 @@ export function openMaskEditor({
   }, { signal });
 
   view.addEventListener("pointermove", (event) => {
+    // 🔴 必须拦住冒泡：不拦的话每个移动事件都会漏到 ComfyUI 的画布上，
+    // litegraph 会跟着做命中测试和重绘 —— 画的每一个 move 都让画布白忙一次，
+    // 主线程被分走一块，笔迹就更跟不上手。pointerdown / pointerup / wheel
+    // 本来就拦着，只有 move 和 leave 漏了（用户报「画笔跟不上」时查出来的）。
+    event.stopPropagation();
     const rect = view.getBoundingClientRect();
     ed.pointer = [event.clientX - rect.left, event.clientY - rect.top];
     // 悬停时也认 Ctrl / 右键：按住 Ctrl 笔尖圈就变红，不用等落笔才知道自己在擦。
@@ -1490,7 +1611,8 @@ export function openMaskEditor({
     if (endPan()) return;
     finish(true);
   }, { signal });
-  view.addEventListener("pointerleave", () => {
+  view.addEventListener("pointerleave", (event) => {
+    event.stopPropagation();
     if (ed.stroke || ed.adjust || ed.panning) return;
     ed.pointer = null;
     ed.flipKey = false;
@@ -1554,7 +1676,7 @@ export function openMaskEditor({
     event.preventDefault();
     event.stopPropagation();
     if (change.what === "size") ed.size = steppedBrushSize(ed.size, change.up, BRUSH_RANGE);
-    else ed.soft = steppedSoft(ed.soft, !change.up);
+    else ed.soft = steppedSoft(ed.soft, change.up);
     sizeBox.set(ed.size);
     softBox.set(ed.soft);
     schedule();
@@ -1569,13 +1691,20 @@ export function openMaskEditor({
     stage.classList.remove("panning");
     syncTools();
   }, { signal, capture: true });
+  // 按住空格切走窗口（Alt+Tab、点到别的窗口）松手，keyup 永远收不到 ——
+  // 回来后左键拖就不画了，一直当平移，光标也还是抓手，再按一次空格才恢复。
+  window.addEventListener("blur", () => {
+    if (!ed.spaceDown && !ed.panning) return;
+    ed.spaceDown = false;
+    ed.panning = null;
+    stage.classList.remove("panning");
+    syncTools();
+  }, { signal });
 
 
   const resizeObserver = new ResizeObserver(() => relayout());
   resizeObserver.observe(stage);
   signal.addEventListener("abort", () => resizeObserver.disconnect());
-
-  close.addEventListener("click", () => controller.abort(), { signal });
 
   signal.addEventListener("abort", () => {
     if (ed.frame) cancelAnimationFrame(ed.frame);
@@ -1669,6 +1798,8 @@ export function openMaskEditor({
     }
     rebuild();
     ed.fit = fitRect(stage.clientWidth, stage.clientHeight, ed.width, ed.height);
+    // 换了一张图：底图必须重画（脏标记此时可能已经是 false）。
+    baseDirty = true;
     busy.hidden = true;
     schedule();
     syncTools();
@@ -1679,5 +1810,13 @@ export function openMaskEditor({
   };
   picture.src = imageUrl;
 
-  return () => controller.abort();
+  // 关掉编辑器时把挂着的填洞定时器一起撤掉：它跑起来要在 2048 的遮罩上
+  // 灌一遍水，编辑器都没了还去算一次纯属白烧主线程。
+  return () => {
+    controller.abort();
+    if (fillTimer) {
+      clearTimeout(fillTimer);
+      fillTimer = 0;
+    }
+  };
 }

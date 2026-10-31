@@ -1,4 +1,4 @@
-"""Run Timer — how long the last queue took, on the canvas.
+"""Run Timer — how long the last run took, on the canvas.
 
 A stopwatch for the whole run. It starts when a queued prompt begins
 executing, ticks on the node while it runs, and holds the total when it
@@ -8,13 +8,13 @@ shared graph carries its author's run time as a reference. No inputs, no
 outputs; it listens to the queue rather than sitting on a wire — the whole
 node is the readout, painted by the frontend.
 
-Ported from ComfyUI-AusBoss #31 (node_run_timer.py); the timer's decision
-logic lives in web/shared/run_timer.mjs and the drawing in
-web/run_timer/index.js.
+The frontend does all the work: web/shared/run_timer.mjs holds the stopwatch
+reducer and the display formats, web/run_timer/index.js listens to the
+queue's events and paints the node (on the canvas, or as a DOM panel under
+Nodes 2.0). This file only declares the node.
 
-Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
-display name localized, tooltips and comments rewritten.
-Third-party notice: THIRD-PARTY-NOTICES.md.
+The idea came from ComfyUI-AusBoss's Run Timer (MIT); the implementation,
+front and back, is this pack's own.
 """
 
 from __future__ import annotations

@@ -24,8 +24,8 @@
 // at 1 goes 8, 16, 24 instead of 9, 17, 25, and back down to its minimum.
 // Shift's fine step and typed values are never snapped.
 
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102915";
-import { zh } from "./zh.mjs?v=2026102915";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026103135";
+import { zh } from "./zh.mjs?v=2026103135";
 
 // Keep in sync with BRAND in shared/index.mjs - importing it would pull
 // /scripts/app.js into node:test, and this module's math must stay testable.
@@ -44,6 +44,16 @@ export function isScrubGesture(deltaX, deltaY) {
   return Math.abs(deltaX) > SCRUB_DEAD_ZONE && Math.abs(deltaX) >= Math.abs(deltaY);
 }
 
+// 四舍五入，正好 .5 时**远离零**：2.5 → 3、-2.5 → -3。
+// 后端 round_half_away 用的是同一条规则；Math.round 对负数是向正无穷舍入
+// （-2.5 → -2），于是卡片显示 -2、后端算出 -3 —— 同一张图两个尺寸，
+// 而且只在负数半数上出现，最难查。
+export function roundHalfAway(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return number;
+  return number < 0 ? -Math.round(-number) : Math.round(number);
+}
+
 // Clamp into range and round to the control's precision - every value the
 // control emits goes through here, so callers never see 0.30000000000000004.
 export function quantizeScrubValue(value, { min = -Infinity, max = Infinity, decimals = 2 } = {}) {
@@ -51,7 +61,7 @@ export function quantizeScrubValue(value, { min = -Infinity, max = Infinity, dec
   if (!Number.isFinite(number)) return quantizeScrubValue(min === -Infinity ? 0 : min, { min, max, decimals });
   const clamped = Math.max(min, Math.min(max, number));
   const factor = 10 ** Math.max(0, decimals);
-  return Math.round(clamped * factor) / factor;
+  return roundHalfAway(clamped * factor) / factor;
 }
 
 // `count` steps of `size` from `start` (negative goes down). With `snap` the

@@ -11,15 +11,15 @@
 // URLs become buttons or links (the parser already filtered them).
 
 import { api } from "/scripts/api.js";
-import { zh } from "../shared/zh.mjs?v=2026102915";
+import { zh, zhPair } from "../shared/zh.mjs?v=2026103135";
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102915";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026102915";
-import { collectGraphNodes } from "../shared/appearance.mjs?v=2026102915";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102915";
-import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026102915";
-import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026102915";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102915";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026103135";
+import { collectGraphNodes } from "../shared/appearance.mjs?v=2026103135";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026103135";
+import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026103135";
+import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026103135";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026103135";
 import {
   COMMON_FOLDERS,
   INPUT_FOLDER,
@@ -39,9 +39,9 @@ import {
   rowFromCells,
   serializeNote,
   subfolderOf,
-} from "../shared/workflow_note.mjs?v=2026102915";
-import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026102915";
-import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026102915";
+} from "../shared/workflow_note.mjs?v=2026103135";
+import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026103135";
+import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026103135";
 
 const NODE_CLASS = "QG_WorkflowNote";
 const CSS_ID = "qgtools-workflow-note-css";
@@ -66,21 +66,29 @@ let modelFolders = null; // Promise<string[]> from GET /models
 function listFolder(dir, fresh = false) {
   const cached = folderLists.get(dir);
   if (!fresh && cached && performance.now() - cached.at < FOLDER_CACHE_MS) return cached.promise;
+  // Three answers, not two: the list, null for "this install has no such
+  // folder" (a plain 404, which is normal for e.g. video_models), and
+  // undefined for "the lookup itself failed" - a 403, a 500, a proxy page, a
+  // server still starting, or no network at all. Calling the second and third
+  // the same thing is how a hiccup turns into "you have not installed this".
   const promise = api
     .fetchApi(`/models/${encodeURIComponent(dir)}`)
-    .then((response) => (response.ok ? response.json() : null))
-    .then((files) => (Array.isArray(files) ? files : null))
-    .catch(() => null);
+    .then((response) => {
+      if (response.ok) return response.json().then((files) => (Array.isArray(files) ? files : undefined));
+      return response.status === 404 ? null : undefined;
+    })
+    .catch(() => undefined);
   folderLists.set(dir, { at: performance.now(), promise });
   return promise;
 }
 
+// true: there; false: not there (404); undefined: could not find out.
 function inputExists(name) {
   const query = new URLSearchParams({ filename: name, type: "input" });
   return api
     .fetchApi(`/view?${query}`, { method: "HEAD" })
-    .then((response) => response.ok)
-    .catch(() => false);
+    .then((response) => (response.ok ? true : response.status === 404 ? false : undefined))
+    .catch(() => undefined);
 }
 
 function knownFolders() {
@@ -313,13 +321,20 @@ function markdownInto(parent, text) {
   }
 }
 
+// 点一下文件名就把名字换成「已复制」，过一会儿换回来。
+//
+// 🔴 恢复原来靠「文本还等于我写进去的那句」判断，而这句话在中文界面下会被汉化
+// 插件的 DOM 翻译器改写成「已复制」—— 判断永远为假，名字就停在提示上不回来
+// （实测：点一下之后文件名永久变成「已复制」，看着像把名字改掉了）。现在把
+// 真名存进 dataset，定时器只按它恢复，与自己写过什么无关。
 async function copyText(text, element) {
   const copied = await copyToClipboard(text);
+  element.dataset.qgName ??= element.textContent;
   // A blocked clipboard says so; the name is still on screen to copy by hand.
-  const note = copied ? "copied" : "copy blocked";
-  const before = element.textContent;
-  element.textContent = note;
-  setTimeout(() => { if (element.textContent === note) element.textContent = before; }, copied ? 700 : 1400);
+  element.textContent = copied ? zh("copied") : zh("copy blocked");
+  setTimeout(() => {
+    if (element.isConnected) element.textContent = element.dataset.qgName;
+  }, copied ? 700 : 1400);
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +351,9 @@ function modelRow(state, row) {
   const dot = el("span", "qgtools-note-dot checking");
   const file = el("div", "qgtools-note-file");
   const name = el("div", "qgtools-note-name", row.name);
-  name.title = `${row.name} - click to copy the file name`;
+  name.title = zhPair(
+    `${row.name} - click to copy the file name`,
+    `${row.name} —— 点一下复制文件名`);
   name.addEventListener("pointerdown", (event) => event.stopPropagation());
   name.addEventListener("click", () => copyText(row.name, name));
   file.append(name);
@@ -351,9 +368,10 @@ function modelRow(state, row) {
     action.textContent = "";
     if (row.url) {
       const button = externalLink(row.url, "qgtools-note-dl", "");
-      button.append(document.createTextNode("Download"));
+      button.append(document.createTextNode(zh("Download")));
       if (row.size) button.append(el("span", "size", row.size));
-      button.title = `Opens ${hostLabel(row.url) || row.url} in a new tab`;
+      const host = hostLabel(row.url) || row.url;
+      button.title = zhPair(`Opens ${host} in a new tab`, `在新标签页打开 ${host}`);
       action.append(button);
     } else if (row.size) {
       action.append(el("span", "qgtools-note-meta", row.size));
@@ -362,13 +380,14 @@ function modelRow(state, row) {
   const showInstalled = (path) => {
     action.textContent = "";
     const pill = el("span", "qgtools-note-pill");
-    pill.append(document.createTextNode("✓ installed"));
+    pill.append(document.createTextNode(zh("✓ installed")));
     if (row.url) {
       const link = externalLink(row.url, "", "↗");
-      link.title = `Source: ${hostLabel(row.url) || row.url}`;
+      const host = hostLabel(row.url) || row.url;
+      link.title = zhPair(`Source: ${host}`, `来源：${host}`);
       pill.append(link);
     }
-    pill.title = path ? `Found: ${path}` : "Found";
+    pill.title = path ? zhPair(`Found: ${path}`, `已找到：${path}`) : zh("Found");
     action.append(pill);
   };
   // The file is here, but in a subfolder, and a loader still asks for the
@@ -379,15 +398,22 @@ function modelRow(state, row) {
   const showElsewhere = (path, loaders, loraRows = [], files = []) => {
     action.textContent = "";
     const folder = subfolderOf(path);
-    const pill = el("span", "qgtools-note-pill elsewhere", `in ${folder}/`);
+    const pill = el("span", "qgtools-note-pill elsewhere",
+      zhPair(`in ${folder}/`, `在 ${folder}/ 里`));
     const asking = [...loaders, ...loraRows];
     const names = [...new Set(asking.map((entry) => entry.node.title || entry.node.type))].join(", ");
+    // 句子带路径与节点名，进不了字典（`zh()` 只能命中整串），两种语言各写一份。
+    // 英文那一份保留单复数 — 中文不需要，别把英文一起写坏。
     pill.title = loaders.length
-      ? `Found as ${path}, but ${names} ${asking.length === 1 ? "asks" : "ask"} for ${row.name}, which ComfyUI cannot find.`
-      : `Found as ${path}. ${names} still ${asking.length === 1 ? "has" : "have"} it as ${row.name} and will find it by name.`;
-    const use = el("button", "qgtools-note-use", "Use it");
+      ? zhPair(
+        `Found as ${path}, but ${names} ${asking.length === 1 ? "asks" : "ask"} for ${row.name}, which ComfyUI cannot find.`,
+        `实际在 ${path}，但 ${names} 要的是 ${row.name}，ComfyUI 找不到它。`)
+      : zhPair(
+        `Found as ${path}. ${names} still ${asking.length === 1 ? "has" : "have"} it as ${row.name} and will find it by name.`,
+        `实际在 ${path}。${names} 里写的还是 ${row.name}，运行时会按文件名找到它。`);
+    const use = el("button", "qgtools-note-use", zh("Use it"));
     use.type = "button";
-    use.title = `Point ${names} at ${path}.`;
+    use.title = zhPair(`Point ${names} at ${path}.`, `把 ${names} 指向 ${path}。`);
     use.addEventListener("pointerdown", (event) => event.stopPropagation());
     use.addEventListener("click", () => {
       for (const entry of loaders) {
@@ -426,8 +452,9 @@ function packRow(state, row) {
   line.append(dot, file, action);
   const installed = row.node ? nodeTypeRegistered(row.node) : null;
   if (installed === true) {
-    setDot(dot, "ok", `${row.node} is registered on this install`);
-    const pill = el("span", "qgtools-note-pill", "✓ installed");
+    setDot(dot, "ok", zhPair(`${row.node} is registered on this install`,
+      `本机已注册 ${row.node}`));
+    const pill = el("span", "qgtools-note-pill", zh("✓ installed"));
     if (row.url) {
       const link = externalLink(row.url, "", "↗");
       link.title = row.url;
@@ -436,13 +463,17 @@ function packRow(state, row) {
     action.append(pill);
   } else {
     setDot(dot, installed === false ? "missing" : "unknown",
-      installed === false ? `${row.node} is not registered here - install the pack` : "No probe node set, so this row is not checked");
+      installed === false
+        ? zhPair(`${row.node} is not registered here - install the pack`,
+          `本机没有注册 ${row.node} —— 需要安装这个节点包`)
+        : zh("No probe node set, so this row is not checked"));
     if (row.url) {
-      const button = externalLink(row.url, "qgtools-note-dl", installed === false ? "Get it" : "Open");
+      const button = externalLink(row.url, "qgtools-note-dl",
+        installed === false ? zh("Get it") : zh("Open"));
       button.title = row.url;
       action.append(button);
     } else if (installed === false) {
-      action.append(el("span", "qgtools-note-pill missing", "missing"));
+      action.append(el("span", "qgtools-note-pill missing", zh("missing")));
     }
   }
   return line;
@@ -484,9 +515,12 @@ function render(state) {
   state.rows = [];
 
   const head = el("div", "qgtools-note-head");
-  head.append(el("h1", "qgtools-note-title", note.title || "Untitled workflow"));
+  head.append(el("h1", "qgtools-note-title", note.title || zh("Untitled workflow")));
   if (note.subtitle) head.append(el("p", "qgtools-note-subtitle", note.subtitle));
-  if (note.author) head.append(el("p", "qgtools-note-author", `by ${note.author}`));
+  if (note.author) {
+    head.append(el("p", "qgtools-note-author",
+      zhPair(`by ${note.author}`, `作者：${note.author}`)));
+  }
   const edit = el("button", "qgtools-note-edit", "✎");
   edit.type = "button";
   edit.title = zh("Edit this note");
@@ -496,8 +530,8 @@ function render(state) {
   scroll.append(head);
 
   if (noteIsEmpty(note)) {
-    scroll.append(el("div", "qgtools-note-empty",
-      "Click ✎ to give this workflow a title, a how-to, the models it needs with download links, and your own links."));
+    scroll.append(el("div", "qgtools-note-empty", zh(
+      "Click ✎ to give this workflow a title, a how-to, the models it needs with download links, and your own links.")));
     state.domWidget.options.getMinHeight = () => CARD_MIN_HEIGHT + WIDGET_FRAME;
     return;
   }
@@ -518,8 +552,8 @@ function render(state) {
 
   if (note.models.length) {
     const section = el("div", "qgtools-note-section");
-    const heading = sectionHeading("Models");
-    const recheck = el("button", "qgtools-note-mini", "↻ check files");
+    const heading = sectionHeading(zh("Models"));
+    const recheck = el("button", "qgtools-note-mini", zh("↻ check files"));
     recheck.type = "button";
     recheck.title = zh("Look for each file again (after moving files in, or pressing R)");
     recheck.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -535,14 +569,14 @@ function render(state) {
 
   if (note.packs.length) {
     const section = el("div", "qgtools-note-section");
-    section.append(sectionHeading("Node packs"));
+    section.append(sectionHeading(zh("Node packs")));
     for (const row of note.packs) section.append(packRow(state, row));
     scroll.append(section);
   }
 
   if (note.links.length) {
     const section = el("div", "qgtools-note-section");
-    section.append(sectionHeading("Links"));
+    section.append(sectionHeading(zh("Links")));
     const chips = el("div", "qgtools-note-chips");
     for (const row of note.links) {
       if (row.url) chips.append(externalLink(row.url, "qgtools-note-chip", row.label));
@@ -558,7 +592,7 @@ function render(state) {
 async function checkModels(state, fresh) {
   const generation = (state.checkGeneration = (state.checkGeneration || 0) + 1);
   const rows = state.rows;
-  for (const entry of rows) setDot(entry.dot, "checking", "checking…");
+  for (const entry of rows) setDot(entry.dot, "checking", zh("checking…"));
   const byDir = new Map();
   for (const entry of rows) {
     const dir = entry.row.dir;
@@ -567,18 +601,25 @@ async function checkModels(state, fresh) {
   }
   await Promise.all([...byDir.entries()].map(async ([dir, entries]) => {
     if (!dir) {
-      for (const entry of entries) setDot(entry.dot, "unknown", "No folder set, so this file is not checked");
+      for (const entry of entries) {
+        setDot(entry.dot, "unknown", zh("No folder set, so this file is not checked"));
+      }
       return;
     }
     if (dir === INPUT_FOLDER) {
       await Promise.all(entries.map(async (entry) => {
         const found = await inputExists(entry.row.name);
         if (generation !== state.checkGeneration) return;
-        if (found) {
-          setDot(entry.dot, "ok", "Found in ComfyUI/input");
+        if (found === undefined) {
+          setDot(entry.dot, "unknown", zhPair(
+            "Could not check the input folder this time",
+            "这次没能检查 input 文件夹"));
+          entry.showDownload();
+        } else if (found) {
+          setDot(entry.dot, "ok", zh("Found in ComfyUI/input"));
           entry.showInstalled(`input/${entry.row.name}`);
         } else {
-          setDot(entry.dot, "missing", "Not in ComfyUI/input yet");
+          setDot(entry.dot, "missing", zh("Not in ComfyUI/input yet"));
           entry.showDownload();
         }
       }));
@@ -587,8 +628,17 @@ async function checkModels(state, fresh) {
     const files = await listFolder(dir, fresh);
     if (generation !== state.checkGeneration) return;
     for (const entry of entries) {
+      if (files === undefined) {
+        setDot(entry.dot, "unknown", zhPair(
+          "Could not read the model folders this time - press the refresh button to try again",
+          "这次没能读到模型文件夹，按刷新按钮再试一次"));
+        entry.showDownload();
+        continue;
+      }
       if (files === null) {
-        setDot(entry.dot, "unknown", `This install has no "${dir}" model folder, so the file is not checked`);
+        setDot(entry.dot, "unknown", zhPair(
+          `This install has no "${dir}" model folder, so the file is not checked`,
+          `本机没有「${dir}」这个模型文件夹，因此不检查这个文件`));
         entry.showDownload();
         continue;
       }
@@ -597,13 +647,16 @@ async function checkModels(state, fresh) {
       const loaders = elsewhere ? loadersNeeding(entry.row.name, match.path, graphListWidgets()) : [];
       const loraRows = elsewhere ? loraRowsNeeding(entry.row.name, match.path, graphLoraLoaders(), files) : [];
       if (match.found && (loaders.length || loraRows.length)) {
-        setDot(entry.dot, "ok", `Found in ${subfolderOf(match.path)}/: ${match.path}`);
+        setDot(entry.dot, "ok", zhPair(
+          `Found in ${subfolderOf(match.path)}/: ${match.path}`,
+          `已在 ${subfolderOf(match.path)}/ 中找到：${match.path}`));
         entry.showElsewhere(match.path, loaders, loraRows, files);
       } else if (match.found) {
-        setDot(entry.dot, "ok", `Found: ${match.path}`);
+        setDot(entry.dot, "ok", zhPair(`Found: ${match.path}`, `已找到：${match.path}`));
         entry.showInstalled(match.path);
       } else {
-        setDot(entry.dot, "missing", `Not found in ComfyUI/models/${dir}`);
+        setDot(entry.dot, "missing", zhPair(
+          `Not found in ComfyUI/models/${dir}`, `ComfyUI/models/${dir} 里没有找到`));
         entry.showDownload();
       }
     }
@@ -644,7 +697,7 @@ function naturalHeight(state, width) {
 function fitNote(state) {
   if (!classicCanvas()) return;
   const { node, root, domWidget } = state;
-  const width = node.size[0] - WIDGET_FRAME;
+  const width = (node.size?.[0] ?? 0) - WIDGET_FRAME;
   if (!(width > 0)) return;
   let natural;
   if (root.isConnected) natural = naturalHeight(state, width);
@@ -664,7 +717,7 @@ function fitNote(state) {
   if (fit === null) return;
   state.fitHeight = fit;
   if (grow) {
-    node.setSize([node.size[0], fit]);
+    node.setSize([node.size?.[0] ?? 0, fit]);
     node.setDirtyCanvas?.(true, true);
   }
 }
@@ -715,6 +768,11 @@ function graphLoraLoaders() {
 // ---------------------------------------------------------------------------
 
 let openDialog = null;
+// openEditor 要先把模型文件夹取回来（一次 /models 请求）才建对话框。那一段空档
+// 里再点一次 ✎，第二个调用会再建一个 overlay 叠上去 —— 而 closeEditor() 只认
+// 最后建的那一个，下面那个再也关不掉，整块画布被半透明遮罩挡住、点不动
+// （真机：连点两次 = 2 个 overlay / 2 个 dialog）。
+let openEditorBusy = false;
 
 function closeEditor() {
   if (!openDialog) return;
@@ -723,9 +781,18 @@ function closeEditor() {
   openDialog = null;
 }
 
+let fieldSeq = 0;
+
 function field(labelText, control, hint) {
   const wrap = el("div", "qgtools-note-field");
-  wrap.append(el("label", "", labelText), control);
+  const label = el("label", "", labelText);
+  // 点标签应当聚焦到它的输入框；label 的 for 要指向一个 id。分段按钮那种
+  // 一组控件没有单一目标，就不连。
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(control?.tagName ?? "")) {
+    control.id ||= `qgtools-note-field-${(fieldSeq += 1)}`;
+    label.htmlFor = control.id;
+  }
+  wrap.append(label, control);
   if (hint) wrap.append(el("span", "hint", hint));
   return wrap;
 }
@@ -744,7 +811,7 @@ function folderSelect(value, folders) {
   if (value && !options.includes(value)) options.push(value);
   if (!options.includes("")) options.unshift("");
   for (const folder of options) {
-    const option = el("option", "", folder || "(folder)");
+    const option = el("option", "", folder || zhPair("(folder)", "（文件夹）"));
     option.value = folder;
     select.append(option);
   }
@@ -773,7 +840,10 @@ function table(kind, columns, rows, makeRow) {
     const entry = { line, controls };
     remove.addEventListener("click", () => {
       line.remove();
-      entries.splice(entries.indexOf(entry), 1);
+      // 🔴 indexOf 找不到时返回 -1，而 splice(-1, 1) 删的是「最后一个」——
+      // 同一行被点两次就会静默少一条。只在真找到时删。
+      const at = entries.indexOf(entry);
+      if (at >= 0) entries.splice(at, 1);
     });
     line.append(remove);
     body.append(line);
@@ -784,17 +854,32 @@ function table(kind, columns, rows, makeRow) {
   return { box, add, entries };
 }
 
-async function openEditor(state) {
+async function openEditor(state, seed = null) {
+  if (openEditorBusy) return;
+  openEditorBusy = true;
+  try {
+    // `seed` is what the editor starts from when it does not start from the
+    // node: coming back from the JSON view, the text there is the newer one.
+    await openEditorOnce(state, seed);
+  } finally {
+    openEditorBusy = false;
+  }
+}
+
+async function openEditorOnce(state, seed = null) {
   closeEditor();
   ensureCss();
   const folders = await knownFolders();
   const folderOptions = [...new Set([...COMMON_FOLDERS, ...folders])];
-  const draft = normalizeNote(state.note);
+  // The draft is what the form is filled from. `seed` is the newer text when
+  // the editor was opened from the JSON view; the node itself is untouched
+  // until Save.
+  const draft = normalizeNote(seed ?? state.note);
 
   const overlay = el("div", "qgtools-note-overlay");
   const dialog = el("div", "qgtools-note-dialog");
   const head = el("div", "qgtools-note-dhead");
-  head.append(el("span", "", "Workflow Note"), el("span", "spacer"));
+  head.append(el("span", "", zh("Workflow Note")), el("span", "spacer"));
   const jsonToggle = el("button", "qgtools-note-btn", "JSON");
   jsonToggle.type = "button";
   jsonToggle.title = zh("Edit the raw card JSON instead of the form");
@@ -802,9 +887,9 @@ async function openEditor(state) {
   const body = el("div", "qgtools-note-dbody");
   const foot = el("div", "qgtools-note-dfoot");
   const error = el("span", "qgtools-note-error");
-  const cancel = el("button", "qgtools-note-btn", "Cancel");
+  const cancel = el("button", "qgtools-note-btn", zh("Cancel"));
   cancel.type = "button";
-  const save = el("button", "qgtools-note-btn primary", "Save");
+  const save = el("button", "qgtools-note-btn primary", zh("Save"));
   save.type = "button";
   foot.append(error, el("span", "spacer"), cancel, save);
   dialog.append(head, body, foot);
@@ -814,14 +899,16 @@ async function openEditor(state) {
   const form = el("div", "qgtools-note-dbody");
   form.style.padding = "0";
   form.style.overflow = "visible";
-  const title = input(draft.title, "Krea 2 Outpaint");
-  const subtitle = input(draft.subtitle, "One line on what this workflow does");
-  const author = input(draft.author, "your name");
+  const title = input(draft.title, zh("Krea 2 Outpaint"));
+  const subtitle = input(draft.subtitle, zh("One line on what this workflow does"));
+  const author = input(draft.author, zh("your name"));
   const accent = input(draft.accent, "#00b4aa");
   let layout = draft.layout;
   const seg = el("div", "qgtools-note-seg");
   const segButtons = LAYOUTS.map((option) => {
-    const button = el("button", option === layout ? "on" : "", option === "card" ? "Card" : "Banner");
+    // zh() 里别放三元：自检按「zh( 之后第一个字符串」取键，会把 "card" 当成键。
+    const word = option === "card" ? "Card" : "Banner";
+    const button = el("button", option === layout ? "on" : "", zh(word));
     button.type = "button";
     button.addEventListener("click", () => {
       layout = option;
@@ -832,34 +919,40 @@ async function openEditor(state) {
   });
   const grid = el("div", "qgtools-note-grid");
   grid.append(
-    field("Title", title),
-    field("Author", author),
-    field("Subtitle", subtitle),
-    field("Layout", seg, "Banner shows only the title, subtitle and author - a label for a column or stage."),
-    field("Accent color", accent, "Hex like #00b4aa; empty keeps the pack teal."),
+    field(zh("Title"), title),
+    field(zh("Author"), author),
+    field(zh("Subtitle"), subtitle),
+    field(zh("Layout"), seg,
+      zh("Banner shows only the title, subtitle and author - a label for a column or stage.")),
+    field(zh("Accent color"), accent, zh("Hex like #00b4aa; empty keeps the pack teal.")),
   );
   form.append(grid);
 
   const bodyBox = el("textarea");
   bodyBox.value = draft.body;
-  bodyBox.placeholder = "## How it works\n\n1. Load your image\n2. Drag the padding edges\n3. Queue\n\nMarkdown: # headings, **bold**, `code`, [links](https://...), - lists";
-  form.append(field("How-to (Markdown)", bodyBox));
+  bodyBox.placeholder = zh(
+    "## How it works\n\n1. Load your image\n2. Drag the padding edges\n3. Queue\n\nMarkdown: # headings, **bold**, `code`, [links](https://...), - lists");
+  form.append(field(zh("How-to (Markdown)"), bodyBox));
 
-  const models = table("models", MODEL_COLUMNS.map((column) => column.label), draft.models, (row) =>
-    MODEL_COLUMNS.map(({ key, placeholder }) => (key === "dir" ? folderSelect(row.dir, folderOptions) : input(row[key], placeholder))));
+  const models = table("models", MODEL_COLUMNS.map((column) => zh(column.label)), draft.models, (row) =>
+    MODEL_COLUMNS.map(({ key, placeholder }) => (key === "dir"
+      ? folderSelect(row.dir, folderOptions)
+      : input(row[key], placeholder ? zh(placeholder) : undefined))));
   const modelTools = el("div");
-  const addModel = el("button", "qgtools-note-btn", "+ model");
+  const addModel = el("button", "qgtools-note-btn", zh("+ model"));
   addModel.type = "button";
   addModel.addEventListener("click", () => models.add({ dir: "diffusion_models" }));
   modelTools.append(addModel);
-  form.append(field("Models", models.box, "Each row shows a Download button until the file is found in its folder (subfolders count). The note shows in grey under the file name."), modelTools);
+  form.append(field(zh("Models"), models.box,
+    zh("Each row shows a Download button until the file is found in its folder (subfolders count). The note shows in grey under the file name.")),
+  modelTools);
 
   // packUrlsByName() is the module-level single-flight lookup (see top of
   // file). This call warms it lazily: the first editor open pays the ~3 s
   // fetch once, later opens and "Detect" reuse the same promise.
   void packUrlsByName();
 
-  const packs = table("packs", ["Pack", "URL", "Probe node class"], draft.packs, (row) => [
+  const packs = table("packs", [zh("Pack"), zh("URL"), zh("Probe node class")], draft.packs, (row) => [
     input(row.name, "ComfyUI-QG-tools"),
     input(row.url, "https://github.com/user/repo"),
     input(row.node, "QG_LoraLoader"),
@@ -867,10 +960,10 @@ async function openEditor(state) {
   const packTools = el("div");
   packTools.style.display = "flex";
   packTools.style.gap = "6px";
-  const addPack = el("button", "qgtools-note-btn", "+ pack");
+  const addPack = el("button", "qgtools-note-btn", zh("+ pack"));
   addPack.type = "button";
   addPack.addEventListener("click", () => packs.add({}));
-  const detect = el("button", "qgtools-note-btn", "Detect from this workflow");
+  const detect = el("button", "qgtools-note-btn", zh("Detect from this workflow"));
   detect.type = "button";
   detect.title = zh("List every custom node pack the open graph uses");
   detect.addEventListener("click", async () => {
@@ -882,7 +975,7 @@ async function openEditor(state) {
     // intact.
     const idleText = detect.textContent;
     detect.disabled = true;
-    detect.textContent = "Detecting…";
+    detect.textContent = zh("Detecting…");
     try {
       // ComfyUI itself never exposes a pack's repository URL; the only local
       // source is ComfyUI-Manager's cached index (offline-friendly). Packs
@@ -901,18 +994,19 @@ async function openEditor(state) {
     }
   });
   packTools.append(addPack, detect);
-  form.append(field("Node packs", packs.box, "The probe node class is checked against this install; a missing one marks the pack missing."), packTools);
+  form.append(field(zh("Node packs"), packs.box,
+    zh("The probe node class is checked against this install; a missing one marks the pack missing.")), packTools);
 
-  const links = table("links", ["Label", "URL"], draft.links, (row) => [
+  const links = table("links", [zh("Label"), zh("URL")], draft.links, (row) => [
     input(row.label, "GitHub"),
     input(row.url, "https://github.com/you"),
   ]);
   const linkTools = el("div");
-  const addLink = el("button", "qgtools-note-btn", "+ link");
+  const addLink = el("button", "qgtools-note-btn", zh("+ link"));
   addLink.type = "button";
   addLink.addEventListener("click", () => links.add({}));
   linkTools.append(addLink);
-  form.append(field("Links", links.box, "Your pages: GitHub, Civitai, YouTube, Discord…"), linkTools);
+  form.append(field(zh("Links"), links.box, zh("Your pages: GitHub, Civitai, YouTube, Discord…")), linkTools);
 
   // --- raw JSON -------------------------------------------------------------
   const jsonBox = el("textarea", "json");
@@ -937,19 +1031,22 @@ async function openEditor(state) {
     if (!showingJson) {
       jsonBox.value = JSON.stringify(readForm(), null, 2);
       body.textContent = "";
-      body.append(field("Card JSON", jsonBox, "The exact text stored in the workflow. Save applies it."));
-      jsonToggle.textContent = "Form";
+      body.append(field(zh("Card JSON"), jsonBox,
+        zh("The exact text stored in the workflow. Save applies it.")));
+      jsonToggle.textContent = zh("Form");
     } else {
       // Going back to the form discards JSON edits that did not parse.
       try {
         const parsed = normalizeNote(JSON.parse(jsonBox.value));
-        Object.assign(draft, parsed);
         closeEditor();
-        state.note = parsed;
-        openEditor(state);
+        // 🔴 这里以前写的是 `state.note = parsed; openEditor(state)`，而
+        // openEditor 一进去就用 `normalizeNote(widget.value)` 重新读 ——
+        // 于是在 JSON 里改好的内容，点「表单」之后静默变回原来的样子。
+        // 把解析结果作为这次编辑的起点交过去，Save 才写进节点，Cancel 丢弃。
+        openEditor(state, parsed);
         return;
       } catch {
-        error.textContent = "That JSON does not parse - fix it or Cancel.";
+        error.textContent = zh("That JSON does not parse - fix it or Cancel.");
         return;
       }
     }
@@ -962,7 +1059,7 @@ async function openEditor(state) {
       try {
         next = normalizeNote(JSON.parse(jsonBox.value));
       } catch {
-        error.textContent = "That JSON does not parse - fix it or Cancel.";
+        error.textContent = zh("That JSON does not parse - fix it or Cancel.");
         return;
       }
     } else next = readForm();

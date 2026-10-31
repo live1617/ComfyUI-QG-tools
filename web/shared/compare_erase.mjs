@@ -13,7 +13,8 @@
 // 函数拖进上千行。
 // 后端对应文件：nodes/_qg_compare_helpers.py（两边数字必须一致）。
 
-import { BRUSH_SOFT_DEFAULT, clampBrushSize, clampSoft, steppedBrushSize } from "./brush.mjs?v=2026102915";
+import { BRUSH_SOFT_DEFAULT, clampBrushSize, clampSoft, steppedBrushSize } from "./brush.mjs?v=2026103135";
+import { zhPair } from "./zh.mjs?v=2026103135";
 
 // 画笔本身就是全包共用那一支（brush.mjs）。
 export {
@@ -27,7 +28,7 @@ export {
   moveAdjust,
   startAdjust,
   steppedSoft,
-} from "./brush.mjs?v=2026102915";
+} from "./brush.mjs?v=2026103135";
 
 export const ERASE_SIZE = [2, 2000];
 export const ERASE_MAX_STROKES = 400;
@@ -202,7 +203,12 @@ export function typedName(text) {
 // 文件最后会叫什么，给指针下面那行提示用。
 export function nameHint(name, layers) {
   const base = typedName(name).trim().replace(/[ .]+$/, "") || SAVE_NAME;
-  return layers ? `${base}_00001.png，另加 ${base}_00001.psd 和 ${base}_00001_mask.png` : `${base}_00001.png`;
+  return layers
+    ? zhPair(
+      `${base}_00001.png, with ${base}_00001.psd and ${base}_00001_mask.png`,
+      `${base}_00001.png，另加 ${base}_00001.psd 和 ${base}_00001_mask.png`
+    )
+    : `${base}_00001.png`;
 }
 
 // 点保存时发出去的东西：这轮运行那两张图的键（从不指名要读文件），加上给新
@@ -220,10 +226,13 @@ export function saveRequest({ pair, top, strokes, layers, name }) {
 // 保存完了面板上说的那句。
 export function savedMessage(files) {
   const names = (files ?? []).map((file) => (file?.subfolder ? `${file.subfolder}/${file.filename}` : file?.filename)).filter(Boolean);
-  if (!names.length) return "已保存。";
+  if (!names.length) return zhPair("Saved.", "已保存。");
   return names.length > 1
-    ? `已保存 ${names[0]}，连同它的 PSD 和遮罩，都在 output 目录里。`
-    : `已保存 ${names[0]}，在 output 目录里。`;
+    ? zhPair(
+      `Saved ${names[0]}, with its PSD and mask, in the output folder.`,
+      `已保存 ${names[0]}，连同它的 PSD 和遮罩，都在 output 目录里。`
+    )
+    : zhPair(`Saved ${names[0]} in the output folder.`, `已保存 ${names[0]}，在 output 目录里。`);
 }
 
 // 保存出来的文件，做成图下面那排小链接，这样在另一台机器上做的混合图也能从
@@ -231,7 +240,7 @@ export function savedMessage(files) {
 export function savedLinks(files) {
   return (files ?? []).filter((file) => file?.filename).map((file) => {
     const name = String(file.filename).toLowerCase();
-    const label = name.endsWith("_mask.png") ? "遮罩" : name.endsWith(".psd") ? "PSD" : "PNG";
+    const label = name.endsWith("_mask.png") ? zhPair("MASK", "遮罩") : name.endsWith(".psd") ? "PSD" : "PNG";
     return { label, file };
   });
 }

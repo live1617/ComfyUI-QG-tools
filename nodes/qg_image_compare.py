@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 """QG 图像对比 — A/B 对比面板。
 
-移植自 ComfyUI-AusBoss（MIT，nodes/node_compare.py + _preview_helpers.py）。
-
 四种看法：滑动（竖线跟着指针，左 A 右 B）、只看 A、只看 B、橡皮擦（画笔把
 上面那张擦掉一块，露出底下那张）。节点把两路图各取第一帧写成 temp 预览，
-通过 ui.a_images / ui.b_images 回传，前端面板画在自己的 DOM 里；image_a
-原样从输出送出，所以可以夹在流程中间。
+通过 ui.a_images / ui.b_images 回传，前端面板画在自己的 DOM 里；两路图原样
+从输出送出，所以可以夹在流程中间。
 
 橡皮擦存的不是画好的位图，而是**笔画**，保存时由这里按原图尺寸重画
 （见 _qg_compare_helpers）。浏览器只知道一个随机键，不指名读写任何文件。
+
+移植自 ComfyUI-AusBoss（MIT，nodes/node_compare.py）。
+
+🔴 两条路由出错时回的是 ``{"error": 英文原文, "code": 代码, "params": {...}}``：
+``error`` 给日志和第三方调用方，面板按 ``code`` 出自己语言的句子。以前这里
+直接回中文，英文界面下弹出来就是中文。
 
 Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
 display name localized, tooltips and comments rewritten.
@@ -30,7 +34,7 @@ import torch
 from PIL import Image
 
 from ._qg_compare_helpers import (
-    ALIGN_GONE,
+    MESSAGES,
     CompareSaveError,
     align_pair,
     clean_save_name,
@@ -39,7 +43,6 @@ from ._qg_compare_helpers import (
     save_mix,
     tidy_save_name,
 )
-from ._qg_route_errors import safe_route_error
 
 NODE_NAME = "QG_ImageCompare"
 SAVE_ROUTE = "/qg/compare/save"
@@ -105,6 +108,36 @@ def save_temp_preview(image: torch.Tensor, prefix: str, keep_alpha: bool = False
     return entry
 
 
+def _error_answer(web, exc: CompareSaveError):
+    """一条能做的错误：英文原文 + 代码 + 参数，三样一起回。"""
+    return web.json_response(
+        {"error": str(exc), "code": exc.code, "params": exc.params}, status=exc.status
+    )
+
+
+def _crashed(web, exc: Exception, code: str, console_note: str):
+    """没预料到的失败：日志里留全的，回给面板的只有一句能看的话。
+
+    异常显式传进来而不是靠 ``logging.exception`` 去摸当前 except 上下文 ——
+    哪天在 except 块外调用，那样只会打出一行 ``NoneType: None``。
+    """
+    logging.error(console_note, exc_info=exc)
+    return web.json_response(
+        {"error": MESSAGES[code], "code": code, "params": {}}, status=500
+    )
+
+
+async def _read_body(request) -> dict:
+    """请求体必须是一个 JSON 对象，读不出来就是 400。"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if not isinstance(body, dict):
+        raise CompareSaveError("bad_request")
+    return body
+
+
 def _register_save_route() -> None:
     """POST /qg/compare/save 把一次运行那两张预览混成橡皮擦的图。
 
@@ -130,13 +163,11 @@ def _register_save_route() -> None:
     @instance.routes.post(SAVE_ROUTE)
     async def save(request):
         try:
-            body = await request.json()
-        except Exception:
-            body = None
-        if not isinstance(body, dict):
-            return web.json_response({"error": "图像对比：请求读不出来。"}, status=400)
-        try:
+            body = await _read_body(request)
             picture_a, picture_b, wired = pair_pictures(body.get("pair"))
+            # 连在节点上的名字，优先于节点上打的字。名字校验放在线程池外面：
+            # 它是纯字符串判断，失败要立刻按 400 回去。
+            name = wired or clean_save_name(body.get("name"))
             work = functools.partial(
                 save_mix,
                 picture_a=picture_a,
@@ -145,50 +176,46 @@ def _register_save_route() -> None:
                 top=body.get("top", "A"),
                 strokes=body.get("strokes"),
                 layers=body.get("layers") is True,
-                # 连在节点上的名字，优先于节点上打的字。
-                name=wired or clean_save_name(body.get("name")),
+                name=name,
             )
             # 别占着服务器自己的线程：一张大图要算一会儿。
             result = await asyncio.get_running_loop().run_in_executor(None, work)
         except CompareSaveError as error:
-            return web.json_response({"error": safe_route_error(error)}, status=error.status)
-        except Exception:
-            logging.exception("[QG-tools] 图像对比：混合图没能保存。")
-            return web.json_response(
-                {"error": "混合图没能保存，ComfyUI 的控制台里有原因。"}, status=500
-            )
+            return _error_answer(web, error)
+        except Exception as error:
+            return _crashed(web, error, "save_failed", "[QG-tools] 图像对比：混合图没能保存。")
         return web.json_response(result)
 
     @instance.routes.post(ALIGN_ROUTE)
     async def align(request):
         try:
-            body = await request.json()
-        except Exception:
-            body = None
-        if not isinstance(body, dict):
-            return web.json_response({"error": "图像对比：请求读不出来。"}, status=400)
-        try:
-            try:
-                picture_a, picture_b, wired = pair_pictures(body.get("pair"))
-            except CompareSaveError as error:
-                raise CompareSaveError(ALIGN_GONE, status=error.status) from error
-            temp_root = Path(folder_paths.get_temp_directory())
+            body = await _read_body(request)
+            # 找不到那两张图时说的是「……然后再对齐」，不是「……然后再保存」。
+            picture_a, picture_b, wired = pair_pictures(body.get("pair"), gone_code="align_gone")
             work = functools.partial(
-                align_pair, picture_a=picture_a, picture_b=picture_b, temp_root=temp_root, name=wired
+                align_pair,
+                picture_a=picture_a,
+                picture_b=picture_b,
+                temp_root=Path(folder_paths.get_temp_directory()),
+                name=wired,
             )
             # 别占着服务器自己的线程：量两张图要算一会儿。
             result = await asyncio.get_running_loop().run_in_executor(None, work)
         except CompareSaveError as error:
-            return web.json_response({"error": safe_route_error(error)}, status=error.status)
-        except Exception:
-            logging.exception("[QG-tools] 图像对比：对齐没能做出来。")
-            return web.json_response(
-                {"error": "对齐没能做出来，ComfyUI 的控制台里有原因。"}, status=500
+            return _error_answer(web, error)
+        except Exception as error:
+            return _crashed(
+                web, error, "align_failed_unexpected", "[QG-tools] 图像对比：对齐没能做出来。"
             )
-        answer = {"aligned": result["aligned"], "message": result["message"]}
+        answer = {
+            "aligned": result["aligned"],
+            "message": result["message"],
+            "message_code": result.get("message_code", ""),
+            "message_params": result.get("message_params", {}),
+        }
         if result["aligned"]:
             file = result["file"]
-            folder = file.parent.resolve().relative_to(Path(temp_root).resolve()).as_posix()
+            folder = file.parent.resolve().relative_to(Path(folder_paths.get_temp_directory()).resolve()).as_posix()
             answer["b"] = {
                 "filename": file.name,
                 "subfolder": "" if folder == "." else folder,

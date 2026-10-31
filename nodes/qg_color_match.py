@@ -226,8 +226,12 @@ def _apply_scope(matched, original, scope):
     o_lab = _rgb_to_lab_norm(original)
     if scope == "chroma-only":
         out = torch.cat([o_lab[..., :1], m_lab[..., 1:]], dim=-1)
-    else:
+    elif scope == "luma-only":
         out = torch.cat([m_lab[..., :1], o_lab[..., 1:]], dim=-1)
+    else:
+        # all：两半都要，原样交回。以前这里没有这一支，落进上面的 else，
+        # 变成「只留匹配结果的亮度、色度还给原图」—— 选「全部」反而只换了明暗。
+        return matched
     return _lab_norm_to_rgb(out)
 
 
@@ -401,33 +405,83 @@ def _haar_idwt(ll, details):
     return out
 
 
-def _wavelet_match(src, ref, levels=WAVELET_LEVELS):
+def _low_mask(mask, size):
+    """全分辨率遮罩 → 低频子带尺寸的「块内过半」掩码。
+
+    小波只迁移最低频子带，一个低频像素对应原图 ``k x k`` 的一块。遮罩按面积
+    平均降到同一尺寸、过半即算选中，语义与 ``_pool_of`` 的 ``> 0.5`` 一致。
+
+    有效块少于 16 个就返回 None —— 与 ``_pool_of`` 同一条门槛：几个像素的
+    统计量是噪声，硬算比不限定更糟。
+    """
+    if mask is None:
+        return None
+    pooled = F.adaptive_avg_pool2d(mask.unsqueeze(1).to(torch.float32), size)
+    keep = pooled > 0.5
+    if int(keep.sum()) < 16:
+        return None
+    return keep.to(mask.dtype).squeeze(1)
+
+
+def _weighted_mean_std(x, mask, floor):
+    """(1, C, H, W) + (1, H, W) → 加权均值 / 标准差，形状可直接广播。
+
+    下限分开传：源侧是 STD_FLOOR（遮罩里可以正好是一块纯色，σ≈0 而分子不为
+    0 —— 用 EPS 会把对比度放大上万倍，实测能给出 -9599 的像素值），参考侧照实
+    取 EPS（抬参考的对比度下限等于改目标，与无遮罩那条路径不一致）。
+    """
+    w = mask.unsqueeze(1).to(x.dtype)
+    total = w.sum(dim=(2, 3), keepdim=True).clamp_min(1.0)
+    mu = (x * w).sum(dim=(2, 3), keepdim=True) / total
+    var = ((x - mu) ** 2 * w).sum(dim=(2, 3), keepdim=True) / total
+    return mu, var.clamp_min(0.0).sqrt().clamp_min(floor)
+
+
+def _wavelet_match(src, ref, levels=WAVELET_LEVELS, src_mask=None, ref_mask=None):
     """(1, C, H, W) 两份 → 只迁移最低频子带，细节子带原样保留。
 
     最小图先补到 ``2**levels`` 的倍数（replicate），否则 1x1 / 3x5 这种尺寸
-    连一层都分不了；补出来的部分最后裁掉。
+    连一层都分不了；补出来的部分最后裁掉。遮罩给了就只按遮罩内的低频块算
+    统计量 —— 补出来的边缘按「没选中」处理，不参与统计。
     """
     _, _, h, w = src.shape
     k = 2 ** max(levels, 1)
 
-    def prep(z):
+    def prep(z, mask):
         ph, pw = (-z.shape[2]) % k, (-z.shape[3]) % k
         if ph or pw:
             z = F.pad(z, (0, pw, 0, ph), mode="replicate")
+            if mask is not None:
+                mask = F.pad(mask, (0, pw, 0, ph), mode="constant", value=0.0)
         dets = []
         ll = z
         for _ in range(levels):
             ll, det = _haar_dwt(ll)
             dets.append(det)
-        return ll, dets
+        if mask is not None:
+            mask = _low_mask(mask if mask.dim() == 3 else mask.unsqueeze(0),
+                             ll.shape[-2:])
+        return ll, dets, mask
 
-    ll_s, dets = prep(src)
-    ll_r, _ = prep(ref)
+    ll_s, dets, mask_s = prep(src, src_mask)
+    ll_r, _, mask_r = prep(ref, ref_mask)
 
-    m_s = ll_s.mean(dim=(-2, -1), keepdim=True)
-    s_s = ll_s.std(dim=(-2, -1), keepdim=True, unbiased=False).clamp_min(EPS)
-    m_r = ll_r.mean(dim=(-2, -1), keepdim=True)
-    s_r = ll_r.std(dim=(-2, -1), keepdim=True, unbiased=False).clamp_min(EPS)
+    if mask_s is not None:
+        m_s, s_s = _weighted_mean_std(ll_s, mask_s, STD_FLOOR)
+    else:
+        m_s = ll_s.mean(dim=(-2, -1), keepdim=True)
+        s_s = ll_s.std(dim=(-2, -1), keepdim=True, unbiased=False).clamp_min(STD_FLOOR)
+    if mask_r is not None:
+        m_r, s_r = _weighted_mean_std(ll_r, mask_r, EPS)
+    else:
+        m_r = ll_r.mean(dim=(-2, -1), keepdim=True)
+        s_r = ll_r.std(dim=(-2, -1), keepdim=True, unbiased=False).clamp_min(EPS)
+    if mask_s is not None:
+        # 遮罩里可能正好是一块纯色：σ 会贴着下限，而遮罩外的内容与这块的均值
+        # 差得远，`(x - m) / s` 直接把它放大上万倍（实测值域 -95 ~ 0.5）。
+        # 这种通道只平移均值、缩放按 1 处理 —— 圈一片纯色是想让这块的色调对齐
+        # 参考，不是要炸掉整张图。与 `_instance_norm` 里 STD_FLOOR 的意图一致。
+        s_s = torch.where(s_s <= STD_FLOOR * 1.001, s_r, s_s)
     ll = (ll_s - m_s) / s_s * s_r + m_r
 
     for i in range(levels - 1, -1, -1):
@@ -789,6 +843,22 @@ class QGColorMatch:
         return reference.mean(dim=0, keepdim=True) if reference.shape[0] > 1 else reference
 
     @staticmethod
+    def _ref_mask_plane(ref_mask, index, mode):
+        """与 ``_ref_image`` 同口径地取参考遮罩，(1, H, W) 或 None。
+
+        合并模式下参考本身是逐帧平均出来的，遮罩也得按同一种口径合并：
+        逐帧「过半数算选中」，与 ``_pool_of`` / ``_low_mask`` 的 >0.5 判据一致。
+        """
+        if ref_mask is None:
+            return None
+        if mode == "per-frame":
+            return ref_mask[index % ref_mask.shape[0]].unsqueeze(0)
+        if mode == "first-frame" or ref_mask.shape[0] == 1:
+            return ref_mask[0].unsqueeze(0)
+        merged = ref_mask.to(torch.float32).mean(dim=0) > 0.5
+        return merged.to(ref_mask.dtype).unsqueeze(0)
+
+    @staticmethod
     def _prepare(pool, step, src_pool=None):
         """把参考样本池 (N, 3) 压成一组统计量，供每一帧复用。
 
@@ -845,20 +915,26 @@ class QGColorMatch:
                     dim=-1,
                 )
             out = torch.empty_like(src)
-            n = src.shape[0]
-            quant = torch.linspace(0.0, 1.0, n, device=src.device, dtype=src.dtype)
+            count = src.shape[0]
             for c in range(3):
                 ref_sorted = prep["sorted"][c]
                 m = ref_sorted.shape[0]
-                _, order = src[:, c].sort()
-                pos = quant * (m - 1)
+                values, order = src[:, c].sort()
+                # 并列值必须得到同一个输出。sort() 对相同值的次序是任意的，
+                # 若按「名次」逐个取值，一张平坦画面（例如只有 0.498 / 0.502
+                # 两个值）会被摊到整条分位区间上 —— 纯色块直接变成颗粒噪声。
+                # 先按值分组，用组内中位名次去参考分布里取一个值，整组共用。
+                first = torch.ones(count, dtype=torch.bool, device=src.device)
+                first[1:] = values[1:] != values[:-1]
+                starts = first.nonzero(as_tuple=False).flatten()
+                ends = torch.cat([starts[1:], starts.new_tensor([count])])
+                mid = (starts + ends - 1).to(src.dtype) * 0.5
+                pos = mid / float(max(count - 1, 1)) * (m - 1)
                 lo = pos.floor().long().clamp(0, m - 1)
                 hi = (lo + 1).clamp_max(m - 1)
                 frac = pos - lo.to(pos.dtype)
                 mapped = ref_sorted[lo] * (1.0 - frac) + ref_sorted[hi] * frac
-                column = torch.empty(n, device=src.device, dtype=src.dtype)
-                column[order] = mapped
-                out[:, c] = column
+                out[order, c] = torch.repeat_interleave(mapped, ends - starts)
             return out
 
         if step == "mmd":
@@ -881,7 +957,7 @@ class QGColorMatch:
 
     # ---- 逐帧跑一条处理链 ---------------------------------------------------
 
-    def _run_chain(self, src, reference, chain, ref_mode, src_mode="逐帧", scope="全部",
+    def _run_chain(self, src, reference, chain, ref_mode, src_mode="per-frame", scope="all",
                    src_mask=None, ref_mask=None):
         """src / reference: (B, H, W, 3) 归一化 Lab → 同形状的匹配结果。
 
@@ -931,7 +1007,18 @@ class QGColorMatch:
                 pick = slice(k, k + 1)
             rmask = None if ref_bmask is None else ref_bmask[pick]
             pool = _pool_of(reference[pick], rmask)
-            prep = self._prepare(pool, step, src_pool if src_pool is not None else flat)
+            # MMD 的映射要用「目标侧样本」去拟合，光有参考侧算不出来。逐帧 +
+            # 有遮罩时必须给遮罩内的像素：直接拿整帧等于源侧遮罩完全没生效
+            # （只有参考侧被限定了），而面板上「也限定目标统计」是同一个开关。
+            if src_pool is not None:
+                target_pool = src_pool
+            elif src_bmask is not None:
+                target_pool = _pool_of(
+                    flat.reshape(1, height, width, 3), src_bmask[index:index + 1]
+                )
+            else:
+                target_pool = flat
+            prep = self._prepare(pool, step, target_pool)
             if key is not None:
                 cache[key] = prep
             return prep
@@ -943,12 +1030,24 @@ class QGColorMatch:
             if chain[0] in IMAGE_STEPS:
                 plane = frame.permute(2, 0, 1).unsqueeze(0)  # (1, 3, H, W)
                 ref_img = self._ref_image(reference, i, ref_mode).permute(0, 3, 1, 2)
-                flat = _wavelet_match(plane, ref_img).squeeze(0).permute(1, 2, 0)
+                # 小波这条路以前完全不看遮罩：选了「也限定目标统计」照样按整张
+                # 图算低频统计量，开关看着生效、实际一点没变。
+                plane_mask = None if src_bmask is None else src_bmask[i:i + 1]
+                ref_plane_mask = self._ref_mask_plane(ref_bmask, i, ref_mode)
+                flat = _wavelet_match(
+                    plane, ref_img, src_mask=plane_mask, ref_mask=ref_plane_mask
+                ).squeeze(0).permute(1, 2, 0)
                 flat = flat.reshape(-1, 3)
             else:
                 flat = origin
-                for step in chain:
-                    flat = self._apply(flat, prep_for(step, i, flat), step, base_for(step, i))
+                for position, step in enumerate(chain):
+                    # 源侧统计量（base）只对链的第一步成立。第二步开始 flat 已经
+                    # 是上一步的输出，再拿「原始源」的直方图 LUT / 协方差去套它
+                    # 就是用错基准：全批统一时第 2 个 hist 会把已经变成参考分布的
+                    # 像素再查一次表，越界部分全被压到 ys[-1]，整幅拍成参考最大值。
+                    # 后续步骤交给 _apply 现算（等价于逐帧口径），这是能用且可解释的。
+                    base = base_for(step, i) if position == 0 else None
+                    flat = self._apply(flat, prep_for(step, i, flat), step, base)
 
             # 匹配范围：只留换过来的那一半，另一半还给原图
             if scope == "chroma-only":
@@ -961,7 +1060,7 @@ class QGColorMatch:
     # ---- 入口 ---------------------------------------------------------------
 
     def color_match(self, image, reference, method, strength, ref_mode,
-                    src_mode="逐帧", scope="全部", feather=0, mask=None,
+                    src_mode="per-frame", scope="all", feather=0, mask=None,
                     mask_use="result-only", detail=0.0, ref_mask=None):
         if not torch.is_tensor(image) or not torch.is_tensor(reference):
             raise TypeError("image / reference 需要是 IMAGE 张量")
@@ -985,7 +1084,14 @@ class QGColorMatch:
         # 目标侧看 mask_use，参考侧只看有没有接 ref_mask
         stats_mask = None
         if mask is not None and torch.is_tensor(mask) and mask_use == "also-restrict-reference":
-            stats_mask = mask
+            # 批量路径（AdaIN / GPU Reinhard）把这份遮罩直接当 (B, H, W) 用，
+            # 不像 _run_chain 那样会先归一化。二维遮罩、分辨率与图不同、
+            # 帧数对不上的遮罩在这里必须先整形，否则报出来的是「维度越界」
+            # 或「size 3 must match 1」这类看不懂的错；同样输入换 reinhard
+            # 那条路却是正常的 —— 两条路径口径不一致。
+            stats_mask = _mask_bhw(
+                mask, original.shape[0], original.shape[1], original.shape[2]
+            )
         if ref_mask is not None and not torch.is_tensor(ref_mask):
             ref_mask = None
 
@@ -1013,7 +1119,10 @@ class QGColorMatch:
                             src_mask=stats_mask, ref_mask=ref_mask,
                         ).permute(0, 2, 3, 1)
                     )
-                if scope != "全部":
+                # SCOPES 里是英文值（all / chroma-only / luma-only）。这里曾写成
+                # `!= "全部"`，恒为真，于是选「全部」也会被 _apply_scope 当成
+                # 「只换明暗」—— AdaIN / GPU Reinhard 的默认路径颜色完全不迁移。
+                if scope in ("chroma-only", "luma-only"):
                     matched = _apply_scope(matched, original, scope)
             else:
                 matched_lab = self._run_chain(

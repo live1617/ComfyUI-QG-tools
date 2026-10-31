@@ -210,6 +210,21 @@ def _next_counter(directory, prefix):
     return counter
 
 
+def _claim_name(path):
+    """独占创建一个空文件，返回 False 表示这个名字已经被占了。
+
+    计数器只是「猜」下一个空号：两个 prompt 并发时都会猜到同一个数字，
+    而 ``_next_counter`` 在目录读不到时会退回 1 —— 那会直接盖掉用户已有的
+    ``xxx_00001_``。写之前先原子地占位，撞上就往后挪。
+    """
+    try:
+        handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+    os.close(handle)
+    return True
+
+
 def _to_pil(image, alpha_mode, allow_alpha):
     """把一张 [H,W,C] 的 0-1 张量变成 PIL 图像，按需处理透明通道。"""
     array = image.detach().to(device="cpu").float().numpy()
@@ -446,12 +461,30 @@ class QGExportImage:
                 last_prefix = prefix
 
             # 与原生 SaveImage 完全同形：prefix_00001_.png
-            filename = "%s_%05d_%s" % (prefix, counter, extension)
-            counter += 1
-            target = os.path.join(directory, filename)
-
             picture = _to_pil(image, alpha_mode, allow_alpha)
-            picture.save(target, **options)
+            attempts = 0
+            while True:
+                filename = "%s_%05d_%s" % (prefix, counter, extension)
+                target = os.path.join(directory, filename)
+                if _claim_name(target):
+                    break
+                counter += 1
+                attempts += 1
+                if attempts > 99999:
+                    raise OSError(
+                        "[QG-tools] cannot find a free file name for prefix %r in %s"
+                        % (prefix, directory)
+                    )
+            counter += 1
+            try:
+                picture.save(target, **options)
+            except Exception:
+                # 占位时建的空文件留着只会让下一次跳号；中途失败也不会留下半个图。
+                try:
+                    os.remove(target)
+                except OSError:
+                    pass
+                raise
             written.append(target)
 
             if inside_output:

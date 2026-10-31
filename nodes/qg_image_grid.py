@@ -1,23 +1,51 @@
 # -*- coding: utf-8 -*-
 """QG_ImageGrid - tile a batch (or a tensor list) into a neat grid.
 
-Ported from ComfyUI_Muye (image/image_grid_concat.py, class 宫格图像拼接),
-MIT licensed, authored by Muye. QG changes:
+Rewritten for ComfyUI-QG-tools on 2026-10-30, on top of the v0.8.5 port of
+ComfyUI_Muye's 「宫格图像拼接」 (MIT). The five widgets, the auto geometry, the
+black-frame filter and the preview output are unchanged.
 
-  * ASCII input names, Chinese tooltips, debug prints dropped.
-  * Grid geometry is unchanged: 1 image -> 1x1, 2 -> 2x1, 3-4 -> 2x2,
-    5-9 -> 3 columns, 10-16 -> 4 columns (max 16 cells / 4 columns).
-  * Frames that are entirely black are dropped before tiling. Upstream did this
-    because batch nodes in the wild pad unused slots with ``torch.zeros``; the
-    side effect is that a genuinely black frame is skipped too. The tooltip
-    says so - turn the switch off if you need an all-black frame kept.
+What the port got right, and is kept
+------------------------------------
+* **Auto geometry**: 1 image is 1x1, 2 become 2x1, 3-4 become 2x2, 5-9 use
+  three columns, 10-16 use four - at most 16 cells, at most 4 columns.
+* **``match_size`` letterboxes instead of cropping**: every cell takes the
+  first image's box and each picture is scaled down to fit inside it, centred,
+  never cut. The rest of the cell keeps the background colour.
+* **``drop_black``** exists because batch nodes in the wild pad unused slots
+  with ``torch.zeros``; the side effect (a genuinely black frame is skipped
+  too) is real and stays documented rather than silently "fixed".
+* Cells are centred inside their column/row band when sizes differ, so a
+  narrow picture does not hug the left edge.
+* Still an output node that also returns the grid as a normal IMAGE.
 
-The node is an output node (it renders a preview) but still returns the grid as
-a normal IMAGE, so it can sit in the middle of a graph.
+What this rewrite changed
+-------------------------
+* **A grey image used to come out one pixel wide.** The port classified a 3-D
+  input with::
 
-Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
-display name localized, tooltips and comments rewritten; behaviour changes are
-listed above. Third-party notice: THIRD-PARTY-NOTICES.md.
+      if image.shape[0] == 1 or image.shape[-1] > 1:   # "a batch"
+          image = image.unsqueeze(0)
+      else:                                            # "a picture"
+          image = image.unsqueeze(-1)
+
+  A single-channel picture is ``(H, W, 1)``: ``shape[0]`` is the height, so it
+  fell into the first branch, became ``(1, H, W, 1)``, then ``(H, W, 1, 3)``
+  after the channel repeat, then ``[0:1]`` kept one *row* - the cell was H wide
+  and 1 tall. The test is the last dimension now: ``(H, W, C)`` when it is at
+  most 4, ``(B, H, W)`` otherwise, which is the same rule the rest of the pack
+  uses for three-dimensional tensors.
+* **A grey *batch* ``(B, H, W)`` used to be treated as one picture** - the
+  same classification, from the other side. It now splits into frames, so a
+  grey batch tiles like any other.
+* **Two-channel input crashed** on the canvas assignment (neither the
+  ``channels == 1`` nor the ``channels > 3`` branch caught it). It now takes
+  the first channel as grey.
+* ``drop_black`` no longer assumes every item is a tensor: a list entry that
+  is itself a list is unwrapped first instead of raising ``AttributeError``.
+* ``FUNCTION`` is ``execute``, matching the rest of the pack.
+
+Only stdlib / numpy / torch / Pillow are used -- no new dependency.
 """
 
 import math
@@ -30,34 +58,60 @@ from PIL import Image
 from torch.nn.functional import interpolate
 
 import folder_paths
+
 from ._qg_combo_legacy import combo_legacy
 
 MAX_IMAGES = 16
 MAX_COLS = 4
 
+# IMAGE 的通道数只有 1 / 3 / 4 三种，所以 3 维张量的最后一维不超过它，就
+# 当通道维（(H,W,C) 一张图），否则当批次（(B,H,W) 灰度多帧）。搬运版看的是
+# 第 0 维，于是灰度图被当成批次、灰度批次被当成一张图，两头都错。
+MAX_CHANNELS = 4
+
 
 def _is_empty_frame(image):
-    flat = image.detach().to(device="cpu").float().view(-1)
+    """All-zero frame? Batch nodes pad unused slots with zeros, hence the filter."""
+    if isinstance(image, (list, tuple)):
+        image = image[0] if image else None
+    if not torch.is_tensor(image):
+        return False
+    flat = image.detach().to(device="cpu").float().reshape(-1)
     return flat.numel() == 0 or float(flat.max().item()) == 0.0
 
 
 def _norm_image(image):
-    """Normalise any plausible input into [1, H, W, 3] float32 in 0-1."""
+    """Any rank to ``[1, H, W, 3]`` float32 in 0-1, keeping one frame.
+
+    The port's 3-D branch keyed off dimension 0, which is the *height* for an
+    ``(H, W, C)`` picture - see the module docstring for what that did to a
+    grey image.
+    """
     if isinstance(image, (list, tuple)):
-        image = image[0]
+        image = image[0] if image else None
+    if not torch.is_tensor(image):
+        raise ValueError("[QG-tools] 宫格拼接：列表里混进了非张量的条目")
     image = image.detach().to(device="cpu").float()
-    if image.dim() == 2:
+
+    if image.dim() == 2:                       # (H, W)
         image = image.unsqueeze(0).unsqueeze(-1)
     elif image.dim() == 3:
-        if image.shape[0] == 1 or image.shape[-1] > 1:
+        if image.shape[-1] <= MAX_CHANNELS:    # (H, W, C) - one picture
             image = image.unsqueeze(0)
-        else:
-            image = image.unsqueeze(-1)
-    if image.shape[0] > 1:
+        else:                                   # (B, H, W) - grey frames
+            image = image[0:1].unsqueeze(-1)
+    elif image.dim() == 1:
+        raise ValueError("[QG-tools] 宫格拼接：收到 1 维张量，图像至少要 2 维 (H,W)")
+
+    if image.shape[0] > 1:                      # 4 维批次只取第一帧
         image = image[0:1]
+
     channels = image.shape[-1]
     if channels == 1:
         image = image.repeat(1, 1, 1, 3)
+    elif channels == 2:
+        # 只有两个通道的图不是 ComfyUI 的常规产物，但别让它在赋值那一步炸。
+        image = image[..., 0:1].repeat(1, 1, 1, 3)
     elif channels > 3:
         image = image[..., 0:3]
     return image.clamp(0.0, 1.0).contiguous()
@@ -124,11 +178,11 @@ def _make_grid(images, cols, rows, match_size, gap, background):
 class QGImageGrid:
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
-        "Tiles a batch or tensor list into a compact grid: 1 image becomes 1x1, "
-        "two become 2x1, three or four 2x2, five to nine use three columns and up "
-        "to sixteen use four. Optionally unifies every cell to the first image's "
-        "size (letterboxed, never cropped), sets the gap and the background "
-        "colour, and shows the result as a preview."
+        "Tiles a batch or a tensor list into a compact grid: 1 image becomes "
+        "1x1, two become 2x1, three or four 2x2, five to nine use three columns "
+        "and up to sixteen use four. Optionally unifies every cell to the first "
+        "image's size (letterboxed, never cropped), sets the gap and the "
+        "background colour, and shows the result as a preview."
     )
     SEARCH_ALIASES = [
         "grid", "contact sheet", "tile", "montage", "宫格", "拼接", "九宫格", "qg",
@@ -156,7 +210,8 @@ class QGImageGrid:
                     "BOOLEAN",
                     {
                         "default": True,
-                        "tooltip": "On: every cell takes the first image's size, each picture fitted inside it without cropping. Off: every picture keeps its own size.",
+                        "tooltip": "On: every cell takes the first image's size, each picture fitted "
+                                   "inside it without cropping. Off: every picture keeps its own size.",
                     },
                 ),
                 "drop_black": (
@@ -191,15 +246,19 @@ class QGImageGrid:
     OUTPUT_TOOLTIPS = (
         "The tiled grid image.",
     )
-    FUNCTION = "run"
+    FUNCTION = "execute"
     OUTPUT_NODE = True
 
-    def run(self, images, match_size=True, drop_black=True, gap=0, background="black"):
-        if isinstance(images, torch.Tensor):
+    def execute(self, images, match_size=True, drop_black=True, gap=0, background="black"):
+        if torch.is_tensor(images):
             if images.ndim == 4:
                 items = [images[i] for i in range(images.shape[0])]
             elif images.ndim == 3:
-                items = [images]
+                # 同一个判据：最后一维 ≤ 4 是 (H,W,C) 一张图，否则是灰度批次。
+                if images.shape[-1] <= MAX_CHANNELS:
+                    items = [images]
+                else:
+                    items = [images[i] for i in range(images.shape[0])]
             else:
                 raise ValueError("[QG-tools] 宫格拼接：images 需要 3 维或 4 维张量，或张量列表")
         elif isinstance(images, (list, tuple)):
@@ -211,14 +270,17 @@ class QGImageGrid:
         if drop_black:
             items = [item for item in items if not _is_empty_frame(item)]
         if not items:
-            raise ValueError("[QG-tools] 宫格拼接：没有可拼接的图像（列表为空，或全黑帧都被剔除了）")
+            raise ValueError(
+                "[QG-tools] 宫格拼接：没有可拼接的图像（列表为空，或全黑帧都被剔除了）"
+                "—— 如果输入本来就是全黑的，把「剔除全黑」关掉。"
+            )
         if len(items) > MAX_IMAGES:
             items = items[:MAX_IMAGES]
 
-        images = [_norm_image(item) for item in items]
-        cols = min(MAX_COLS, math.ceil(math.sqrt(len(images))))
-        rows = math.ceil(len(images) / cols)
-        grid = _make_grid(images, cols, rows, match_size, gap, background)
+        frames = [_norm_image(item) for item in items]
+        cols = min(MAX_COLS, math.ceil(math.sqrt(len(frames))))
+        rows = math.ceil(len(frames) / cols)
+        grid = _make_grid(frames, cols, rows, match_size, gap, background)
         return {"ui": {"images": self._preview(grid)}, "result": (grid,)}
 
     @staticmethod

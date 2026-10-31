@@ -33,21 +33,22 @@
 // 滑条顶在右端、输出却是 80，看着就像坏了。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
-import { BRAND, chainCallback, chainHandler, notifyQgChange } from "../shared/index.mjs?v=2026102915";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026102915";
-import { hideWidget } from "../shared/widget_visibility.mjs?v=2026102915";
+import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { roundHalfAway } from "../shared/scrub_input.mjs?v=2026103135";
+import { BRAND, chainCallback, chainHandler, notifyQgChange, zhPair } from "../shared/index.mjs?v=2026103135";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026103135";
+import { hideWidget } from "../shared/widget_visibility.mjs?v=2026103135";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
   vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026102915";
+} from "../shared/vue_mode.mjs?v=2026103135";
 import {
   closeSettingsMenu,
   gearIconSvg,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102915";
+} from "../shared/settings_menu.mjs?v=2026103135";
 
 const NODE_CLASS = "QG_Slider";
 // kind 的取值，必须和 nodes/qg_slider.py 的 KINDS 逐字一致。
@@ -94,6 +95,19 @@ const textWidth = (text) => {
 };
 
 const widgetOf = (node, name) => node.widgets?.find((widget) => widget.name === name);
+
+// value 输入接了线时，执行用的是上游给的值，滑块拖了也进不了结果 —— 读数还
+// 显示一个能拖的数字，是最误导的那种「看着能用」。卡片这条路由
+// widget_card 的 write 守卫与 disabled 类挡住，经典画布那条得自己判。
+function valueLinked(node) {
+  return Boolean(node.inputs?.some(
+    (input) => input?.name === "value"
+      && input.link !== null && input.link !== undefined,
+  ));
+}
+
+// 接线时代替读数的那两个词。宽度比 "0.0" 宽，readoutWidth 要算进去。
+const linkedText = () => zhPair("linked", "连线");
 
 function kindOf(node) {
   return widgetOf(node, "kind")?.value === KIND_FLOAT ? KIND_FLOAT : KIND_INT;
@@ -142,12 +156,37 @@ function clampValue(node, { round = false } = {}) {
   const { low, high } = rangeOf(node);
   let next = Number(widget.value);
   if (!Number.isFinite(next)) next = low;
-  if (round) next = Math.round(next);
-  next = Math.min(high, Math.max(low, next));
+  if (round) {
+    // 整数模式的边界也要取整：后端按 [ceil(low), floor(high)] 算，范围
+    // 0.5–3.7 只可能给 1..3。前端若只夹到 3.7，就是「卡片 3.7、输出 3」。
+    const lo = Math.ceil(low), hi = Math.floor(high);
+    next = roundHalfAway(next);
+    next = hi >= lo
+      ? Math.min(hi, Math.max(lo, next))
+      : roundHalfAway((low + high) / 2);   // 窄到装不下一个整数：退回中点
+  } else {
+    next = Math.min(high, Math.max(low, next));
+  }
   if (next !== Number(widget.value)) {
     widget.value = next;
     widget.callback?.(next);
   }
+}
+
+// 拖到某个位置后该落哪一格。浮点按 **low** 对齐 —— 后端是
+// `low + round((value - low) / size) * size`；按 0 对齐时 min=0.5、step=0.2
+// 的滑条经典模式给 1.0、DOM 卡片（原生 range，按 min 对齐）给 1.1、后端又
+// 给另一个数，三处各不相同。整数模式先按 .5 取整再夹到 [ceil(low), floor(high)]。
+function gridValue(node, raw) {
+  const { low, high } = rangeOf(node);
+  if (kindOf(node) === KIND_FLOAT) {
+    const step = modeOf(node).step;
+    const snapped = low + Math.round((raw - low) / step) * step;
+    return Number(Math.min(high, Math.max(low, snapped)).toFixed(MAX_DECIMALS));
+  }
+  const lo = Math.ceil(low), hi = Math.floor(high);
+  const value = roundHalfAway(raw);
+  return hi >= lo ? Math.min(hi, Math.max(lo, value)) : roundHalfAway((low + high) / 2);
 }
 
 // 卡片的刷新入口。经典模式没有卡片，用一个短路对象顶上：applyKind / setStep /
@@ -372,6 +411,11 @@ function toggleSliderMenu(node) {
 
 // 节点被删就收掉菜单：弹层挂在 document.body 上，跟节点没有父子关系。
 function hookLifecycle(node) {
+  // 接线 / 断线会改变「读数显示数字还是『连线』」，也可能改读数的宽度。
+  // 挂在生命周期里而不是画布钩子里：两种渲染模式都要跟着变。
+  chainCallback(node, "onConnectionsChange", function () {
+    refreshView(this);
+  });
   chainCallback(node, "onRemoved", function () {
     if (menuNode === this) {
       closeSettingsMenu();
@@ -408,6 +452,7 @@ function stripInputs(node) {
 
 // 右端那串数字：固定小数位，拖动时宽度不跳。
 function formatValue(node, raw) {
+  if (valueLinked(node)) return linkedText();
   const number = Number(raw);
   if (!Number.isFinite(number)) return "—";
   return number.toFixed(modeOf(node).decimals);
@@ -428,8 +473,8 @@ function formatValue(node, raw) {
 // 读数要占多宽：把**范围两端**都格式化一遍，取最长那个。
 // 只跟范围 / 模式有关，值在区间里怎么走都不变 → 数字不会左右跳（这是当初
 // 写死 44px 的目的），但也不用给「999.99」这种用不上的位宽留地方。
-function readoutWidthFor(low, high, decimals) {
-  let widest = 0;
+function readoutWidthFor(low, high, decimals, extra = "") {
+  let widest = extra ? textWidth(extra) : 0;
   for (const edge of [low, high]) {
     const w = textWidth(Number(edge).toFixed(decimals));
     if (w > widest) widest = w;
@@ -439,7 +484,8 @@ function readoutWidthFor(low, high, decimals) {
 
 function readoutWidth(node) {
   const { low, high } = rangeOf(node);
-  return readoutWidthFor(low, high, modeOf(node).decimals);
+  return readoutWidthFor(low, high, modeOf(node).decimals,
+    valueLinked(node) ? linkedText() : "");
 }
 
 function layoutOf(node) {
@@ -502,6 +548,7 @@ function drawCanvasSlider(node, ctx) {
   const view = node.__qgSliderView;
   if (!view || view.mode !== "canvas") return;
   const { card, cy, gearX, gearY, readoutRight, trackX, trackW } = layoutOf(node);
+  const linked = valueLinked(node);
   const { low, high } = rangeOf(node);
   const value = Math.min(high, Math.max(low, Number(widgetOf(node, "value")?.value) || 0));
   const frac = Math.min(1, Math.max(0, (value - low) / (high - low)));
@@ -534,14 +581,14 @@ function drawCanvasSlider(node, ctx) {
   const fillW = Math.max(0, knobX - trackX);
   if (fillW > 0.5) {
     roundRect(ctx, trackX, trackY, Math.max(TRACK_H, fillW), TRACK_H, TRACK_H / 2);
-    ctx.fillStyle = BRAND;
+    ctx.fillStyle = linked ? "#3a4a48" : BRAND;
     ctx.fill();
   }
 
   // 滑块
   ctx.beginPath();
   ctx.arc(knobX, cy, KNOB / 2 - 0.5, 0, Math.PI * 2);
-  ctx.fillStyle = view.dragging ? "#ffffff" : "#d8ecea";
+  ctx.fillStyle = linked ? "#8fa3a1" : view.dragging ? "#ffffff" : "#d8ecea";
   ctx.fill();
   ctx.lineWidth = 1;
   ctx.strokeStyle = "rgba(0,180,170,0.55)";
@@ -569,7 +616,10 @@ function hitGear(node, pos) {
   );
 }
 
-function hitTrack(node, pos) {
+// 几何命中与「能不能改」分开。接线之后不该改值，但按在这一片也不能把手
+// 让给画布 —— 否则用户想拖轨道调值，结果整个节点被拖跑（实测 pos 从
+// [120,420] 漂到 [200,420]），比「拖了没反应」更莫名其妙。
+function trackArea(node, pos) {
   if (!pos) return false;
   const { trackX, trackW, cy } = layoutOf(node);
   return (
@@ -578,14 +628,24 @@ function hitTrack(node, pos) {
   );
 }
 
+function hitTrack(node, pos) {
+  if (valueLinked(node)) return false;
+  return trackArea(node, pos);
+}
+
 // 读数槽：点它就地输入（不是拖）
-function hitReadout(node, pos) {
+function readoutArea(node, pos) {
   if (!pos) return false;
   const { readoutLeft, readoutRight, cy } = layoutOf(node);
   return (
     pos[0] >= readoutLeft - 3 && pos[0] <= readoutRight + 3 &&
     Math.abs(pos[1] - cy) <= 13
   );
+}
+
+function hitReadout(node, pos) {
+  if (valueLinked(node)) return false;
+  return readoutArea(node, pos);
 }
 
 function inResizeCorner(node, pos) {
@@ -622,17 +682,14 @@ function commitValue(node, next) {
 
 // 按 x 定位：先算比例，再对齐步长（浮点）/ 四舍五入（整数），最后夹进范围。
 function setFromLocalX(node, x) {
+  if (valueLinked(node)) return;
   const { trackX, trackW } = layoutOf(node);
   const left = trackX + KNOB / 2;
   const right = trackX + trackW - KNOB / 2;
   const frac = Math.min(1, Math.max(0, (x - left) / Math.max(1, right - left)));
   const { low, high } = rangeOf(node);
-  const mode = modeOf(node);
   const raw = low + frac * (high - low);
-  const next = kindOf(node) === KIND_FLOAT
-    ? Number((Math.round(raw / mode.step) * mode.step).toFixed(MAX_DECIMALS))
-    : Math.floor(raw + 0.5);
-  commitValue(node, Math.min(high, Math.max(low, next)));
+  commitValue(node, gridValue(node, raw));
 }
 
 // ---------------------------------------------------------------- 读数可编辑
@@ -693,12 +750,8 @@ function applyEditedText(node, text) {
     refreshView(node);
     return;
   }
-  const { low, high } = rangeOf(node);
-  const mode = modeOf(node);
-  const next = kindOf(node) === KIND_FLOAT
-    ? Number((Math.round(raw / mode.step) * mode.step).toFixed(MAX_DECIMALS))
-    : Math.floor(raw + 0.5);
-  commitValue(node, Math.min(high, Math.max(low, next)));
+  const next = gridValue(node, raw);
+  commitValue(node, next);
   refreshView(node);
   notifyQgChange();
 }
@@ -820,7 +873,7 @@ const CAPTURE = { capture: true };
 
 function beginDrag(node, event) {
   const view = node.__qgSliderView;
-  if (!view || view.mode !== "canvas") return;
+  if (!view || view.mode !== "canvas" || valueLinked(node)) return;
   const move = (ev) => {
     ev.preventDefault();
     const x = localX(node, ev.clientX);
@@ -895,6 +948,9 @@ function installCanvasHooks(node) {
       beginDrag(this, event);
       return true;
     }
+    // 接线之后轨道与读数都不该改值，但按在这一片也得吃掉这一下 —— 让给画布
+    // 就变成拖节点了。用户以为在调滑块，节点却跑掉，比不动更糟。
+    if (trackArea(this, pos) || readoutArea(this, pos)) return true;
     return false;
   });
 }
@@ -946,6 +1002,8 @@ function installDom(node) {
               Number.isFinite(low) ? low : 0,
               Number.isFinite(high) ? high : 1,
               mode.decimals,
+              // 接线后读数换成「连线」，这两个字比数字宽，不留位置会被省略号裁掉
+              valueLinked(node) ? linkedText() : "",
             );
           },
           // 点数字就地改（跟经典模式同一个编辑框）。

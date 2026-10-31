@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
+import math
+
 from ._qg_combo_legacy import combo_legacy
+from ._qg_math_engine import round_half_away
 """QG 数值 — 一个数字，可以当整数用，也可以当浮点数用。
 
 ComfyUI 自带的 primitive 把字符串、整数、浮点塞在同一个节点里；这里的取舍是
@@ -80,7 +83,13 @@ class QGNumber:
         if kind == KIND_FLOAT:
             return (number,)
         # 整数模式：四舍五入后夹到 INT32，免得下游拿到 1e12 这种非法值。
-        return (max(INT32_MIN, min(INT32_MAX, int(round(number)))),)
+        # 用 round_half_away 而不是内置 round()：后者是银行家舍入（2.5 → 2），
+        # 而卡片上显示的是前端 Math.round（2.5 → 3）—— 同一个值，卡片说 3、
+        # 输出是 2。本包其它地方（数学节点的整数槽、滑块）都走同一条。
+        if not math.isfinite(number):
+            # NaN 归零；±inf 夹到 INT32 的边，符合「夹到 INT32」这个语义。
+            number = 0.0 if number != number else math.copysign(float(INT32_MAX), number)
+        return (round_half_away(max(INT32_MIN, min(INT32_MAX, number))),)
 
 
 NODE_CLASS_MAPPINGS = {"QG_Number": QGNumber}

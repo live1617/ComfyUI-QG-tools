@@ -29,10 +29,17 @@ NO_MASK_PAINTED = (
 
 
 def is_unpainted_mask(mask) -> bool:
-    """True for core Load Image's stand-in: a 64x64 mask of zeros."""
+    """True for core Load Image's stand-in: a 64x64 mask of zeros.
+
+    Rank is not part of the test. The stand-in comes back as ``(64, 64)`` or
+    ``(1, 64, 64)`` from core, and a plugin can hand it over as
+    ``(B, 1, 64, 64)`` unchanged; all three mean the same thing, and a node
+    that recognised only two of them would call the third one "the wrong size"
+    on a picture that was simply left unpainted.
+    """
     return (
         isinstance(mask, torch.Tensor)
-        and mask.ndim in (2, 3)
+        and mask.ndim in (2, 3, 4)
         and tuple(int(side) for side in mask.shape[-2:]) == UNPAINTED_MASK_SIZE
         and not bool(mask.any())
     )

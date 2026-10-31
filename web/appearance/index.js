@@ -10,19 +10,19 @@ import {
   shouldRecolor,
   titleInk,
   wearsLegacyScheme,
-} from "../shared/appearance.mjs?v=2026102915";
-import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026102915";
+} from "../shared/appearance.mjs?v=2026103135";
+import { chainCallback, chainHandler, isQgNode } from "../shared/index.mjs?v=2026103135";
 import {
   BADGE_RADIUS,
   badgeCenter,
   helpSections,
   hitsBadge,
   showBadge,
-} from "../shared/help_badge.mjs?v=2026102915";
-import { mountHelpBadge, unmountHelpBadge } from "../shared/help_badge_dom.mjs?v=2026102915";
-import { closeSettingsMenu, openInfoCard } from "../shared/settings_menu.mjs?v=2026102915";
-import { zh, zhOn, zhReady, wantsChinese } from "../shared/zh.mjs?v=2026102915";
-import { ZH_NODE_DEFS } from "../shared/zh_node_defs.mjs?v=2026102915";
+} from "../shared/help_badge.mjs?v=2026103135";
+import { mountHelpBadge, unmountHelpBadge } from "../shared/help_badge_dom.mjs?v=2026103135";
+import { closeSettingsMenu, openInfoCard } from "../shared/settings_menu.mjs?v=2026103135";
+import { zh, zhOn, zhReady, wantsChinese } from "../shared/zh.mjs?v=2026103135";
+import { ZH_NODE_DEFS } from "../shared/zh_node_defs.mjs?v=2026103135";
 
 const SETTING_ID = "QG.Appearance.NodeColor";
 const CUSTOM_SETTING_ID = "QG.Appearance.CustomColor";

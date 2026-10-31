@@ -139,20 +139,35 @@ export function suppressCoreImagePreview(node, followImage = null) {
   // 在经典模式够用、在 Vue 下会多出一块 —— 这里一起按住。`animatedImages` 同理。
   // 🔴 `previewMediaType` 千万别拦：核心正是靠它判断「这个节点有图」，拦掉之后
   //    右键菜单里的「在遮罩编辑器中打开」就一起没了（实测）。
+  //
+  // 🔴 **这两个属性必须「存下来」，不能恒返回常量**。litegraph 每帧都在做
+  //    `this.images !== outputs.images` / `this.preview !== previews` 的**引用比较**，
+  //    用它判断「有没有新图要加载」；返回常量就永远不等，于是每帧都判成新图、
+  //    每帧 `new Image()` 拉一次 `/view?...&rand=<random>` —— rand 保证绝不命中缓存。
+  //    实测 6000×4000 / 25 MB 的图：4000 万像素那张在 2.5 秒里被拉了 **28 次
+  //    （约 700 MB）**，把带宽和主线程全占了，用户看到的就是「选完图要等一会」。
+  //    存下来让比较收敛后，同一场景降到 **2 次**。见 2026-11-01 日志。
+  //    setter 里**不**触发 followImage：这两个属性核心每帧都会写，跟着它 sync()
+  //    等于每帧重跑一遍面板刷新；「有图了要刷新」的信号由 `imgs` 负责。
+  const stored = { images: undefined, animatedImages: undefined };
   for (const key of ["images", "animatedImages"]) {
     try {
       Object.defineProperty(node, key, {
         configurable: true,
         enumerable: true,
-        get() { return EMPTY; },
-        set() {
-          const follow = node.__qgFollowImage;
-          if (typeof follow === "function") queueMicrotask(follow);
-        },
+        get() { return stored[key]; },
+        set(value) { stored[key] = value; },
       });
     } catch {
       // 非 configurable：交给节点的其余逻辑，至少经典模式是干净的
     }
+  }
+  // Nodes 2.0 有自己的开关，别指望 CSS：核心的 ImageCompositor 也是这么关的。
+  // 面板自己画了同一张图，NodeContent 再画一遍就是两张。
+  try {
+    node.hideOutputImages = true;
+  } catch {
+    // 只读实现：CSS 那条 `.lg-node-content{display:none}` 还兜着
   }
 }
 

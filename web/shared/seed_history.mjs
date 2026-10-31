@@ -6,8 +6,12 @@
 
 export const SEED_HISTORY_LIMIT = 8;
 
+// 🔴 必须是整数。上游只判了 `Number.isFinite(value) && value >= 0`，于是 1.5 这种
+// 值能一路走到「历史菜单 → 点一下 → setSeed → widget.value = 1.5」，
+// 后端的 INT 校验（`isinstance(value, int)`）当场拒绝排队，报的还是一句看不出
+// 源头的类型错误。框里显示 "1.5" 同样没法再提交（输入框只收纯数字）。
 function isSeed(value) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
 // 从 onExecuted 的 ui 回包里取种子：可能是数字、字符串数字，也可能包在数组里。

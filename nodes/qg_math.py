@@ -30,6 +30,7 @@ ValueError，ComfyUI 的红框里带着原始表达式和原因，比静默返�
 import string
 
 from ._qg_math_engine import (
+    CONSTANTS,
     MathError,
     evaluate,
     format_number,
@@ -130,7 +131,13 @@ class QGMath:
 
     def execute(self, expr="", **variables):
         # 变量不再一律压成数字：接进来的文本要能原样传给表达式。
-        scope = {name: to_value(variables.get(name, 0.0)) for name in VARIABLES}
+        # 与常量同名的变量不进 scope：a–z 里有个 e，未连线时它是 0.0，会把
+        # math.e 覆盖掉 —— 帮助卡写着可以写 e，实际「2 * e」静默算成 0。
+        scope = {
+            name: to_value(variables.get(name, 0.0))
+            for name in VARIABLES
+            if name not in CONSTANTS
+        }
         try:
             result = evaluate(expr, scope)
         except MathError as exc:

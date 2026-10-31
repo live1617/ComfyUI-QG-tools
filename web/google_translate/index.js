@@ -5,91 +5,105 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { zh } from "../shared/zh.mjs?v=2026102915";
+import { zhPair } from "../shared/zh.mjs?v=2026103135";
 
-const findWidget = (node, name, attr = "name", func = "find") =>
-  node.widgets[func]((w) => w[attr] === name);
+const NODE_CLASS = "QG_GoogleTranslateText";
 
-function manual_translate_prompt(node) {
-  const button_manual_translate = findWidget(node, "Manual Translate"),
-    widget_from_translate = findWidget(node, "from_translate"),
-    widget_to_translate = findWidget(node, "to_translate"),
-    manual_translate = findWidget(node, "manual_translate"),
-    widget_textmultiline = findWidget(node, "customtext", "type");
+// 控件的 name 永远是英文键（汉化只改显示名），所以按 name 找是稳的。
+const BUTTON_NAME = "Manual Translate";
 
-  button_manual_translate.onClick = async function () {
-    if (!manual_translate.value) {
+const findWidget = (node, name) => node.widgets?.find((w) => w?.name === name);
+
+async function manualTranslate(node) {
+  const manual = findWidget(node, "manual_translate");
+  const textWidget = findWidget(node, "text");
+  if (!textWidget) return;
+
+  if (!manual?.value) {
+    app.extensionManager.toast.add({
+      severity: "info",
+      summary: zhPair("Information", "提示"),
+      detail: zhPair(
+        "Manual translate is off. The text is translated when you queue the node (press Run).",
+        "「手动翻译」没开。文本会在排队运行节点时自动翻译（点「运行」）。"
+      ),
+      life: 8000,
+    });
+    return;
+  }
+
+  try {
+    const responseData = await api.fetchApi("/qg/translate/manual", {
+      method: "POST",
+      body: JSON.stringify({
+        prompt: textWidget.value,
+        srcTrans: findWidget(node, "from_translate")?.value ?? "auto",
+        toTrans: findWidget(node, "to_translate")?.value ?? "en",
+      }),
+    });
+
+    if (responseData.status !== 200) {
+      // 后端失败时回 {"ok": false, "error": "..."}，把这句话转给用户，别只写控制台。
+      let detail = responseData.statusText;
+      try {
+        const body = await responseData.json();
+        if (body?.error) detail = body.error;
+      } catch (error) {
+        // 响应不是 JSON：保持 statusText
+      }
       app.extensionManager.toast.add({
-        severity: "info",
-        summary: zh("Information"),
-        detail: zh(
-          "Manual translate is off. The text is translated when you queue the node (press Run)."
-        ),
-        life: 8000,
+        severity: "error",
+        summary: zhPair("Information", "提示"),
+        detail: String(detail),
+        life: 10000,
       });
       return;
     }
 
-    try {
-      const responseData = await api.fetchApi("/qg/translate/manual", {
-        method: "POST",
-        body: JSON.stringify({
-          prompt: widget_textmultiline.value,
-          srcTrans: widget_from_translate.value,
-          toTrans: widget_to_translate.value,
-        }),
-      });
+    const json = await responseData.json();
+    if (typeof json?.translate_prompt !== "string") return;
 
-      if (responseData.status !== 200) {
-        console.log(
-          "[QG-tools] translate failed [" +
-            responseData.status +
-            "] > " +
-            responseData.statusText
-        );
-        return;
-      }
-
-      const json = await responseData?.json();
-      if (!json || json === undefined) {
-        console.log("[QG-tools] translate returned nothing");
-        return;
-      }
-
-      if (json.hasOwnProperty("translate_prompt")) {
-        widget_textmultiline.value = json.translate_prompt;
-      }
-    } catch (e) {
-      console.error("[QG-tools] manual translate error", e);
-    }
-  };
+    textWidget.value = json.translate_prompt;
+    // 面板是 DOM 还是 canvas 画的都成立：通知画布重画，别让旧文字留在屏幕上。
+    node.setDirtyCanvas?.(true, true);
+    app.graph.setDirtyCanvas?.(true, true);
+  } catch (error) {
+    console.error("[QG-tools] manual translate error", error);
+  }
 }
 
 app.registerExtension({
   name: "QG.GoogleTranslate",
-  async beforeRegisterNodeDef(nodeType, nodeData, app) {
-    if (nodeData.name !== "QG_GoogleTranslateText") {
-      return;
-    }
+  async beforeRegisterNodeDef(nodeType, nodeData) {
+    if (nodeData.name !== NODE_CLASS) return;
 
-    // --- Node Created: add the Manual Translate button ---
     const onNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
       onNodeCreated?.apply?.(this, arguments);
-      const node = this,
-        nodeName = `${nodeData.name}_${app.graph._nodes.filter((n) => n.type === nodeData.name).length}`;
+      const node = this;
 
-      console.log(`Create ${nodeData.name}: ${nodeName}`);
-
-      node.addWidget(
+      // 🔴 按钮的文字必须放 label，不能放 addWidget 的第二个参数。
+      //   litegraph 的 button 控件是 `label ?? name` 决定显示什么，而第二个参数同时
+      //   就是控件的 name —— 把中文塞进去，中文界面下 name 就变成「手动翻译」，
+      //   按 name 查找（还有存档里的控件名）全部落空。这里 name 永远是英文常量，
+      //   显示文字单独写进 label，中英文都验过（见 tools/_check_google_translate_ui.cjs）。
+      const button = node.addWidget(
         "button",
-        zh("Manual Translate"),
-        "Manual Translate",
-        () => manual_translate_prompt(node)
+        BUTTON_NAME,
+        BUTTON_NAME,
+        () => manualTranslate(node)
       );
+      if (button) button.label = zhPair("Manual Translate", "手动翻译");
 
-      // 把按钮插到 text 控件之前（与上游一致的视觉顺序）
-      node.widgets.splice(3, 0, node.widgets.pop());
+      // 把按钮挪到「文本」控件之前（与上游一致的视觉顺序）。按 name 找位置，
+      // 别写死下标 —— 上游是 splice(3, 0, ...)，一旦控件增减按钮就插错地方。
+      const widgets = node.widgets;
+      const here = widgets.indexOf(button);
+      const textIndex = widgets.findIndex((w) => w?.name === "text");
+      if (here >= 0 && textIndex >= 0) {
+        widgets.splice(here, 1);
+        widgets.splice(widgets.findIndex((w) => w?.name === "text"), 0, button);
+      }
     };
   },
 });

@@ -1,21 +1,21 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026102915";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102915";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026102915";
+import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026103135";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026103135";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026103135";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026102915";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026102915";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102915";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026102915";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026102915";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102915";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026102915";
+} from "../shared/settings_menu.mjs?v=2026103135";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026103135";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026103135";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026103135";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026103135";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026103135";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -45,7 +45,7 @@ import {
   moveHighlight,
   moveRow,
   newRow,
-  parseRows,
+  parseRowsDetailed,
   parseTemplates,
   pickerWidth,
   removeTemplate,
@@ -64,6 +64,7 @@ import {
   summarizeRows,
   templateFromRows,
   toggleAllState,
+  appendTrigger,
   toggleTrigger,
   upsertTemplate,
   appendFolderRows,
@@ -71,8 +72,8 @@ import {
   loraFolders,
   loraPickerEntries,
   loraStackKeyAction,
-} from "../shared/lora_stack.mjs?v=2026102915";
-import { civitaiButtonLabel, civitaiByHashUrl, civitaiFailureText, civitaiUnreachable, isCivitaiAddress, MAX_PICTURE_BYTES, parseCivitaiBody, pickCivitaiPicture, smallPictureUrl } from "../shared/civitai_lookup.mjs?v=2026102915";
+} from "../shared/lora_stack.mjs?v=2026103135";
+import { civitaiButtonLabel, civitaiByHashUrl, civitaiFailureText, isCivitaiAddress, MAX_PICTURE_BYTES, parseCivitaiBody, pickCivitaiPicture, pictureError, pictureErrorText, smallPictureUrl } from "../shared/civitai_lookup.mjs?v=2026103135";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -85,6 +86,9 @@ const ACTIONS_HEIGHT = 26;
 const GROUP_HEIGHT = 36;
 const STACK_PADDING = 8;
 const BLANK_HEIGHT = 44;
+// 栈读不出来那行提示占的高度：11px/1.4 的两行字 + 内边距 + 外边距，
+// 留到三行也不溢出。
+const BROKEN_HEIGHT = 58;
 const PANEL_PADDING = 10;
 // How many of the slot band's pixels the panel climbs back up into. Three output slots reserve 66px of node height before the first
 // widget, and the band's whole middle is empty - so the control bar rides
@@ -205,6 +209,13 @@ function installStyles() {
   .qgtools-lora-panel, .qgtools-lora-panel *,
   .qgtools-lora-pop, .qgtools-lora-pop *,
   .qgtools-lora-hoverthumb { box-sizing: border-box; }
+  /* 🔴 表单控件不继承字体：不写这一条，面板里的名字、强度框、菜单项算出来都是
+     浏览器默认的 13.33px Arial，而周围是 12px system-ui —— 中文界面上最明显
+     （Arial 里没有汉字，回退成另一套字形，一个字大一号、笔画也不一样）。用
+     :where() 让这条特异性归零，别盖掉 .qgtools-lora-add / .qgtools-lora-info
+     自己写死的字号与字重。 */
+  :where(.qgtools-lora-panel, .qgtools-lora-pop) :where(button, input, select, textarea) {
+    font-family: inherit; font-size: inherit; color: inherit; }
   .qgtools-lora-panel { width: 100%; height: 100%;
     font: 12px system-ui; color: #d7dde2; pointer-events: none; }
   /* 🔴 Nodes 2.0（Vue 渲染）：mountCard 会给桌面节点的面板写一行内联
@@ -269,6 +280,12 @@ function installStyles() {
      the stack; the bordered group inside it holds the controls as one
      centered cluster. */
   .qgtools-lora-bar { flex: none; display: flex; justify-content: center; }
+  /* 栈读不出来时的一行红字。它不是行，不占 ROW_HEIGHT，但也得让面板长高，
+     所以用 auto 高度 + 上下留白。 */
+  .qgtools-lora-broken { flex: none; margin: 4px 8px 6px; padding: 6px 8px;
+    border-radius: 6px; border: 1px solid rgba(255, 92, 77, .55);
+    background: rgba(255, 92, 77, .12); color: #ffb3aa;
+    font: 11px/1.4 system-ui; overflow-wrap: anywhere; }
   /* The group stretches toward the panel width but stops short of the slot
      labels it rides between (see BAND_RECLAIM); the summary flexes in the
      middle so the controls spread instead of huddling. */
@@ -575,10 +592,16 @@ async function fetchLoraList() {
 // listener hangs off one AbortController so teardown cannot leak.
 let activePopup = null;
 
-function closePopup() {
+// `owner` closes only the popup that belonged to that card: unmounting one
+// card (a box losing its rows, a node being deleted) must not take down a
+// popup another card just opened. Called with no argument it closes whatever
+// is open, which is what every user gesture wants.
+function closePopup(owner) {
   hideHoverThumb();
   if (!activePopup) return;
+  if (owner && activePopup.owner && activePopup.owner !== owner) return;
   activePopup.abort.abort();
+  activePopup.watchSize?.disconnect();
   activePopup.element.remove();
   activePopup = null;
 }
@@ -645,22 +668,50 @@ function hideHoverThumb() {
   hoverThumb.style.display = "none";
 }
 
-function openPopup(element, anchorRect, { width, onEscape } = {}) {
+function openPopup(element, anchorRect, { width, onEscape, owner = null } = {}) {
   closePopup();
   const abort = new AbortController();
   element.classList.add("qgtools-lora-pop");
   if (width) element.style.width = `${width}px`;
   document.body.append(element);
   const place = () => {
+    // Popups are filled in asynchronously (the info card shows "Loading..."
+    // first, then grows a picture and three chip rows). Re-running place()
+    // after every growth keeps the card inside the window; when it cannot fit
+    // at all, cap its height and scroll inside it instead of letting the lower
+    // half hang off-screen where nothing can reach it.
+    //
+    // 🔴 用 scrollHeight（内容本身要多高）判断，不用 getBoundingClientRect：
+    // 后者会把已经设上的 max-height 算进去，写一次就改变了判断依据，
+    // ResizeObserver 会跟着来回抖。scrollHeight 与 max-height 无关，幂等。
+    const room = Math.max(160, window.innerHeight - 16);
+    const cap = element.scrollHeight > room ? `${room}px` : "";
+    if (element.style.maxHeight !== cap) element.style.maxHeight = cap;
+    const scroll = cap ? "auto" : "";
+    if (element.style.overflowY !== scroll) element.style.overflowY = scroll;
+
     const popRect = element.getBoundingClientRect();
     let left = Math.min(anchorRect.left, window.innerWidth - popRect.width - 8);
     let top = anchorRect.bottom + 4;
     if (top + popRect.height > window.innerHeight - 8) {
       top = Math.max(8, anchorRect.top - popRect.height - 4);
     }
+    if (top + popRect.height > window.innerHeight - 8) {
+      // Still too tall even above the anchor: sit it at the top edge, the
+      // scroll area above takes care of the rest.
+      top = 8;
+    }
     element.style.left = `${Math.max(8, left)}px`;
     element.style.top = `${top}px`;
   };
+  // 一次 rAF 不够：内容分几批长出来（Loading → 图片 → 三排触发词），而每次
+  // 读到的可能还是上一批的高度（实测同步读是 0、一帧后是 285、最后 465 ——
+  // 只摆两次的话最终位置是按 285 算的，矮窗口里下半截照旧落在屏幕外）。
+  // 改成盯尺寸：每长一次就重新摆一次，稳定下来自然就不动了。
+  const watchSize = typeof ResizeObserver === "function"
+    ? new ResizeObserver(() => place())
+    : null;
+  watchSize?.observe(element);
   place();
   requestAnimationFrame(place);
   document.addEventListener(
@@ -673,7 +724,7 @@ function openPopup(element, anchorRect, { width, onEscape } = {}) {
     (event) => { if (event.key === "Escape") { event.stopPropagation(); closePopup(); onEscape?.(); } },
     { capture: true, signal: abort.signal }
   );
-  activePopup = { element, abort };
+  activePopup = { element, abort, owner, watchSize };
   return { place };
 }
 
@@ -701,6 +752,8 @@ function commitRows(state, rows, { structural = false, record = true } = {}) {
   state.rows = rows;
   state.widget.value = serializeRows(rows);
   state.renderedValue = state.widget.value;
+  // 写进去的是自己序列化出来的合法 JSON，那句「读不出来」自然不成立了。
+  state.parseError = null;
   state.node.graph?.setDirtyCanvas(true, true);
   if (structural) renderRows(state);
   else updateRowValues(state);
@@ -777,7 +830,8 @@ function panelHeight(state) {
     : BLANK_HEIGHT;
   const stack = inner + ROW_GAP + ACTIONS_HEIGHT + STACK_PADDING * 2 + 2; // +2 border
   const note = state.note ? NOTE_HEIGHT + ROW_GAP : 0;
-  return PANEL_PADDING * 2 + GROUP_HEIGHT + ROW_GAP + note + stack;
+  const broken = state.parseError ? BROKEN_HEIGHT : 0;
+  return PANEL_PADDING * 2 + GROUP_HEIGHT + ROW_GAP + note + broken + stack;
 }
 
 function panelMinWidth(state) {
@@ -824,40 +878,73 @@ function applyRangeTint(input, row, key) {
   // matches whole attributes only, so the varying numbers kept the whole
   // tooltip English forever. The static base title translates; the range
   // itself stays visible as the orange tint and in the info card's editors.
-  input.title = input.dataset.baseTitle;
+  // 🔴 这里以前直接把英文原文写回 title：数组插进文档之后再改属性，汉化
+  // 插件的 DOM 扫描（只看插入那一次）不会再看第二遍，于是拖一下强度、或范围
+  // 查询回来，中文界面下这条提示就变回英文。多查一次词典解决。
+  input.title = zh(input.dataset.baseTitle);
 }
 
 // ---------- strength boxes ----------
+//
+// 一个强度框有四种改法：点一下进编辑（全选原文）、左右拖动、上下方向键、点右边
+// 的步进箭头。四条路都走同一个 commit()，边界只有一处：
+//   · 输入框里清空 → 不提交。空串的 Number() 是 0 而不是 NaN，提交下去等于把
+//     这一行的 LoRA 静默关掉一半（实测 0.80 清空后点走，落盘是 0.00）。
+//   · 值没变 → 不提交。点开一下再点走、按住方向键顶到 ±10 之后继续按，都会走到
+//     这里；每次提交要记一条撤销，栈里会堆满什么都没改的步骤。
+//   · 编辑态按 Escape → 放弃。原来只是把按键挡住，框还留在编辑态、点走照样提
+//     交 —— 用户以为已经取消了。
+//   · 提交前按行 id 找回这一行。框可能停在编辑态而行已经没了（外部节点改了栈、
+//     面板重建，旧元素的 blur 仍会来）；按原来的下标写会落到别人身上，越界时
+//     还会往数组尾巴上挂一行没有名字的残缺行。
+function formatStrength(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(2) : "0.00";
+}
 
 function strengthBox(state, index, key) {
   const box = el("div", "qgtools-lora-strengthbox");
   const input = el("input", "qgtools-lora-strength");
-  input.value = state.rows[index][key].toFixed(2);
+  const rowId = state.rows[index]?.id;
+  const liveIndex = () => state.rows.findIndex((row) => row.id === rowId);
+  const liveRow = () => state.rows[liveIndex()];
+  input.value = formatStrength(state.rows[index]?.[key]);
   input.dataset.qgStrength = key;
   input.dataset.baseTitle = key === "strength"
     ? "Model strength. Drag left/right to scrub, click to type, arrows to step. Shift = fine."
     : "CLIP strength. Drag left/right to scrub, click to type, arrows to step. Shift = fine.";
-  // The title must exist BEFORE insertion: the zh translator only reads
-  // attributes of elements present at insert time, and applyRangeTint first
-  // runs after the async range fetch - too late for a freshly-set title.
-  input.title = input.dataset.baseTitle;
-  input.setAttribute("aria-label", key === "strength" ? zh("Model strength") : zh("CLIP strength"));
+  // 标题必须在插入 DOM 之前设好：汉化插件的 DOM 翻译器只认插入那一刻的文本，
+  // 而 applyRangeTint 要等异步的范围查询回来才第一次跑。
+  input.title = zh(input.dataset.baseTitle);
+  input.setAttribute("aria-label", zh(key === "strength" ? "Model strength" : "CLIP strength"));
   input.readOnly = true;
-  input.__qgRead = () => state.rows[index]?.[key].toFixed(2) ?? "1.00";
-  input.__qgTint = () => state.rows[index] && applyRangeTint(input, state.rows[index], key);
-  ensureRange(state, state.rows[index].name);
+  input.__qgRead = () => {
+    const row = liveRow();
+    return row ? formatStrength(row[key]) : "";
+  };
+  input.__qgTint = () => {
+    const row = liveRow();
+    if (row) applyRangeTint(input, row, key);
+  };
+  ensureRange(state, state.rows[index]?.name);
 
-  const commitValue = (value, { record = true } = {}) => {
-    let rows = state.rows;
-    if (key === "strength") rows = setStrength(rows, index, value, linked(state));
-    else rows = rows.map((row, i) => (i === index ? { ...row, strength_clip: roundStrength(value) } : row));
+  const commit = (value, { record = true } = {}) => {
+    const at = liveIndex();
+    if (at < 0) return;
+    const next = roundStrength(value);
+    if (next === state.rows[at][key]) return;
+    const rows = key === "strength"
+      ? setStrength(state.rows, at, next, linked(state))
+      : state.rows.map((row, i) => (i === at ? { ...row, strength_clip: next } : row));
     commitRows(state, rows, { record });
   };
 
   let drag = null;
   input.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || !input.readOnly) return;
-    drag = { x: event.clientX, y: event.clientY, start: state.rows[index][key], scrubbed: false };
+    const row = liveRow();
+    if (!row) return;
+    drag = { x: event.clientX, y: event.clientY, start: row[key], scrubbed: false };
     input.setPointerCapture(event.pointerId);
     event.preventDefault();
   });
@@ -867,19 +954,21 @@ function strengthBox(state, index, key) {
     const dy = event.clientY - drag.y;
     if (!drag.scrubbed && isScrubbing(dx, dy)) drag.scrubbed = true;
     if (drag.scrubbed) {
-      commitValue(scrubValue(drag.start, dx, event.shiftKey, state.settings?.step), { record: false });
+      commit(scrubValue(drag.start, dx, event.shiftKey, state.settings?.step), { record: false });
     }
   });
   const endDrag = (event) => {
     if (!drag) return;
     try { input.releasePointerCapture(event.pointerId); } catch {}
-    const wasClick = !drag.scrubbed;
+    const scrubbed = drag.scrubbed;
+    const moved = scrubbed && liveRow()?.[key] !== drag.start;
     drag = null;
-    if (!wasClick) notifyQgChange();
-    if (wasClick) {
+    if (!scrubbed) {
       input.readOnly = false;
       input.focus();
       input.select();
+    } else if (moved) {
+      notifyQgChange();
     }
   };
   input.addEventListener("pointerup", endDrag);
@@ -887,46 +976,70 @@ function strengthBox(state, index, key) {
 
   input.addEventListener("keydown", (event) => {
     keepKeyInField(event);
-    if (event.key === "Enter") input.blur();
-    else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    if (event.key === "Enter") {
       event.preventDefault();
-      const coarse = state.settings?.step ?? DEFAULT_STEP;
-      const step = (event.shiftKey ? FINE_STEP : coarse) * (event.key === "ArrowUp" ? 1 : -1);
-      commitValue(state.rows[index][key] + step);
-      input.value = state.rows[index][key].toFixed(2);
+      input.blur();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      input.dataset.qgCancel = "1";
+      input.blur();
+      return;
+    }
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    event.preventDefault();
+    const row = liveRow();
+    if (!row) return;
+    const coarse = state.settings?.step ?? DEFAULT_STEP;
+    const step = (event.shiftKey ? FINE_STEP : coarse) * (event.key === "ArrowUp" ? 1 : -1);
+    commit(row[key] + step);
+    const after = liveRow();
+    if (after) {
+      input.value = formatStrength(after[key]);
       input.select();
     }
   });
   input.addEventListener("blur", () => {
     if (!input.readOnly) {
-      const number = Number(input.value);
-      if (Number.isFinite(number)) commitValue(number);
+      const cancelled = input.dataset.qgCancel === "1";
+      delete input.dataset.qgCancel;
       input.readOnly = true;
+      if (!cancelled) {
+        const text = input.value.trim();
+        // 🔴 空串单独拦：Number("") 是 0，直接提交就把这一行的强度写成 0。
+        const number = text === "" ? NaN : Number(text);
+        if (Number.isFinite(number)) commit(number);
+      }
     }
-    input.value = state.rows[index][key].toFixed(2);
+    const row = liveRow();
+    if (row) input.value = formatStrength(row[key]);
   });
 
-  // Click-to-step arrows: the third way to set a strength, next to scrubbing
-  // and typing. Steps by the configured step (gear menu); Shift steps fine.
+  // 点一下步进一格：第三种改强度的方式（拖动、输入之后）。
   const steps = el("div", "qgtools-lora-step");
   const stepButton = (direction) => {
     const button = el("button");
     button.type = "button";
     button.tabIndex = -1;
-    button.title = direction > 0
+    button.title = zh(direction > 0
       ? "Strength up one step. Shift = fine."
-      : "Strength down one step. Shift = fine.";
+      : "Strength down one step. Shift = fine.");
     button.innerHTML = chevronIconSvg(direction > 0);
     button.addEventListener("click", (event) => {
+      const row = liveRow();
+      if (!row) return;
       const coarse = state.settings?.step ?? DEFAULT_STEP;
-      commitValue(state.rows[index][key] + (event.shiftKey ? FINE_STEP : coarse) * direction);
-      input.value = state.rows[index][key].toFixed(2);
+      commit(row[key] + (event.shiftKey ? FINE_STEP : coarse) * direction);
+      const after = liveRow();
+      if (after) input.value = formatStrength(after[key]);
     });
     return button;
   };
   steps.append(stepButton(1), stepButton(-1));
   box.append(input, steps);
-  applyRangeTint(input, state.rows[index], key);
+  const opening = liveRow();
+  if (opening) applyRangeTint(input, opening, key);
   return box;
 }
 
@@ -978,7 +1091,7 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
   search.placeholder = zh("Search LoRAs...");
   search.setAttribute("aria-label", zh("Search LoRAs"));
   const list = el("div", "qgtools-lora-list");
-  list.append(el("div", "qgtools-lora-empty", "Loading..."));
+  list.append(el("div", "qgtools-lora-empty", zh("Loading...")));
   if (adding) pop.append(el("div", "qgtools-lora-picker-note",
     zhPair(
       "Use the arrows to fold folders. Click a file to add one, Ctrl-click or Shift-click to tick several, or a folder name to add all. Skips files already in this stack.",
@@ -987,8 +1100,11 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
   const anchorRect = anchor.getBoundingClientRect();
   const fitWidth = () => pickerWidth(widestPickerLabel, anchorRect.width, window.innerWidth);
   const originalRowId = state.rows[index]?.id;
+  // 只用来给「当前这一行」打个标记：同样按 id 找，行被删掉就是 undefined。
+  const currentName = () => state.rows.find((row) => row.id === originalRowId)?.name;
   const { place } = openPopup(pop, anchorRect, {
     width: fitWidth(),
+    owner: state,
     onEscape: () => backToStack(adding ? state.rows.length
       : state.rows.findIndex((row) => row.id === originalRowId)),
   });
@@ -1078,6 +1194,16 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
   const tickWith = (event, name) => {
     if (event.shiftKey && !event.ctrlKey && !event.metaKey) tickRun(name);
     else toggleTick(name);
+  };
+
+  // 🔴 箭头键会让列表在**没动过的指针**底下重画，浏览器随后在布局变化时报「指针
+  // 进入了新的一行」。pointerenter 若一律接管高亮，键盘浏览就永远停在指针下那一
+  // 项 —— 按了没反应，而 Enter 选中的是看不见的那一行。只有坐标真的变过才认。
+  let lastPointer = null;
+  const pointerMoved = (event) => {
+    const moved = !lastPointer || lastPointer.x !== event.clientX || lastPointer.y !== event.clientY;
+    lastPointer = { x: event.clientX, y: event.clientY };
+    return moved;
   };
 
   function addTicked({ pointer = false } = {}) {
@@ -1184,16 +1310,29 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
       return;
     }
     const strength = roundStrength(state.settings?.default_strength ?? 1);
+    // 🔴 选择器列文件是异步取的，这期间用户完全可能在面板上删行、拖着重排 ——
+    // 渲染那一刻记下的 `index` 那时已经指向别人了，选中的文件就落到另一行走上
+    // （用户看到的是自己点的那一行名字没变、别人那行被换掉）。回写按行的稳定
+    // id 找；那一行已经没了就什么都不改，并说一句。
+    const at = adding ? -1 : state.rows.findIndex((row) => row.id === originalRowId);
+    if (!adding && at < 0) {
+      closePopup();
+      loraToast(zhPair(
+        "That row is no longer in this stack, so the file was not set.",
+        "那一行已经不在这一栈里了，所以没改文件。",
+      ));
+      return;
+    }
     const rows = adding
       ? [...state.rows, { ...newRow(), name, strength, strength_clip: strength }]
       : state.rows.map((row, i) =>
         // A different file means different trigger words: clear the old ones.
-        i === index ? { ...row, name, triggers: name === row.name ? row.triggers : "" } : row
+        i === at ? { ...row, name, triggers: name === row.name ? row.triggers : "" } : row
       );
     closePopup();
     commitRows(state, rows, { structural: true });
     if (adding) fitNode(state);
-    if (!pointer) backToStack(adding ? rows.length - 1 : index);
+    if (!pointer) backToStack(adding ? rows.length - 1 : at);
   };
 
   const appendOption = (entry, flatIndex) => {
@@ -1203,12 +1342,18 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
     option.style.paddingLeft = `${OPTION_PAD_X + Math.min(4, depth) * 12 + (folder ? 0 : 30)}px`;
     if (folder) appendFolderToggle(option, name);
     option.append(nameLabel(folder ? label : displayName(state, label)));
+    // 名字会被 fitLabels 从中间截断，全路径只剩这里能看（子文件夹、扩展名）。
+    option.title = name;
     if (folder) {
       option.classList.add("qgtools-lora-folder-option");
       option.append(el("span", "qgtools-lora-folder-count", zhCount("Add all {n} LoRA", "Add all {n} LoRAs", count)));
-      option.title = zh("Add all LoRAs in this folder, including nested folders. Files already in this stack are skipped.");
+      // 这句带「包括子文件夹」，进不了字典（zh() 查不到就留英文），只能自己备两份。
+      option.title = zhPair(
+        "Add all LoRAs in this folder, including nested folders. Files already in this stack are skipped.",
+        "把这个文件夹里的 LoRA 全部加进来（含子文件夹）。已在栈里的文件会跳过。",
+      );
     }
-    if (!folder && name === state.rows[index]?.name) option.classList.add("current");
+    if (!folder && name === currentName()) option.classList.add("current");
     // 已经是栈里的一行：不给勾，点了也只提示一下。勾上是骗人的 —— 加进去也会被跳过。
     const already = !folder && inStack(name);
     if (!folder && adding) {
@@ -1238,6 +1383,7 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
         hideHoverThumb();
         return;
       }
+      if (!pointerMoved(event)) return;
       if (highlight !== flatIndex) {
         // Keep the option under the pointer intact through the click.
         list.querySelector(".qgtools-lora-option.highlight")?.classList.remove("highlight");
@@ -1246,8 +1392,16 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
       }
       showHoverThumb(state, name, event.clientX, event.clientY);
     });
+    // A real move also takes the highlight: the pointer can come to rest on a
+    // row without an enter (the list was redrawn under it).
     option.addEventListener("pointermove", (event) => {
-      if (!folder) showHoverThumb(state, name, event.clientX, event.clientY);
+      if (folder || !pointerMoved(event)) return;
+      if (highlight !== flatIndex) {
+        list.querySelector(".qgtools-lora-option.highlight")?.classList.remove("highlight");
+        highlight = flatIndex;
+        option.classList.add("highlight");
+      }
+      showHoverThumb(state, name, event.clientX, event.clientY);
     });
     option.addEventListener("pointerleave", hideHoverThumb);
     option.addEventListener("click", (event) => {
@@ -1268,6 +1422,10 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
       }
       pick(entry, { pointer: true });
     });
+    // 🔴 键盘浏览全靠这一句：列表每次按键都整块重画，高亮元素是新的，不会自己
+    // 带着上一帧的类。少了它，ArrowDown 只会改内存里的 highlight —— 屏幕上看不
+    // 出选中在哪，而 Enter 照样按 highlight 取文件，等于闭着眼睛挑。
+    if (flatIndex === highlight) option.classList.add("highlight");
     option.dataset.qgFlat = String(flatIndex);
     list.append(option);
   };
@@ -1285,7 +1443,7 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
     if (!entries.length) {
       list.append(el("div", "qgtools-lora-empty",
         loadError ? zh("Could not list LoRAs. Close this picker and try again.")
-          : names.length ? "No matches." : "Put LoRA files in models/loras."));
+          : names.length ? zh("No matches.") : zh("Put LoRA files in models/loras.")));
       place();
       return;
     }
@@ -1349,7 +1507,7 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
       // strip a folder prefix), so this width never changes while typing.
       widestPickerLabel = widestLabel(names.map((name) => displayName(state, name))) + (adding ? 110 : 30);
       if (!adding) highlight = loraPickerEntries(names, "", currentFolds()).filter((entry) => entry.kind === "file")
-        .findIndex((entry) => entry.name === state.rows[index]?.name);
+        .findIndex((entry) => entry.name === currentName());
       pop.style.width = `${fitWidth()}px`;
       renderList();
     })
@@ -1452,11 +1610,18 @@ async function lookUpOnCivitai(serverName, picture = "PG-13") {
     `/qg/lora/hash?name=${encodeURIComponent(serverName)}`
   )).json();
   if (!hashed.ok) throw new Error(hashed.error || "Could not hash this LoRA file.");
+  // 🔴 redirect 不能设成 "error"：fetch 在那种情况下抛的是 TypeError，和
+  // 「根本连不上」一模一样，于是被 civitaiFailureText 判成「防火墙/VPN/代理
+  // 拦住了」—— 明明连上了、只是跟了一次跳转。改成跟随，再自己验落点：只
+  // 认 civitai.com 自己的 https 地址。
   const response = await fetch(civitaiByHashUrl(hashed.sha256), {
-    credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store",
+    credentials: "omit", redirect: "follow", referrerPolicy: "no-referrer", cache: "no-store",
   });
   if (response.status === 404) return false;
-  if (!response.ok) throw new Error(`Civitai answered ${response.status}.`);
+  if (!isCivitaiAddress(response.url)) {
+    throw new Error("Civitai redirected the lookup somewhere else.");
+  }
+  if (!response.ok) throw pictureError("http_status", { status: response.status });
   const info = parseCivitaiBody(await response.text());
   const saved = await (await api.fetchApi("/qg/lora/civitai", {
     method: "POST",
@@ -1466,12 +1631,40 @@ async function lookUpOnCivitai(serverName, picture = "PG-13") {
   if (!saved.ok) throw new Error(saved.error || "Could not save the Civitai info.");
   if (picture !== "off") {
     // 图没存成不该把「信息已经存好了」这件事也报成失败。
-    await saveCivitaiPicture(serverName, info, picture === "any").catch((error) =>
+    await saveCivitaiPicture(serverName, info, picture === "any").catch((error) => {
+      // 原因由数据层按 code 出两种语言：这句话进的是 toast，翻译器看不到它。
+      const why = pictureErrorText(error);
       loraToast(zhPair(
-        `Saved the Civitai info, but not its picture: ${error?.message || error}`,
-        `Civitai 信息已存下，但图没存成：${error?.message || error}`)));
+        `Saved the Civitai info, but not its picture: ${why}`,
+        `Civitai 信息已存下，但图没存成：${why}`));
+    });
   }
   return true;
+}
+
+// 图床的 content-length 不可全信：可能缺失，也可能是压缩前的长度。所以边读
+// 边数，到上限就 cancel —— 绝不能先 response.blob() 再量，那等于把整个 body
+// 拉进内存之后才说不收。
+async function readCapped(response, limit) {
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const blob = await response.blob();
+    if (blob.size > limit) throw pictureError("picture_too_large_while_reading");
+    return blob;
+  }
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => {});
+      throw pictureError("picture_too_large_while_reading");
+    }
+    chunks.push(value);
+  }
+  return new Blob(chunks, { type: response.headers.get("content-type") || "" });
 }
 
 // The LoRA's first picture on Civitai, saved beside it as its preview. The
@@ -1491,18 +1684,20 @@ async function saveCivitaiPicture(serverName, info, anyRating) {
   const response = await fetch(smallPictureUrl(picture.url), {
     credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store",
   });
-  if (!response.ok) throw new Error(`Civitai's picture server answered ${response.status}.`);
-  if (!isCivitaiAddress(response.url)) {
-    throw new Error("The picture came from somewhere other than Civitai.");
-  }
+  if (!response.ok) throw pictureError("picture_server", { status: response.status });
+  if (!isCivitaiAddress(response.url)) throw pictureError("picture_not_civitai");
   if (!(response.headers.get("content-type") || "").startsWith("image/")) {
-    throw new Error("Civitai did not send a picture.");
+    throw pictureError("picture_not_an_image");
   }
-  if (Number(response.headers.get("content-length") || 0) > MAX_PICTURE_BYTES) {
-    throw new Error("The picture is too large.");
+  // content-length 只用来提前放弃；真正的量是读出来的那些字节。
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (declared > MAX_PICTURE_BYTES) {
+    throw pictureError("picture_too_large", {
+      megabytes: Math.round((declared / (1024 * 1024)) * 10) / 10,
+      limit: Math.round(MAX_PICTURE_BYTES / (1024 * 1024)),
+    });
   }
-  const blob = await response.blob();
-  if (blob.size > MAX_PICTURE_BYTES) throw new Error("The picture is too large.");
+  const blob = await readCapped(response, MAX_PICTURE_BYTES);
   const saved = await (await api.fetchApi(
     `/qg/lora/picture?name=${encodeURIComponent(serverName)}`,
     {
@@ -1511,7 +1706,8 @@ async function saveCivitaiPicture(serverName, info, anyRating) {
       body: blob,
     }
   )).json();
-  if (!saved.ok) throw new Error(saved.error || "Could not save the picture.");
+  // 后端认得出原因时会带 code 与数字回来；不认识的就用它给的英文原文。
+  if (!saved.ok) throw pictureError(saved.code, saved.params ?? {}, saved.error || "Could not save the picture.");
   pictureSaved();
   loraToast(zhPair("Saved the LoRA's Civitai picture.", "已存下这张 LoRA 在 Civitai 的图。"));
 }
@@ -1521,21 +1717,52 @@ async function saveCivitaiPicture(serverName, info, anyRating) {
 function openInfo(state, index, anchor) {
   const row = state.rows[index];
   if (!row.name) return;
+  // 🔴 卡片是异步填充的，而且会一直挂在页面上 —— 这期间用户完全可能在上面
+  // 删掉一行、拖着重排，或者换掉一个文件。所以它记住的是**哪一行**（行有
+  // 稳定的 id），不是下标：下标在第一次增删之后就指向别人了。实测删掉第 1
+  // 行再点卡片里的「添加触发词」，那个词落到了另一个 LoRA 的行上，而卡片
+  // 标题还写着原来那个文件。
+  const rowId = row.id;
+  const liveIndex = () => state.rows.findIndex((entry) => entry.id === rowId);
+  // 把这一行的触发词写回去。行已经没了就没有能写的地方，顺手关掉卡片 ——
+  // 留着一张改不了任何东西的卡片只会让人以为词已经加进去了。
+  const writeTriggers = (next) => {
+    const at = liveIndex();
+    if (at < 0) {
+      // 说一句再关：卡片上这个按钮此刻已经无所指，静默消失只会让人以为词
+      // 加进去了。
+      loraToast(zhPair(
+        "That row is no longer in this stack, so nothing was changed.",
+        "那一行已经不在这一栈里了，什么都没改。",
+      ));
+      closePopup(state);
+      return false;
+    }
+    const rows = state.rows.map((entry, i) => (i === at ? { ...entry, triggers: next(entry.triggers) } : entry));
+    commitRows(state, rows);
+    return true;
+  };
   // Every server call in the card goes through the resolved name, so the
   // card works for a moved file too.
   const serverName = effectiveLoraName(state, row.name);
   const card = el("div", "qgtools-lora-card");
   card.append(el("div", "qgtools-lora-empty", "Loading..."));
-  openPopup(card, anchor.getBoundingClientRect());
+  const popup = openPopup(card, anchor.getBoundingClientRect(), { owner: state });
 
   const render = (info) => {
+    // 行没了就别再画了（同一轮里被删掉的）。
+    if (liveIndex() < 0) {
+      closePopup(state);
+      return;
+    }
     card.textContent = "";
     const image = el("img");
     image.alt = "";
     image.src = thumbUrl(serverName);
     image.addEventListener("error", () => image.remove());
     if (info.has_preview) card.append(image);
-    card.append(el("h4", "", info.civitai_title || rowLabel(state, row.name)));
+    const current = state.rows[liveIndex()] ?? row;
+    card.append(el("h4", "", info.civitai_title || rowLabel(state, current.name)));
     if (info.base_model) {
       // "Base model" stays its own text node so the translator can match it;
       // the value after it is data and needs no translation.
@@ -1569,14 +1796,13 @@ function openInfo(state, index, anchor) {
         const chip = el("button", "qgtools-lora-chip", word);
         chip.type = "button";
         chip.title = zh("Toggle this trigger word into the row's output");
-        const refresh = () => chip.classList.toggle("active", hasTrigger(state.rows[index].triggers, word));
+        const refresh = () => {
+          const at = liveIndex();
+          if (at >= 0) chip.classList.toggle("active", hasTrigger(state.rows[at].triggers, word));
+        };
         refresh();
         chip.addEventListener("click", () => {
-          const rows = state.rows.map((entry, i) =>
-            i === index ? { ...entry, triggers: toggleTrigger(entry.triggers, word) } : entry
-          );
-          commitRows(state, rows);
-          refresh();
+          if (writeTriggers((triggers) => toggleTrigger(triggers, word))) refresh();
         });
         chips.append(chip);
       }
@@ -1605,13 +1831,16 @@ function openInfo(state, index, anchor) {
           load();
         } catch (error) {
           fetchButton.textContent = zhPair("Civitai lookup failed", "Civitai 查询失败");
-          fetchButton.title = civitaiFailureText(error);
-          // 原因也弹一次：title 要悬停才看得到，很多人根本不会去悬停。
-          loraToast(civitaiUnreachable(error)
-            ? zhPair(civitaiFailureText(error),
-              "连不上 civitai.com。防火墙、VPN 或代理都可能拦住它，ComfyUI 其余功能不受影响。")
-            : String(error?.message || error));
+          // 原因写两处：title 要悬停才看得到，toast 直接弹出来。这句话本身
+          // 已经是两种语言的（数据层出），因为 toast 不在 DOM 翻译范围里。
+          const why = civitaiFailureText(error);
+          fetchButton.title = why;
+          loraToast(why);
           retranslate(card);
+        } finally {
+          // 🔴 「没找到」和「查询失败」两条路以前都把按钮留在灰着：想再查一次
+          // 只能关掉卡片重开。成功那条路会重建卡片，这个赋值落空无所谓。
+          fetchButton.disabled = false;
         }
       });
       card.append(fetchButton);
@@ -1622,21 +1851,31 @@ function openInfo(state, index, anchor) {
     // Each bound is optional: erase it for "any". Saved when a gesture ends.
     const bounds = {};
     const saveRange = async () => {
+      // 只发区间。带上 words 就等于用「渲染那一刻」的快照整份覆盖词表 ——
+      // 卡片开着的时候点过「+」，新加的词会被这次保存抹掉。后端对缺席的
+      // 那半是「继承磁盘上那一份」。
       const payload = {
         name: serverName,
-        words: info.custom_triggers || [],
         min: bounds.min.get(),
         max: bounds.max.get(),
       };
       try {
-        await api.fetchApi("/qg/lora/triggers", {
+        const response = await api.fetchApi("/qg/lora/triggers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+        if (!response?.ok) throw new Error(`HTTP ${response?.status ?? "?"}`);
         rangeCache.delete(row.name);
         ensureRange(state, row.name);
-      } catch {}
+      } catch (error) {
+        // 原来这里是空 catch：保存失败也一声不响，用户以为存上了，重启后
+        // 区间没了 —— 而且面板上显示的仍是刚填的数字，看不出有东西丢掉。
+        loraToast(zhPair(
+          `The strength range could not be saved (${error?.message ?? "request failed"}).`,
+          `推荐区间没能保存（${error?.message ?? "请求失败"}）。`,
+        ));
+      }
     };
     for (const key of ["min", "max"]) {
       bounds[key] = makeScrubInput({
@@ -1665,19 +1904,40 @@ function openInfo(state, index, anchor) {
     addButton.addEventListener("click", async () => {
       const word = wordInput.value.trim();
       if (!word) return;
+      // 🔴 守卫要放在**写服务端之前**：这个按钮先 POST 再写行，行没了的话
+      // 就是「档案里多了一条自定义词、行里没变」—— 用户看到「什么都没改」，
+      // 其实那一行的存档已经被动过了。
+      if (liveIndex() < 0) {
+        loraToast(zhPair(
+          "That row is no longer in this stack, so nothing was changed.",
+          "那一行已经不在这一栈里了，什么都没改。",
+        ));
+        closePopup(state);
+        return;
+      }
       wordInput.value = "";
       const words = [...(info.custom_triggers || []), word];
+      let remembered = true;
       try {
-        await api.fetchApi("/qg/lora/triggers", {
+        const response = await api.fetchApi("/qg/lora/triggers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: serverName, words }),
         });
-      } catch {}
-      const rows = state.rows.map((entry, i) =>
-        i === index ? { ...entry, triggers: toggleTrigger(entry.triggers, word) } : entry
-      );
-      commitRows(state, rows);
+        if (!response?.ok) throw new Error(`HTTP ${response?.status ?? "?"}`);
+      } catch (error) {
+        // 这个词仍然会加进**这一段**（下面 writeTriggers），但没能记进触发词
+        // 库 —— 下次新加一行这条 LoRA 就不会自动带上它。空 catch 的时候用户
+        // 完全不知道，只是过几天发现「以前加过的词不见了」。
+        remembered = false;
+        loraToast(zhPair(
+          `The word was added to this stack but could not be remembered (${error?.message ?? "request failed"}).`,
+          `这个词已加进这一段，但没能记住（${error?.message ?? "请求失败"}）。`,
+        ));
+      }
+      // 幂等追加：这个按钮是「加进去」，不是「切换」。用 toggle 的话点第二次
+      // 会把行里的词删掉，而服务端那边又追加了一份 —— 两边就此岔开。
+      writeTriggers((triggers) => appendTrigger(triggers, word));
       load();
     });
     custom.append(wordInput, addButton);
@@ -1688,6 +1948,16 @@ function openInfo(state, index, anchor) {
     // the card with itself re-triggers that observer over the finished
     // content (a no-op when no translator is installed).
     retranslate(card);
+    // 内容这一下才真正长出来（图片 + 三排触发词 + 范围 + 自定义词）。不重新
+    // 定位的话位置还是按「Loading...」那个小卡片算的，矮窗口里下半截会直接
+    // 落到屏幕外（实测 620px 高的视口下溢出 102px）。
+    //
+    // 🔴 必须**再等一帧**：同步读到的 clientRect 高度还是 0（元素刚被
+    // retranslate 摘出去又插回来，这一刻还没进入布局），于是算出来仍是
+    // 「贴着按钮往下摆」。先同步调一次让常见情形立刻到位，再让 rAF 按真实
+    // 高度纠一次。
+    popup.place();
+    requestAnimationFrame(popup.place);
   };
 
   const load = () => {
@@ -1699,8 +1969,10 @@ function openInfo(state, index, anchor) {
       })
       .catch(() => {
         card.textContent = "";
-        card.append(el("div", "qgtools-lora-empty", "Could not read LoRA info."));
+        card.append(el("div", "qgtools-lora-empty", zh("Could not read LoRA info.")));
         retranslate(card);
+        popup.place();
+        requestAnimationFrame(popup.place);
       });
   };
   load();
@@ -1726,19 +1998,70 @@ function saveTemplates(list) {
 
 function openTemplates(state, anchor) {
   const menu = el("div", "qgtools-lora-menu qgtools-lora-templates");
+  // 覆盖和删除落在 localStorage 里 —— ComfyUI 的撤销管不到存档，删了就真没了。
+  // 这两个动作先问一句；确认条借用同一块菜单，不再开第二个弹窗。
+  let pending = null;
   const rebuild = () => {
     menu.textContent = "";
+    if (pending) {
+      const box = el("div", "qgtools-lora-custom");
+      box.append(el("div", "qgtools-lora-empty", pending.question));
+      const cancel = el("button", "", zhPair("Cancel", "取消"));
+      const yes = el("button", "qgtools-lora-danger", pending.yesLabel);
+      cancel.type = yes.type = "button";
+      cancel.addEventListener("click", () => { pending = null; rebuild(); });
+      yes.addEventListener("click", () => {
+        const run = pending.onYes;
+        pending = null;
+        run();
+      });
+      box.append(cancel, yes);
+      menu.append(box);
+      cancel.focus({ preventScroll: true });
+      return;
+    }
     const saveRow = el("div", "qgtools-lora-custom");
     const nameInput = el("input");
     nameInput.placeholder = zh("Save current as...");
-    nameInput.title = "Name this stack; saving over an existing name replaces it";
-    const saveButton = el("button", "qgtools-lora-add", "Save");
+    nameInput.title = zh("Name this stack; saving over an existing name replaces it");
+    const saveButton = el("button", "qgtools-lora-add", zh("Save"));
     saveButton.type = "button";
     const save = () => {
+      // 🔴 栈读不出来时 state.rows 是空的，存下去就是一个**空模板** ——
+      // 用户点的是「保存当前为...」，看到「已保存」，其实存了一个什么都没有
+      // 的壳，下次套用它还会把别的值覆盖成 []。面板上正写着「在你覆盖它之前
+      // 这里不会去改它」，保存不过是把那段原文换了个地方存。
+      if (state.parseError) {
+        loraToast(zhPair(
+          "This stack could not be read, so there is nothing to save. Overwrite it first.",
+          "这段 LoRA 栈读不出来，没有东西可存。想存得先覆盖它。",
+        ));
+        return;
+      }
       const template = templateFromRows(nameInput.value, state.rows);
-      if (!template) return;
-      saveTemplates(upsertTemplate(loadTemplates(), template));
-      nameInput.value = "";
+      // 名字空着时 templateFromRows 给 null。原来直接 return，既没提示也没反应，
+      // 看着像「保存」这个按钮坏了。
+      if (!template) {
+        nameInput.focus({ preventScroll: true });
+        nameInput.select();
+        loraToast(zhPair("Give this template a name first.", "先给这个模板起个名字。"));
+        return;
+      }
+      const list = loadTemplates();
+      const clash = list.find((entry) => entry.name.toLowerCase() === template.name.toLowerCase());
+      if (clash) {
+        pending = {
+          question: zhPair(
+            `A template named "${clash.name}" is already saved. Saving replaces it, and that cannot be undone.`,
+            `已经有一个叫「${clash.name}」的模板了。保存会替换它，这一步撤不回来。`,
+          ),
+          yesLabel: zhPair("Replace it", "替换它"),
+          onYes: () => { saveTemplates(upsertTemplate(loadTemplates(), template)); rebuild(); },
+        };
+        rebuild();
+        return;
+      }
+      saveTemplates(upsertTemplate(list, template));
       rebuild();
     };
     saveButton.addEventListener("click", save);
@@ -1748,10 +2071,15 @@ function openTemplates(state, anchor) {
     });
     saveRow.append(nameInput, saveButton);
     menu.append(saveRow);
+    // 存完一个还想接着存下一个：重建之后把焦点还给输入框，别丢回画布。
+    nameInput.focus({ preventScroll: true });
 
     const templates = loadTemplates();
     if (!templates.length) {
-      menu.append(el("div", "qgtools-lora-empty", "No saved templates yet."));
+      // 🔴 这块菜单是在弹窗已经挂到页面上之后重新长出来的，汉化插件的 DOM 翻译器
+      // 扫描时它还不存在 —— 只能自己查表（实测：删光模板之后，空态文案从中文
+      // 退回英文，同一个菜单里一半中文一半英文）。
+      menu.append(el("div", "qgtools-lora-empty", zh("No saved templates yet.")));
       return;
     }
     for (const template of templates) {
@@ -1771,7 +2099,14 @@ function openTemplates(state, anchor) {
       remove.title = zh("Delete {a}").replace("{a}", template.name);
       remove.addEventListener("click", (event) => {
         event.stopPropagation();
-        saveTemplates(removeTemplate(loadTemplates(), template.name));
+        pending = {
+          question: zhPair(
+            `Delete the template "${template.name}"? It cannot be undone.`,
+            `删掉模板「${template.name}」？这一步撤不回来。`,
+          ),
+          yesLabel: zhPair("Delete", "删除"),
+          onYes: () => { saveTemplates(removeTemplate(loadTemplates(), template.name)); rebuild(); },
+        };
         rebuild();
       });
       row.append(apply, remove);
@@ -1779,19 +2114,43 @@ function openTemplates(state, anchor) {
     }
   };
   rebuild();
-  openPopup(menu, anchor.getBoundingClientRect(), { width: 240 });
+  openPopup(menu, anchor.getBoundingClientRect(), { width: 240, owner: state });
   menu.querySelector("input")?.focus();
 }
 
 // ---------- row menu ----------
 
 function openRowMenu(state, index, event) {
+  // 菜单里的文字与禁用态是打开那一刻的快照，但**行不是** —— 菜单开着的时候
+  // 栈照样会被别人改：Workflow Switches 会设定行、撤销/重做会整栈换掉、
+  // 吸收链要在取完列表之后才合并、别的脚本直接写 widget。所以每条动作执行
+  // 时都按行 id 重新找回自己那一行，不沿用渲染时的下标。
+  //
+  // 🔴 按下标的后果是删错行，而且两个操作都「合法」：真机把两行反序之后点
+  // 「移除此 LoRA」，删掉的是另一行，界面上没有任何一处会显得不对。
+  const rowId = state.rows[index]?.id ?? null;
+  const liveIndex = () => (rowId ? state.rows.findIndex((row) => row.id === rowId) : -1);
   const menu = el("div", "qgtools-lora-menu");
+  const stale = () => {
+    loraToast(zhPair(
+      "That row is gone: the stack changed while this menu was open.",
+      "那一行已经不在了：菜单开着的这段时间里，这一栈被改过。",
+    ));
+    closePopup(state);
+  };
   const item = (label, action, disabled = false) => {
-    const button = el("button", "", label);
+    const button = el("button", "", zh(label));
     button.type = "button";
     button.disabled = disabled;
-    button.addEventListener("click", () => { closePopup(); action(); });
+    button.addEventListener("click", () => {
+      const at = liveIndex();
+      if (at < 0) {
+        stale();
+        return;
+      }
+      closePopup(state);
+      action(at);
+    });
     menu.append(button);
     return button;
   };
@@ -1803,45 +2162,61 @@ function openRowMenu(state, index, event) {
     commitRows(state, rows, { structural: true });
     fitNode(state);
   };
-  item("Insert empty LoRA above", () => insertEmpty(index), state.rows.length >= MAX_ROWS);
-  item("Insert empty LoRA below", () => insertEmpty(index + 1), state.rows.length >= MAX_ROWS);
-  item("Move up", () => commitRows(state, moveRow(state.rows, index, -1), { structural: true }), index === 0);
-  item("Move down", () => commitRows(state, moveRow(state.rows, index, 1), { structural: true }),
-    index === state.rows.length - 1);
-  item("Duplicate", () => {
-    const copy = { ...state.rows[index], id: newRow().id };
+  const full = state.rows.length >= MAX_ROWS;
+  item("Insert empty LoRA above", (at) => insertEmpty(at), full);
+  item("Insert empty LoRA below", (at) => insertEmpty(at + 1), full);
+  // 上移 / 下移的禁用态是打开时的判断，执行时再按活下标守一次：中间栈变过
+  // 的话，一次「移不动」的移动也会写一遍 widget、多记一条撤销。
+  item("Move up", (at) => {
+    if (at > 0) commitRows(state, moveRow(state.rows, at, -1), { structural: true });
+  }, index === 0);
+  item("Move down", (at) => {
+    if (at < state.rows.length - 1) {
+      commitRows(state, moveRow(state.rows, at, 1), { structural: true });
+    }
+  }, index === state.rows.length - 1);
+  item("Duplicate", (at) => {
+    if (state.rows.length >= MAX_ROWS) return;
+    const copy = { ...state.rows[at], id: newRow().id };
     const rows = state.rows.slice();
-    rows.splice(index + 1, 0, copy);
+    rows.splice(at + 1, 0, copy);
     commitRows(state, rows, { structural: true });
     fitNode(state);
-  }, state.rows.length >= MAX_ROWS);
-  item("Remove this LoRA", () => {
+  }, full);
+  item("Remove this LoRA", (at) => {
     const rows = state.rows.slice();
-    rows.splice(index, 1);
+    rows.splice(at, 1);
     commitRows(state, rows, { structural: true });
     fitNode(state);
   });
-  item("🗑 Delete all LoRAs…", () => {
+
+  // 「删除所有」跟哪一行无关，所以不走 item —— 那一层会在行已经没了的时候
+  // 先拦下来，而这里恰恰是「行没了也想清空整栈」时唯一的出口。
+  const delAll = el("button", "qgtools-lora-danger", zh("🗑 Delete all LoRAs…"));
+  delAll.type = "button";
+  delAll.addEventListener("click", () => {
     const confirmation = el("div", "qgtools-lora-menu");
     const message = el("div", "qgtools-lora-empty",
-      "Remove every LoRA row from this node? Files on disk are kept.");
-    const cancel = el("button", "", "Cancel — keep LoRAs");
-    const remove = el("button", "qgtools-lora-danger", "🗑 Yes, delete all rows");
+      zh("Remove every LoRA row from this node? Files on disk are kept."));
+    const cancel = el("button", "", zh("Cancel — keep LoRAs"));
+    const remove = el("button", "qgtools-lora-danger", zh("🗑 Yes, delete all rows"));
     cancel.type = remove.type = "button";
-    cancel.addEventListener("click", closePopup);
+    cancel.addEventListener("click", () => closePopup(state));
     remove.addEventListener("click", () => {
-      closePopup();
+      closePopup(state);
+      // commitRows 自己会通知 changeTracker，别再补一次。
       commitRows(state, [], { structural: true });
       fitNode(state);
-      notifyQgChange();
     });
     confirmation.append(message, cancel, remove);
     openPopup(confirmation,
       { left: event.clientX, top: event.clientY, bottom: event.clientY, width: 0 },
-      { width: 270 });
+      { width: 270, owner: state });
     cancel.focus();
-  }).classList.add("qgtools-lora-danger");
-  openPopup(menu, { left: event.clientX, top: event.clientY, bottom: event.clientY, width: 0 });
+  });
+  menu.append(delAll);
+  openPopup(menu, { left: event.clientX, top: event.clientY, bottom: event.clientY, width: 0 },
+    { owner: state });
 }
 
 // ---------- rows a switch sets ----------
@@ -1868,20 +2243,22 @@ function ownerNames(owners) {
 // Put a lock in the grip's place on every row a switch sets. Cheap to call
 // often: the rows are only touched when who sets them changed.
 function refreshLocks(state) {
-  const owners = state.rows.map((row) => rowOwners(state, row));
-  const signature = owners.map(ownerNames).join("|");
+  const namesById = new Map(state.rows.map((row) => [row.id, ownerNames(rowOwners(state, row))]));
+  const signature = [...namesById.values()].join("|");
   if (signature === state.lockSignature) return;
   state.lockSignature = signature;
-  const rows = state.panel.querySelectorAll(".qgtools-lora-row");
-  rows.forEach((rowElement, index) => {
+  state.panel.querySelectorAll(".qgtools-lora-row").forEach((rowElement) => {
     const grip = rowElement.querySelector(".qgtools-lora-grip");
     if (!grip) return;
-    const names = ownerNames(owners[index] ?? []);
+    const names = namesById.get(rowElement.dataset.rowId) ?? "";
     rowElement.classList.toggle("owned", Boolean(names));
     grip.classList.toggle("locked", Boolean(names));
     grip.innerHTML = names ? lockIconSvg() : gripIconSvg();
     grip.title = names
-      ? zh(`Set by ${names}. Click the lock to take this row over: the switch then leaves it alone. Drag to reorder.`)
+      ? zhPair(
+        `Set by ${names}. Click the lock to take this row over: the switch then leaves it alone. Drag to reorder.`,
+        `由 ${names} 设定。点锁可以把这一行收回来：之后那个开关就不管它了。可拖动排序。`,
+      )
       : zh("Drag to reorder");
   });
 }
@@ -1901,38 +2278,60 @@ function takeRowOver(state, index) {
   refreshLocks(state);
   app.canvas?.setDirty?.(true, true);
   notifyQgChange();
-  loraToast(zh(`${rowLabel(state, row.name)} is yours now: ${ownerNames(owners)} no longer sets it.`));
+  loraToast(zhPair(
+    `${rowLabel(state, row.name)} is yours now: ${ownerNames(owners)} no longer sets it.`,
+    `「${rowLabel(state, row.name)}」现在归你了：${ownerNames(owners)} 不再设定它。`,
+  ));
 }
 
 // ---------- rendering ----------
 
-// Per-row decoration. The strength bar behind each name (inline styles,
-// not CSS classes - every bar's geometry is data-driven; the pure math
-// lives in js/shared/lora_stack.mjs), the amber duplicate ring,
-// and the moved/missing tint against the install's list. Runs on every
-// value update - the bar scale can change whenever any row's strength does.
+// 每一行的装饰：名字框背后的强度条（内联样式，几何完全由数据算 —— 纯数学
+// 在 js/shared/lora_stack.mjs 里）、重复行的琥珀色描边，以及「搬家了 / 找不到」
+// 的着色。每次值更新都跑：任意一行改强度都会重新定条子的刻度。
+//
+// 🔴 行按 id 认，不按下标。DOM 顺序与 state.rows 平时一致，但面板是异步重建
+// 的 —— 一处按下标、一处按 id 的混合写法，只要有一次重建落在两句话之间，装饰
+// 就会落到别的行上（提示里写着另一行的文件名、着色也串）。
 function decorateRows(state) {
   const showBars = state.settings?.strength_bars !== false;
   const scale = strengthBarScale(state.rows);
   const dups = duplicateLoraKeys(state.rows);
-  state.panel.querySelectorAll(".qgtools-lora-name").forEach((button, index) => {
-    const row = state.rows[index];
+  const byId = new Map(state.rows.map((row) => [row.id, row]));
+  state.panel.querySelectorAll(".qgtools-lora-row").forEach((rowElement) => {
+    const button = rowElement.querySelector(".qgtools-lora-name");
+    if (!button) return;
+    const row = byId.get(rowElement.dataset.rowId);
     if (!row?.name) {
       button.style.background = "";
       button.classList.remove("dup", "moved", "missing");
+      button.title = zh("Pick a LoRA from models/loras");
       return;
     }
+    // 🔴 这几句全是**拼出来的**（文件名、强度值、数量），zh() 查整串查不到，
+    // 汉化插件的 DOM 翻译器也只匹配整段文本 —— 两条路都到不了，中文界面下
+    // 一直是英文。而它们恰好是这个面板最要紧的信息：这行文件找不到、运行会
+    // 停在采样前；这行重复了；这行指向的文件搬家了。
     const notes = [row.name];
     if (showBars) {
       button.style.background = strengthBarBackground(row.strength, scale);
-      notes.push(`Model strength ${row.strength.toFixed(2)}; `
-        + `bar edges are ±${scale.toFixed(2)}`);
+      const strengthText = row.strength.toFixed(2);
+      const scaleText = scale.toFixed(2);
+      notes.push(zhPair(
+        `Model strength ${strengthText}; bar edges are ±${scaleText}`,
+        `模型强度 ${strengthText}；强度条两端为 ±${scaleText}`,
+      ));
     } else {
       button.style.background = "";
     }
     const dup = dups.has(row.name.toLowerCase());
     button.classList.toggle("dup", dup);
-    if (dup) notes.push("Duplicate: another row loads this same LoRA.");
+    if (dup) {
+      notes.push(zhPair(
+        "Duplicate: another row loads this same LoRA.",
+        "重复：另一行加载了同一个 LoRA。",
+      ));
+    }
     const status = nameStatus(state, row.name);
     button.classList.toggle("moved", status?.status === "remapped");
     button.classList.toggle(
@@ -1940,25 +2339,42 @@ function decorateRows(state) {
       status?.status === "missing" || status?.status === "ambiguous",
     );
     if (status?.status === "remapped") {
-      notes.push(`Not at its saved path; the run will use "${status.name}".`);
+      notes.push(zhPair(
+        `Not at its saved path; the run will use "${status.name}".`,
+        `文件不在原路径，运行时会改用「${status.name}」。`,
+      ));
     } else if (status?.status === "missing") {
-      notes.push(
-        state.onMissingWidget?.value === "skip"
-          ? "No matching file in models/loras - this row is skipped at run time "
-            + "(Stop on missing LoRA is off)."
-          : "No matching file in models/loras - the run stops before sampling. Fix "
+      notes.push(state.onMissingWidget?.value === "skip"
+        ? zhPair(
+          "No matching file in models/loras - this row is skipped at run time "
+            + "(Stop on missing LoRA is off).",
+          "models/loras 里找不到对应的文件 —— 这一行会在运行时跳过（齿轮菜单里的"
+            + "「LoRA 缺失时停止」已关）。",
+        )
+        : zhPair(
+          "No matching file in models/loras - the run stops before sampling. Fix "
             + "the row, or turn Stop on missing LoRA off in the gear menu to skip it.",
-      );
+          "models/loras 里找不到对应的文件 —— 运行会在采样前停下。修好这一行，或者在"
+            + "齿轮菜单里关掉「LoRA 缺失时停止」，改成跳过。",
+        ));
     } else if (status?.status === "ambiguous") {
-      notes.push("Several files match this name - pick one to settle it.");
+      notes.push(zhPair(
+        "Several files match this name - pick one to settle it.",
+        "有多个文件匹配这个名字 —— 重新选一次来定下是哪一个。",
+      ));
     }
     button.title = notes.join("\n");
   });
 }
 
+// 只刷新值、不重建 DOM（拖强度、范围查询回来都走这里）。强度框自己按行 id
+// 找值：读回来是空串说明这一行已经没了，这时什么都别写，留给下一次重建。
 function updateRowValues(state) {
   state.panel.querySelectorAll(".qgtools-lora-strength").forEach((input) => {
-    if (input.readOnly && input.__qgRead) input.value = input.__qgRead();
+    if (input.readOnly && input.__qgRead) {
+      const text = input.__qgRead();
+      if (text !== "") input.value = text;
+    }
     if (input.__qgTint) input.__qgTint();
   });
   const summary = state.panel.querySelector(".qgtools-lora-summary");
@@ -2000,7 +2416,7 @@ async function runReconnect(state, { quiet = false } = {}) {
   try {
     list = await fetchLoraList();
   } catch {
-    if (!quiet) loraToast("Could not refresh the LoRA list.");
+    if (!quiet) loraToast(zhPair("Could not refresh the LoRA list.", "刷新 LoRA 列表失败。"));
     return;
   }
   state.available = list;
@@ -2040,6 +2456,28 @@ function loraToast(detail) {
 }
 
 async function runImportChain(state) {
+  // 🔴 一段读不出来的栈不能当空栈处理。面板上已经写了「继续编辑会覆盖它」，
+  // 吸收却会直接把它换成导入的行 —— 原来那段（别的工具写的格式）就没了，
+  // 而用户以为自己只是「吸收了一下」。
+  if (state.parseError) {
+    loraToast(zhPair(
+      "This stack could not be read, so nothing was absorbed. Another tool wrote that value; importing would overwrite it.",
+      "这段 LoRA 栈读不出来，什么都没吸收。那是别的工具写的值，导入会把它覆盖掉。",
+    ));
+    return;
+  }
+  // 🔴 吸收要等一次取列表的网络请求。请求没回来之前再点一次，两次都会带着
+  // 同一份还没有导入的栈往下走，于是同一批行被加两遍。整段串行化。
+  if (state.importing) return;
+  state.importing = true;
+  try {
+    await absorbChain(state);
+  } finally {
+    state.importing = false;
+  }
+}
+
+async function absorbChain(state) {
   // A bypassed or muted loader is not shaping the current render; importing
   // its rows would change the image. Leave it alone.
   const isActive = (loader) =>
@@ -2054,7 +2492,10 @@ async function runImportChain(state) {
   // A snapshot cannot reproduce values calculated by another node at run time.
   if (sources.some((loader) => loader.inputs?.some((input) => input.link != null
       && !["MODEL", "CLIP"].includes(String(input.type).toUpperCase())))) {
-    loraToast("A source loader has linked LoRA settings. Disconnect those settings before absorbing; source loaders remain active.");
+    loraToast(zhPair(
+      "A source loader has linked LoRA settings. Disconnect those settings before absorbing; source loaders remain active.",
+      "有一个来源加载器的 LoRA 设置是接线进来的。先断开那些设置再吸收；来源加载器仍然生效。",
+    ));
     return;
   }
   const entriesOf = (loader) => loaderLoraEntries({
@@ -2082,6 +2523,9 @@ async function runImportChain(state) {
     // Offline: names import verbatim; the rows tint and the run-time
     // resolver gets the next chance.
   }
+  // 等这一次请求的时间里，节点可能已经被删掉、或者被撤销带走了：再写下去
+  // 就是往一个不在图上的节点写，而且那一批源加载器也已经被 bypass。
+  if (state.disposed) return;
   let remapped = 0;
   let missing = 0;
   let ambiguous = 0;
@@ -2103,13 +2547,26 @@ async function runImportChain(state) {
     { position: "after", deduplicate: false });
   // Never bypass a source if any of its rows would be lost to the stack limit.
   if (state.rows.length + upMerge.added + downMerge.added > MAX_ROWS) {
-    loraToast(`Absorb needs more than ${MAX_ROWS} rows. Free some stack rows first; source loaders remain active.`);
+    loraToast(zhPair(
+      `Absorb needs more than ${MAX_ROWS} rows. Free some stack rows first; source loaders remain active.`,
+      `吸收需要超过 ${MAX_ROWS} 行。先腾出一些栈行；来源加载器仍然生效。`,
+    ));
     return;
   }
   // Imported rows keep whatever strength mode the node is already in: new
   // nodes start unified, so the CLIP box stays hidden unless the user turns
   // on "Separate model / CLIP strength" in Settings (2026-10-12 user request:
   // importing must not flip the view by itself).
+  // 🔴 这张卡只显示别处存的 rows，自己写不进去（commitRows 见 readOnly 直接
+  // 返回）。若先旁通再提交，就是「来源停了、行没进来、出图变了、提示还写着
+  // 已吸收」。所以只读的卡片一个都不碰。
+  if (state.readOnly) {
+    loraToast(zhPair(
+      "These rows are kept on a box, so nothing was absorbed.",
+      "这些行存在盒子上，所以没有吸收任何东西。",
+    ));
+    return;
+  }
   const absorbed = [...activeUp, ...activeDown];
   for (const loader of absorbed) loader.mode = BYPASS_MODE;
   commitRows(state, downMerge.rows, { structural: true });
@@ -2132,12 +2589,12 @@ function openSettings(state, anchor) {
     ...SETTINGS_SCHEMA,
     {
       key: "_import_chain",
-      label: "Absorb chain LoRAs",
+      // 菜单挂在 <body> 上，不走节点自己的 DOM 翻译；这三句都是字典里的整条，
+      // 自己查一次表，别等翻译器（C17：菜单重建的那一份它看不到）。
+      label: zh("Absorb chain LoRAs"),
       type: "action",
-      button: "Absorb",
-      hint: "Pull every LoRA loader wired into this node's model chain - "
-        + "upstream and downstream - into this stack and bypass those "
-        + "nodes; the graph keeps computing the same thing.",
+      button: zh("Absorb"),
+      hint: zh("Pull every LoRA loader wired into this node's model chain - upstream and downstream - into this stack and bypass those nodes; the graph keeps computing the same thing."),
       onAction: () => {
         closeSettingsMenu();
         runImportChain(state);
@@ -2185,13 +2642,30 @@ function openSettings(state, anchor) {
       state.settings = values;
       // Two settings also steer this node's own serialized state, so the
       // change takes effect here immediately, not just on future nodes.
+      //
+      // 🔴 「这一节点」在盒子卡片上是内层加载器，不是盒子：linked() 读的也是
+      // (box.loader ?? node)。照 state.node 写，在一张卡片上就会写到子图节点
+      // 身上 —— 读的和写的不是同一个对象，开关看着切了、实际没生效。
+      const holder = state.box?.loader ?? state.node;
       if (key === "separate_strengths" || key === null) {
-        state.node.properties.qgLoraLinked = !values.separate_strengths;
+        holder.properties ??= {};
+        holder.properties.qgLoraLinked = !values.separate_strengths;
         if (!values.separate_strengths) {
-          commitRows(
-            state,
-            state.rows.map((row) => ({ ...row, strength_clip: row.strength })),
-          );
+          // 「合并」要把每行的 strength_clip 改写成 strength。栈读不出来时没有
+          // 行可改写，而 commitRows 会把那段原文覆盖成 [] —— 面板上正写着「在你
+          // 覆盖它之前，这里不会去改它」，一个跟栈内容无关的显示开关不能成为那
+          // 个覆盖者（真机：{"other_tool":1} 拨两次开关后变成 []）。
+          if (state.parseError) {
+            loraToast(zhPair(
+              "This stack could not be read, so its rows were left untouched. The setting still applies to this node.",
+              "这段 LoRA 栈读不出来，所以没去动它。设置本身仍然对这一节点生效。",
+            ));
+          } else {
+            commitRows(
+              state,
+              state.rows.map((row) => ({ ...row, strength_clip: row.strength })),
+            );
+          }
         }
       }
       if ((key === "separator" || key === null) && state.separatorWidget) {
@@ -2222,9 +2696,33 @@ function renderRows(state) {
   panel.append(body);
 
   const addRowAndPick = (event) => {
+    // 🔴 栈读不出来时，从这里加的任何一行都会把原文覆盖成「只有这一行」的栈。
+    // 要加，得先点空态那个「覆盖它，从空栈开始」，那是一次明确的授权。
+    if (state.parseError) {
+      loraToast(zhPair(
+        "This stack could not be read, so no row was added. Overwrite it first to start adding.",
+        "这段 LoRA 栈读不出来，所以没有加行。想加得先覆盖它。",
+      ));
+      return;
+    }
+    // 两个入口（空栈时的大按钮、底下的 + LoRA）走同一个守卫：+ LoRA 到上限
+    // 会变灰，但空栈那个大按钮不会，键盘在 add 上按 Enter 也另有入口。
+    if (state.rows.length >= MAX_ROWS) return;
     // detail is 0 for a click made with Enter or Space.
     openPicker(state, null, event.currentTarget, { keyboard: event.detail === 0 });
   };
+
+  // 🔴 栈读不出来时不能给一张空面板就走：用户看到的是「这里没有 LoRA」，
+  // 随手加一行就会把别人的格式覆盖掉，而他再也没见过那段原文。
+  if (state.parseError) {
+    const broken = el("div", "qgtools-lora-broken");
+    broken.textContent = zhPair(
+      "This LoRA stack could not be read (another tool wrote it?). Nothing here changes it until you overwrite it.",
+      "这段 LoRA 栈读不出来（可能是别的工具写的）。在你覆盖它之前，这里不会去改它。"
+    );
+    broken.title = state.parseError;
+    body.append(broken);
+  }
 
   const bar = el("div", "qgtools-lora-bar");
   const overall = toggleAllState(state.rows);
@@ -2233,11 +2731,20 @@ function renderRows(state) {
     `qgtools-lora-toggle qgtools-lora-master${overall === "on" ? " on" : overall === "mixed" ? " mixed" : ""}`
   );
   master.type = "button";
-  master.title = "Toggle every LoRA: mixed saves your setup and turns all on; "
-    + "on turns all off; off brings your saved setup back";
+  master.title = zh("Toggle every LoRA: mixed saves your setup and turns all on; "
+    + "on turns all off; off brings your saved setup back");
   // The master pill remembers the mixed setup it destroys,
   // so an accidental click is always one more click from home.
   master.addEventListener("click", () => {
+    // 🔴 栈读不出来时 rows 是空的，切换一次就把那段原文写成 "[]" —— 而面板
+    // 上刚说完「在你覆盖它之前，这里不会去改它」。和 merge 开关、吸收一样先挡。
+    if (state.parseError) {
+      loraToast(zhPair(
+        "This stack could not be read, so it was left untouched. Overwrite it first to use the master switch.",
+        "这段 LoRA 栈读不出来，所以没去动它。想用总开关，得先覆盖它。",
+      ));
+      return;
+    }
     const cycled = cycleMasterToggle(state.rows, state.toggleSnapshot);
     state.toggleSnapshot = cycled.snapshot;
     commitRows(state, cycled.rows, { structural: true });
@@ -2255,7 +2762,19 @@ function renderRows(state) {
   gear.type = "button";
   gear.title = zh("LoRA Loader settings");
   gear.innerHTML = gearIconSvg();
-  gear.addEventListener("click", () => openSettings(state, gear));
+  gear.addEventListener("click", () => {
+    // 同一个齿轮点第二下是关掉。number 与 slider 的齿轮各自记着自己开在哪个
+    // 节点上做这件事；这里以前没有，pointerdown 先把菜单关了，click 又开一遍，
+    // 表现就是「点第二次关不掉」。判断里带上「菜单真的还开着」，这样被点别处
+    // 关掉之后再点齿轮仍是打开。
+    if (state.menuAnchor === gear && document.querySelector(".qgtools-set-pop")) {
+      closeSettingsMenu();
+      state.menuAnchor = null;
+      return;
+    }
+    state.menuAnchor = gear;
+    openSettings(state, gear);
+  });
   const group = el("div", "qgtools-lora-bargroup");
   const summary = el("span", "qgtools-lora-summary", summarizeRows(state.rows));
   const sumWord = el("span", "qgtools-lora-sumword", "enabled");
@@ -2276,10 +2795,21 @@ function renderRows(state) {
 
   const stack = el("div", "qgtools-lora-stack");
   if (!state.rows.length) {
-    const blank = el("button", "qgtools-lora-blank", "No LoRAs yet");
+    // 🔴 读不出来的时候，这个位置原来的「No LoRAs yet」会读成「这里本来就没
+    // 有 LoRA」—— 而它下面那个大按钮点下去直接开选择器，选完就把别人的值
+    // 覆盖了，中间没有任何一句问话。这一格改成一次明确的授权：写清点它会
+    // 覆盖，点了就先把值换成空栈（不顺手开选择器，用户想加再点一次）。
+    const blank = state.parseError
+      ? el("button", "qgtools-lora-blank", zhPair("Overwrite it with an empty stack", "覆盖它，从空栈开始"))
+      : el("button", "qgtools-lora-blank", "No LoRAs yet");
     blank.type = "button";
-    blank.title = zh("Add a LoRA");
-    blank.addEventListener("click", addRowAndPick);
+    blank.title = state.parseError
+      ? zhPair("Replace the unreadable value with an empty stack.",
+               "把读不出来的那段值换成一个空栈。")
+      : zh("Add a LoRA");
+    blank.addEventListener("click", state.parseError
+      ? () => commitRows(state, [], { structural: true })
+      : addRowAndPick);
     stack.append(blank);
   }
 
@@ -2365,7 +2895,7 @@ function renderRows(state) {
     const name = el("button", "qgtools-lora-name");
     name.append(row.name
       ? nameLabel(rowLabel(state, row.name))
-      : el("span", "qgtools-lora-label", "choose a LoRA..."));
+      : el("span", "qgtools-lora-label", zh("choose a LoRA...")));
     // The visible text may be shortened; a screen reader gets the whole name.
     if (row.name) name.setAttribute("aria-label", rowLabel(state, row.name));
     name.type = "button";
@@ -2447,9 +2977,15 @@ function renderRows(state) {
   const actions = el("div", "qgtools-lora-actions");
   const add = el("button", "qgtools-lora-add", "+ LoRA");
   add.type = "button";
-  // Lost in the port from upstream: without this the + button has no hint.
-  add.title = zh("Pick one LoRA, or click a folder name to add all its LoRAs.");
+  // 到上限时按钮变灰，但原来还挂着「选一个 LoRA」的提示 —— 按不动又不说
+  // 为什么，只能猜是不是坏了。
   add.disabled = state.rows.length >= MAX_ROWS;
+  add.title = add.disabled
+    ? zhPair(
+      `This stack is full: ${MAX_ROWS} rows is the most one loader takes. Remove a row to add another.`,
+      `这一栈满了：一个加载器最多 ${MAX_ROWS} 行。删掉一行才能再加。`,
+    )
+    : zh("Pick one LoRA, or click a folder name to add all its LoRAs.");
   add.addEventListener("click", addRowAndPick);
   actions.append(add);
   stack.append(actions);
@@ -2510,7 +3046,8 @@ function isLoader(node) {
 }
 
 function boxTitle(box) {
-  return String(box?.title || "the box").replace(/\s*🆎\s*$/u, "");
+  // 兜底那句会被拼进「这些行设在盒子 "…" 上」里，所以它也得跟着界面语言走。
+  return String(box?.title || zhPair("the box", "这个盒子")).replace(/\s*🆎\s*$/u, "");
 }
 
 // Where a card's rows are kept, and so what it shows and edits:
@@ -2563,7 +3100,9 @@ function syncRows(state) {
   state.readOnly = Boolean(source.readOnly);
   state.note = source.note;
   if (!moved && widget.value === state.renderedValue) return false;
-  state.rows = parseRows(widget.value);
+  const read = parseRowsDetailed(widget.value);
+  state.rows = read.rows;
+  state.parseError = read.error;
   state.renderedValue = widget.value;
   state.toggleSnapshot = snapshotEnabled(state.rows);
   renderRows(state);
@@ -2688,6 +3227,9 @@ function watchBox(box) {
   chainCallback(box, "onRemoved", () => {
     abort.abort();
     watchedBoxes.delete(box);
+    // 标记也要清：撤销/重做会把同一个 box 对象放回图里，留着标记 watchBox 就
+    // 直接 return，事件监听再也挂不上，盒子上的行从此不再跟随提升/收回。
+    delete box.__qgLoraWatch;
     for (const state of box.__qgLoraCards?.values() ?? []) unmountCard(state, { resize: false });
     box.__qgLoraCards?.clear();
   });
@@ -2699,7 +3241,9 @@ function unmountCard(state, { resize = true } = {}) {
   state.disposed = true;
   unwatchVueShell(state.node, state.box?.inputName ?? "rows");
   state.nameObserver?.disconnect();
-  closePopup();
+  // 只关属于这张卡的弹窗：卸载一张卡（盒子收起了行、节点被删）不该顺手把
+  // 另一张卡刚打开的信息卡/选择器一起关掉。
+  closePopup(state);
   try {
     state.node.removeWidget?.(state.domWidget);
   } catch {
@@ -2727,7 +3271,9 @@ function mountCard(node, { box = null, separatorWidget = null, onMissingWidget =
   // its subgraph has, so there is no empty band to climb into.
   const reclaim = box ? 0 : BAND_RECLAIM;
   const state = { node, box, widget: null, owner: null, panel, rows: [], settings, renderedValue: null, reclaim,
-    lockSignature: null, separatorWidget: null, onMissingWidget: null, domWidget: null, disposed: false };
+    lockSignature: null, separatorWidget: null, onMissingWidget: null, domWidget: null, disposed: false,
+    // 吸收是一次异步动作（要等取列表的请求），这个标记挡住同一时刻的第二次进入。
+    importing: false, parseError: null };
   const source = rowsSource(state);
   if (!source.widget) return null;
   state.widget = source.widget;
@@ -2735,7 +3281,9 @@ function mountCard(node, { box = null, separatorWidget = null, onMissingWidget =
   state.note = source.note;
   state.readOnly = Boolean(source.readOnly);
   if (box) hideWidget(source.widget);
-  state.rows = parseRows(state.widget.value);
+  const firstRead = parseRowsDetailed(state.widget.value);
+  state.rows = firstRead.rows;
+  state.parseError = firstRead.error;
   state.renderedValue = state.widget.value;
   state.toggleSnapshot = snapshotEnabled(state.rows);
   installStackKeyboard(state);
@@ -2831,8 +3379,13 @@ function mountCard(node, { box = null, separatorWidget = null, onMissingWidget =
   });
   chainCallback(node, "onRemoved", () => {
     liveCards.delete(state);
-    closePopup();
+    // 只关这张卡自己的弹窗。无条件 closePopup 会把**别的**节点刚打开的选择器或
+    // 信息卡一起收掉 —— 删掉 B 号节点，A 号节点上正看着的卡片不该消失。
+    closePopup(state);
+    // 节点没了，观察器（Vue 外壳、名字宽度）也得停：它们还会按老节点算尺寸。
+    state.disposed = true;
     state.nameObserver?.disconnect();
+    unwatchVueShell(node, box?.inputName ?? "rows");
   });
   // ComfyUI's R refresh re-reads node definitions; ride it so files that
   // moved or came back reconnect without touching the node by hand.

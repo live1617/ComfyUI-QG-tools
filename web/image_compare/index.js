@@ -11,19 +11,20 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
+import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
 import {
   BRAND,
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026102915";
-import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026102915";
-import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026102915";
-import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026102915";
-import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026102915";
-import { savedLinks } from "../shared/compare_erase.mjs?v=2026102915";
-import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026102915";
+} from "../shared/index.mjs?v=2026103135";
+import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026103135";
+import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026103135";
+import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026103135";
+import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026103135";
+import { zhPair } from "../shared/zh.mjs?v=2026103135";
+import { savedLinks } from "../shared/compare_erase.mjs?v=2026103135";
+import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026103135";
 import {
   compareBadges,
   compareClip,
@@ -33,7 +34,7 @@ import {
   findCompareImages,
   normalizeCompareMode,
   slideFraction,
-} from "../shared/compare.mjs?v=2026102915";
+} from "../shared/compare.mjs?v=2026103135";
 
 const NODE_NAME = "QG_ImageCompare";
 const PANEL_WIDGET = "qgtools_compare_panel";
@@ -108,8 +109,10 @@ function applyClip(state) {
   }
   // 整条各写，不拿单词槽拼句子（也避开 `正在看 ${}` 这种拼接串）。
   state.identity.title = seamVisible
-    ? "线左边是 A，右边是 B"
-    : (state.fraction === 0 ? "正在看 B" : "正在看 A");
+    ? zhPair("A on the left of the line · B on the right", "线左边是 A，右边是 B")
+    : (state.fraction === 0
+      ? zhPair("Showing B", "正在看 B")
+      : zhPair("Showing A", "正在看 A"));
   state.identity.setAttribute("aria-label", state.identity.title);
 }
 
@@ -131,13 +134,13 @@ function setReady(state) {
 function showSaved(state, files) {
   const links = savedLinks(files);
   if (!links.length) return;
-  state.caption.textContent = "已保存 ";
+  state.caption.textContent = zhPair("Saved ", "已保存 ");
   links.forEach(({ label, file }, index) => {
     const link = document.createElement("a");
     link.textContent = label;
     link.href = api.apiURL(`/view?${mediaViewQuery(file, "output")}`);
     link.download = file.filename;
-    link.title = `下载 ${file.filename}`;
+    link.title = zhPair(`Download ${file.filename}`, `下载 ${file.filename}`);
     link.addEventListener("pointerdown", (event) => event.stopPropagation());
     state.caption.append(index ? " · " : "", link);
   });
@@ -230,13 +233,37 @@ function pickMode(state, value) {
 
 function loadPreviews(state, refs) {
   state.refs = refs;
-  state.loaded = 0;
+  state.ready = false;
   state.eraser.setPictures(null);
-  setEmpty(state, "正在载入预览…");
+  setEmpty(state, zhPair("Loading previews…", "正在载入预览…"));
   // 新的一对图先停在结果上，除非指针正压着面板。
   if (restOnResult && getMode(state.node) === "slide" && !state.stage.matches(":hover")) showResult(state);
   state.imageA.src = api.apiURL(`/view?${mediaViewQuery(refs.a, "temp")}`);
   state.imageB.src = api.apiURL(`/view?${mediaViewQuery(refs.b, "temp")}`);
+
+  // 🔴 不能靠「收到两次 load」计数。对齐只换 B，A 的 src 赋的还是同一个字符串，
+  // 浏览器不会再发一次 load —— 计数永远停在 1/2，面板停在空白、保存 / 复制 /
+  // 画笔全部 disabled，只能重跑一次工作流。decode() 对已经加载完的图也会立刻
+  // resolve，所以两张都走它。
+  const pair = refs;
+  let failed = false;
+  Promise.all([
+    state.imageA.decode().catch(() => { failed = true; }),
+    state.imageB.decode().catch(() => { failed = true; }),
+  ]).then(() => {
+    if (!state.refs || state.refs !== pair) return;   // 期间又换了一对，放弃这次
+    if (failed || !(state.imageA.naturalWidth > 0 && state.imageB.naturalWidth > 0)) {
+      // 载不进来要说一句。以前挂着 load 事件，失败走 onImageError；换成
+      // decode() 之后失败会被 catch 吞掉，面板就永远停在「正在载入预览…」。
+      state.eraser.setPictures(null);
+      setEmpty(state, zhPair("A compare preview could not load", "对比预览没能载入"));
+      return;
+    }
+    state.ready = true;
+    setReady(state);
+    state.eraser.setPictures(pair);
+    state.node.setDirtyCanvas?.(true, true);
+  });
 }
 
 // 对齐把 B 换成对齐后的 B（或者换回原来那张）：面板上这一对变了，
@@ -260,7 +287,7 @@ function buildPanel(node) {
   seam.className = "qgtools-compare-seam";
   const status = document.createElement("div");
   status.className = "qgtools-compare-status";
-  status.textContent = "运行一次，载入 A / B 预览";
+  status.textContent = zhPair("Run once to load the A / B previews", "运行一次，载入 A / B 预览");
   const identity = document.createElement("div");
   identity.className = "qgtools-compare-identity";
   const identityLeft = document.createElement("span");
@@ -273,14 +300,18 @@ function buildPanel(node) {
   // 面板干什么就这一个开关：滑过整对、只看 A、只看 B、用画笔画。标记会滑到
   // 选中项。
   const modeSwitch = makeSlideSwitch({
-    label: "面板显示方式",
+    label: zhPair("What the panel does", "面板显示方式"),
     // 每个选项按自己的字宽，节点窄了也放得下。
     fit: true,
     options: [
-      { value: "slide", label: "滑动", title: "滑动：竖线跟着指针走，左边 A、右边 B" },
-      { value: "a", label: "A", title: "只看 A，并停住" },
-      { value: "b", label: "B", title: "只看 B，并停住" },
-      { value: "erase", label: "擦除", title: "擦除：用画笔把上面那张擦掉一块、露出底下那张，还能把混合图存下来" },
+      { value: "slide",
+        label: zhPair("Slide", "滑动"),
+        title: zhPair("Slide: the line follows the pointer across the picture, A on its left and B on its right", "滑动：竖线跟着指针走，左边 A、右边 B") },
+      { value: "a", label: "A", title: zhPair("Show picture A and hold it", "只看 A，并停住") },
+      { value: "b", label: "B", title: zhPair("Show picture B and hold it", "只看 B，并停住") },
+      { value: "erase",
+        label: zhPair("Erase", "擦除"),
+        title: zhPair("Erase: rub one picture away with a brush so the other shows through, then save the mix", "擦除：用画笔把上面那张擦掉一块、露出底下那张，还能把混合图存下来") },
     ],
     value: "slide",
     signal,
@@ -346,19 +377,13 @@ function buildPanel(node) {
     applyClip(state);
   }, { signal });
 
-  const onImageLoad = () => {
-    state.loaded += 1;
-    if (state.loaded >= 2) {
-      setReady(state);
-      eraser.setPictures(state.refs);
-      node.setDirtyCanvas?.(true, true);
-    }
-  };
-  imageA.addEventListener("load", onImageLoad, { signal });
-  imageB.addEventListener("load", onImageLoad, { signal });
   const onImageError = () => {
+    // 顺手把 refs 清掉：showStoredResult 的第一行是 `if (state.refs) return`，
+    // 不清的话「结果已经回到存储里」也补不上图，面板一直空到用户手动重跑。
+    state.refs = null;
+    state.ready = false;
     eraser.setPictures(null);
-    setEmpty(state, "对比预览没能载入");
+    setEmpty(state, zhPair("A compare preview could not load", "对比预览没能载入"));
   };
   imageA.addEventListener("error", onImageError, { signal });
   imageB.addEventListener("error", onImageError, { signal });
@@ -380,13 +405,19 @@ app.registerExtension({
   settings: [
     {
       id: REST_SETTING,
-      name: "停在结果上",
+      name: zhPair("Rest on the result", "停在结果上"),
       type: "boolean",
       defaultValue: true,
-      category: ["QG-tools", "图像对比"],
+      category: ["QG-tools", zhPair("Image Compare", "图像对比")],
       tooltip:
-        "指针不在图上时，图像对比显示结果：每次运行之后，以及每次指针离开画面。"
-        + "关掉：就停在指针离开时最近的那张，新的一次运行也不改变它。",
+        zhPair(
+          "While the pointer is away, Image Compare shows the result: after every run, "
+            + "and again each time the pointer leaves the picture. "
+            + "Off: it stays on the picture nearest to where the pointer left, "
+            + "and a new run does not change it.",
+          "指针不在图上时，图像对比显示结果：每次运行之后，以及每次指针离开画面。"
+            + "关掉：就停在指针离开时最近的那张，新的一次运行也不改变它。"
+        ),
       onChange(value) {
         restOnResult = value !== false;
       },
@@ -418,7 +449,7 @@ app.registerExtension({
         state.showingB = this.properties?.qg_compare_side === "B";
         syncErase(state);
         // 存档时如果两张图已经在了，把存着的笔迹也读回来。
-        if (state.refs && state.loaded >= 2) state.eraser.setPictures(state.refs);
+        if (state.refs && state.ready) state.eraser.setPictures(state.refs);
         if (getMode(this) === "toggle") applyToggle(state);
         else updateModeButtons(state);
       });
@@ -429,7 +460,7 @@ app.registerExtension({
       const state = buildPanel(this);
       const refs = findCompareImages(message);
       if (refs) loadPreviews(state, refs);
-      else setEmpty(state, "运行结束，但没有拿到对比预览");
+      else setEmpty(state, zhPair("Execution finished without compare previews", "运行结束，但没有拿到对比预览"));
       app.canvas?.setDirty?.(true, true);
     });
     // filename 输入上接没接线，决定名字是打的还是显示运行给的。

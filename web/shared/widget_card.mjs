@@ -30,21 +30,21 @@
 // Pure decisions (which rows show, how tall the card is, how a number
 // scrubs, where a socket sits) live in widget_card_math.mjs for node:test;
 // this file is the DOM.
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026102915";
-import { zh } from "./zh.mjs?v=2026102915";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102915";
-import { createMediaPicker } from "./media_picker.mjs?v=2026102915";
-import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026102915";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102915";
-import { hideWidget } from "./widget_visibility.mjs?v=2026102915";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "./vue_panel_fit.mjs?v=2026102915";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "./index.mjs?v=2026103135";
+import { zh } from "./zh.mjs?v=2026103135";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026103135";
+import { createMediaPicker } from "./media_picker.mjs?v=2026103135";
+import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026103135";
+import { makeScrubInput, roundHalfAway } from "./scrub_input.mjs?v=2026103135";
+import { hideWidget } from "./widget_visibility.mjs?v=2026103135";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "./vue_panel_fit.mjs?v=2026103135";
 import {
   CARD_PADDING, GROUP_HEIGHT, ROW_GAP, ROW_HEIGHT, SECTION_HEIGHT, SLOT_OFFSET, UNIT_SLOT_WIDTH,
   cardHeight, commitWidgetValue, comboValues, rowHeight, rowKind, rowMuted, rowTops, scrubSteps, socketWidgetY, visibleRows,
   widgetTooltip,
-} from "./widget_card_math.mjs?v=2026102915";
+} from "./widget_card_math.mjs?v=2026103135";
 
-export * from "./widget_card_math.mjs?v=2026102915";
+export * from "./widget_card_math.mjs?v=2026103135";
 
 const CSS_ID = "qgtools-widget-card-css";
 export const CARD_WIDGET = "qg_widget_card";
@@ -301,7 +301,14 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
       // the card; the fields of a pair sit side by side and keep the room.
       unitWidth: row.pair ? 0 : UNIT_SLOT_WIDTH,
       snap: Boolean(row.snap),
-      onChange: (next) => setWidget(name, isFloat ? next : Math.round(next), { settle: false }),
+      // isFloat 必须在**每次落值**时重算，不能建卡时捕获一次：QG_Number 的
+      // 卡片建好之后才 applyKind（那时才把 precision 写进 options），默认
+      // 整数、用户切成小数时，闭包里那个 false 会让 1.5 被 Math.round 抹成 2。
+      onChange: (next) => setWidget(
+        name,
+        isFloatWidget(widget) ? next : roundHalfAway(next),
+        { settle: false }
+      ),
       onSettle: () => notifyQgChange(),
     });
     into.append(control.root);

@@ -1,34 +1,53 @@
 # -*- coding: utf-8 -*-
-"""QG Free Memory — pass any wire through and release VRAM on the way.
+"""QG_FreeMemory - pass any wire through and release VRAM on the way.
 
-Ported from ComfyUI-AusBoss (nodes/node_free_memory.py + nodes/_memory_helpers.py), MIT.
-Original by the ComfyUI-AusBoss author. The release routine is unchanged: unload
-comfy's cached models, empty comfy's cache, collect garbage, empty the CUDA cache
--- each step independent and fail-soft, so a moved core API only drops that step
-from the log instead of raising.
+Rewritten for ComfyUI-QG-tools on 2026-10-30, on top of the v0.9.x port of
+ComfyUI-AusBoss's ``node_free_memory.py`` (MIT). The release routine is
+unchanged and stays unchanged: it was already right.
 
-The wildcard type is that plugin's: a str subclass whose __ne__ always says "not
-different", because ComfyUI validates a link by comparing type strings with !=.
-The frontend needs no help, LiteGraph already treats "*" as compatible.
+What the release routine gets right, and keeps
+----------------------------------------------
+* **Every step is independent and fail-soft.** comfy absent, a core API
+  renamed, CUDA absent - each just drops that entry from the list and the
+  wire still flows. A memory-release node that raises on a moved API would
+  delete itself from the menu on someone else's machine.
+* **Nothing imports ComfyUI at module level**, for the same reason.
+* **It only runs when its input changes**, like any node. That is what keeps
+  it from breaking downstream caching - worth knowing before "improving" it
+  into something that runs on every prompt.
 
-Modified for ComfyUI-QG-tools on 2026-10-27: renamed to the QG_ prefix, category and
-display name localized, tooltips and comments rewritten.
-Third-party notice: THIRD-PARTY-NOTICES.md.
+What changed in this rewrite
+----------------------------
+The ``value`` input had no ``forceInput``. A wildcard input without it makes
+the frontend draw a text box that does nothing: you can type a value into it
+and it goes nowhere, because the slot is a wire and the box is not connected
+to anything. QG_Exists and QG_RouteBlocker already carry the flag; this one
+was missed. ``FUNCTION`` is now ``execute`` like the rest of the pack.
+
+The wildcard type
+-----------------
+Was a local ``str`` subclass whose ``__ne__`` always answered "not different",
+with ``__eq__`` left at ``str``'s. That combination is self-contradictory: for
+any foreign type string, ``a != b`` is false while ``a == b`` is also false.
+Current core validates types with ``==`` first and only then falls back to the
+``__ne__`` shortcut, so it worked - but only because ``"*" == "*"``; a core
+tweak would have cut every wire into this node. Both directions are now
+overridden, in the pack's single wildcard module (``_qg_any_type``), together
+with the ``__hash__`` that overriding ``__eq__`` takes away.
+
+Modified for ComfyUI-QG-tools: id / class name, category, display name,
+tooltips and aliases are ours. Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
 from __future__ import annotations
 
+from ._qg_any_type import ANY
 
-class _Wildcard(str):
-    """A type string that matches every wire."""
-
-    __slots__ = ()
-
-    def __ne__(self, _other) -> bool:
-        return False
-
-
-WILDCARD = _Wildcard("*")
+# 通配类型走全包唯一实现。这里曾经自带一个只覆盖 ``__ne__`` 的 ``_Wildcard``，
+# 那种写法在「值都是 "*"，靠字符串相等也能连上」时看不出问题，但它没有覆盖
+# ``__eq__``，于是 ``__ne__`` 说「不不同」而 ``__eq__`` 说「不相等」——
+# 校验一旦改回用 ``==`` 就整路连不上。
+WILDCARD = ANY
 
 
 def free_gpu_memory() -> list:
@@ -84,6 +103,7 @@ class QGFreeMemory:
         "step is skipped and the wire still flows. Like any node it only runs "
         "when its input changes, so it never breaks caching downstream."
     )
+    SEARCH_ALIASES = ["free vram", "purge vram", "unload models", "empty cache", "释放显存", "清显存", "qg"]
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -92,6 +112,9 @@ class QGFreeMemory:
                 "value": (
                     WILDCARD,
                     {
+                        # 通配输入不加 forceInput，前端会在画布上画一个填了也没用的
+                        # 文本框（QG_Exists / QG_RouteBlocker 都带着这个标志）。
+                        "forceInput": True,
                         "tooltip": (
                             "Any wire: image, latent, model, text, number. Memory "
                             "is freed when this node runs, then the value carries "
@@ -105,9 +128,9 @@ class QGFreeMemory:
     RETURN_TYPES = (WILDCARD,)
     RETURN_NAMES = ("value",)
     OUTPUT_TOOLTIPS = ("The input, passed through untouched.",)
-    FUNCTION = "free_memory"
+    FUNCTION = "execute"
 
-    def free_memory(self, value):
+    def execute(self, value):
         freed = free_gpu_memory()
         detail = ", ".join(freed) if freed else "nothing to free"
         # ASCII only: the banner rule applies to any console line we print.

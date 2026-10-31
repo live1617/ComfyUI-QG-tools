@@ -29,18 +29,18 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
-import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026102915";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026102915";
-import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026102915";
+import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026103135";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026103135";
+import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026103135";
 import {
     detachDomWidget,
     installModeWatcher,
     onRenderModeSwitch,
     vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026102915";
-import { zh, wantsChinese } from "../shared/zh.mjs?v=2026102915";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102915";
+} from "../shared/vue_mode.mjs?v=2026103135";
+import { zh, zhPair, wantsChinese } from "../shared/zh.mjs?v=2026103135";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
 
 const NODE_TYPE = "QG_ExportImage";
 const CSS_ID = "qgtools-export-css";
@@ -70,22 +70,25 @@ const UNUSED = {
 // 全部收进面板的控件（顺序 = 面板里的顺序）
 const FOLDED = ["format", "quality", "subsampling", "alpha_mode", "filename_prefix", "save_path"];
 
+// 🔴 面板是点齿轮那一刻才生成的，DOM 翻译器只认词典里现成的整句 ——
+// 这些短标签与说明没在词典里，必须自己 zhPair。以前整块写死中文，
+// 英文界面下看到的是「格式 / 编码质量 / 好」。
 const LABELS = {
-    format: "格式",
-    quality: "编码质量",
-    subsampling: "色度采样",
-    alpha_mode: "透明处理",
-    filename_prefix: "文件名前缀",
-    save_path: "保存路径",
+    format: () => zhPair("Format", "格式"),
+    quality: () => zhPair("Quality", "编码质量"),
+    subsampling: () => zhPair("Chroma subsampling", "色度采样"),
+    alpha_mode: () => zhPair("Transparency", "透明处理"),
+    filename_prefix: () => zhPair("File name prefix", "文件名前缀"),
+    save_path: () => zhPair("Save folder", "保存路径"),
 };
 
 // 面板里每行的一句说明（后端 tooltip 太长，这里只留关键半句，一行放得下）
 const NOTES = {
-    quality: "只对 JPEG / WEBP 生效",
-    subsampling: "只对 JPEG 生效",
-    alpha_mode: "只有 PNG / WEBP 能存透明",
-    filename_prefix: "命名同原生，00001 递增",
-    save_path: "留空写 output 目录",
+    quality: () => zhPair("JPEG / WEBP only", "只对 JPEG / WEBP 生效"),
+    subsampling: () => zhPair("JPEG only", "只对 JPEG 生效"),
+    alpha_mode: () => zhPair("PNG / WEBP can keep transparency", "只有 PNG / WEBP 能存透明"),
+    filename_prefix: () => zhPair("Same naming as the core Save node, 00001 upward", "命名同原生，00001 递增"),
+    save_path: () => zhPair("Empty writes to the output folder", "留空写 output 目录"),
 };
 
 function widgetOf(node, name) {
@@ -328,7 +331,7 @@ function openPanel(node, anchor) {
     const close = element("button", "qgtools-exp-close", "×");
     close.type = "button";
     close.title = zh("Close");
-    head.append(icon, element("span", "", "导出图像设置"), close);
+    head.append(icon, element("span", "", zhPair("Export settings", "导出图像设置")), close);
 
     const body = element("div", "qgtools-exp-body");
     const controls = {};
@@ -368,8 +371,8 @@ function openPanel(node, anchor) {
         if (!widget) continue;
         const row = element("div", "qgtools-exp-row");
         const label = element("div", "qgtools-exp-label");
-        label.append(element("span", "", LABELS[name] ?? name));
-        if (NOTES[name]) label.append(element("span", "hint", NOTES[name]));
+        label.append(element("span", "", LABELS[name] ? LABELS[name]() : name));
+        if (NOTES[name]) label.append(element("span", "hint", NOTES[name]()));
 
         let control;
         const values = widget.options?.values;
@@ -426,8 +429,10 @@ function openPanel(node, anchor) {
     }
 
     const foot = element("div", "qgtools-exp-foot");
-    foot.append(element("div", "qgtools-exp-note", "改完直接关掉，值已经写进节点"));
-    const done = element("button", "qgtools-exp-btn", "好");
+    foot.append(element("div", "qgtools-exp-note",
+        zhPair("Close this panel when you are done - the value is already in the node",
+               "改完直接关掉，值已经写进节点")));
+    const done = element("button", "qgtools-exp-btn", zhPair("Done", "好"));
     done.type = "button";
     done.addEventListener("click", () => closePanel());
     foot.append(done);

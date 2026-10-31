@@ -1,11 +1,16 @@
 // -*- coding: utf-8 -*-
 // QG Any Switch front end.
-// Ported from Goohaitools-comfyui (goohai_any_switch.js), GPL-3.0. Original by 孤海 (Goohaitools).
-// Adds dynamic grow/shrink of the input slots, keeps a stable slot priority,
-// and specializes the slot type to the connected input type so links validate.
+// Rewritten on 2026-10-30 from Goohaitools-comfyui (goohai_any_switch.js), GPL-3.0,
+// original by 孤海 (Goohaitools). The behaviour is the same: slots grow and
+// shrink with the connections, the backend priority stays by slot index, and
+// the slot type follows whatever type is connected so links validate.
+// What changed: the type names on the slot labels were hard-coded Chinese, so
+// an English UI showed 图像_1. They go through zhPair now, which carries both
+// languages.
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
+import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { zhPair } from "../shared/zh.mjs?v=2026103135";
 
 const MAX_INPUTS = 16;
 const MIN_INPUTS = 2;
@@ -40,42 +45,46 @@ app.registerExtension({
       return;
     }
 
-    const labels = {
-      IMAGE: "图像",
-      VIDEO: "视频",
-      AUDIO: "音频",
-      MASK: "遮罩",
-      LATENT: "latent",
-      MODEL: "模型",
-      CLIP: "CLIP",
-      CLIP_VISION: "视觉编码器",
-      CLIP_VISION_OUTPUT: "视觉编码输出",
-      VAE: "VAE",
-      CONDITIONING: "条件",
-      CONDITION: "条件",
-      CONTROL_NET: "控制网络",
-      STYLE_MODEL: "风格模型",
-      GLIGEN: "布局控制",
-      UPSCALE_MODEL: "放大模型",
-      GUIDER: "引导器",
-      SAMPLER: "采样器",
-      SIGMAS: "噪声调度",
-      SIGMA: "噪声参数",
-      NOISE: "噪声",
-      TENSOR: "张量",
-      COMBO: "组合选项",
-      IMAGE_BATCH: "图像批次",
-      MASK_BATCH: "遮罩批次",
-      LATENT_BATCH: "潜空间批次",
-      LIST: "列表",
-      STRING: "字符串",
-      INT: "整数",
-      FLOAT: "浮点",
-      BOOLEAN: "布尔",
-      BBOX: "边界框",
-      SEGS: "分割区域",
-      FACE_ANALYSIS: "人脸分析",
-      ANY: "any",
+    // 槽位标签用的类型名：[英文, 中文]。同形词（latent / CLIP / VAE）不进来，
+    // 由 labelFor 回落到类型名本身。
+    // 🔴 直译写死中文会让英文界面也显示「图像_1」—— 用 zhPair 带上两种语言。
+    const LABELS = {
+      IMAGE: ["image", "图像"],
+      VIDEO: ["video", "视频"],
+      AUDIO: ["audio", "音频"],
+      MASK: ["mask", "遮罩"],
+      MODEL: ["model", "模型"],
+      CLIP_VISION: ["clip vision", "视觉编码器"],
+      CLIP_VISION_OUTPUT: ["clip vision output", "视觉编码输出"],
+      CONDITIONING: ["conditioning", "条件"],
+      CONDITION: ["condition", "条件"],
+      CONTROL_NET: ["control net", "控制网络"],
+      STYLE_MODEL: ["style model", "风格模型"],
+      GLIGEN: ["gligen", "布局控制"],
+      UPSCALE_MODEL: ["upscale model", "放大模型"],
+      GUIDER: ["guider", "引导器"],
+      SAMPLER: ["sampler", "采样器"],
+      SIGMAS: ["sigmas", "噪声调度"],
+      SIGMA: ["sigma", "噪声参数"],
+      NOISE: ["noise", "噪声"],
+      TENSOR: ["tensor", "张量"],
+      COMBO: ["combo", "组合选项"],
+      IMAGE_BATCH: ["image batch", "图像批次"],
+      MASK_BATCH: ["mask batch", "遮罩批次"],
+      LATENT_BATCH: ["latent batch", "潜空间批次"],
+      LIST: ["list", "列表"],
+      STRING: ["string", "字符串"],
+      INT: ["int", "整数"],
+      FLOAT: ["float", "浮点"],
+      BOOLEAN: ["boolean", "布尔"],
+      BBOX: ["bbox", "边界框"],
+      SEGS: ["segs", "分割区域"],
+      FACE_ANALYSIS: ["face analysis", "人脸分析"],
+    };
+
+    const labelFor = (type) => {
+      const pair = LABELS[type];
+      return pair ? zhPair(pair[0], pair[1]) : type;
     };
 
     const connected = (slot) => slot?.link != null;
@@ -140,14 +149,14 @@ app.registerExtension({
         // `name` is the serialized/backend key and must never change.
         // Type-specific text belongs only in the visible label.
         slot.name = slotName(index);
-        slot.label = type === "ANY" ? slot.name : `${labels[type] || type}_${slotNumber(index)}`;
+        slot.label = type === "ANY" ? slot.name : `${labelFor(type)}_${slotNumber(index)}`;
         slot.type = slotType;
       });
 
       const output = this.outputs?.[0];
       if (output) {
         output.name = "any";
-        output.label = type === "ANY" ? "any" : (labels[type] || type);
+        output.label = type === "ANY" ? "any" : labelFor(type);
         output.type = slotType;
       }
 

@@ -17,6 +17,9 @@ SKIP_DIRS = {
     ".cache", "site-packages",
 }
 MD_EXT = (".md", ".markdown", ".mdown", ".mdx", ".txt")
+# 单个文档读进来的上限。列表限 500 份，但每份多大没人管过 —— 一个几百 MB
+# 的日志文件足够把这次请求连同工作进程一起按死。
+MAX_READ_BYTES = 8 * 1024 * 1024
 
 
 def _get_input_dir():
@@ -81,27 +84,63 @@ def list_md_files():
     return sorted(out, key=lambda s: (s.count("/"), s.lower()))
 
 
-def resolve_path(key):
-    """把下拉里的相对路径 / 用户填的绝对路径解析成真实文件路径。"""
+def _inside_roots(path):
+    """``path`` 是否落在某个扫描根之内（``..`` 与符号链接都先规范化）。"""
+    real = os.path.realpath(path)
+    for base, _ in scan_roots():
+        base_real = os.path.realpath(base)
+        try:
+            if os.path.commonpath([real, base_real]) == base_real:
+                return True
+        except ValueError:  # 不同盘符，commonpath 会抛
+            continue
+    return False
+
+
+def resolve_path(key, allow_absolute=True):
+    """把下拉里的相对路径 / 用户填的绝对路径解析成真实文件路径。
+
+    ``allow_absolute=False`` 是给 HTTP 路由用的：那个接口收的是请求体里的
+    字符串，没有理由让它成为「读这台机器上任意文件」的入口 —— 只认扫描根
+    （input、md、prompts…）里面的文件。节点自己读文档时仍用默认值，用户
+    填哪里的绝对路径都行，那是他自己在界面上表达的意图。
+    """
     if not key:
         return None
     key = key.strip().strip('"').strip("'")
     if not key:
         return None
-    if os.path.isabs(key) and os.path.isfile(key):
-        return os.path.abspath(key)
+    plain = key.replace("/", os.sep)
+    if os.path.isabs(plain):
+        if os.path.isfile(plain) and (allow_absolute or _inside_roots(plain)):
+            return os.path.abspath(plain)
+        if not allow_absolute:
+            return None
     for base, _ in scan_roots():
-        cand = os.path.join(base, key.replace("/", os.sep))
-        if os.path.isfile(cand):
+        cand = os.path.join(base, plain)
+        if os.path.isfile(cand) and (allow_absolute or _inside_roots(cand)):
             return os.path.abspath(cand)
     root = _get_root_dir()
-    cand = os.path.join(root, key.replace("/", os.sep))
-    if os.path.isfile(cand):
+    cand = os.path.join(root, plain)
+    if os.path.isfile(cand) and (allow_absolute or _inside_roots(cand)):
         return os.path.abspath(cand)
     return None
 
 
 def read_text(path):
+    # 这是个 Markdown / 纯文本读取器。限制扩展名和大小，一来挡住把二进制
+    # 当文本读出来的乱码，二来不让这个接口顺手变成任意文件的读取器。
+    name = os.path.basename(str(path)).lower()
+    if not name.endswith(MD_EXT):
+        raise ValueError(
+            "not a text document: %s (expected .md / .markdown / .txt)"
+            % os.path.basename(str(path))
+        )
+    size = os.path.getsize(path)
+    if size > MAX_READ_BYTES:
+        raise ValueError(
+            "document is too large: %d bytes (limit %d)" % (size, MAX_READ_BYTES)
+        )
     with open(path, "rb") as f:
         data = f.read()
     for enc in ("utf-8-sig", "utf-8", "gbk", "latin-1"):
@@ -138,6 +177,9 @@ _TABLE_ROW_RE = re.compile(r"(?m)^[ \t]{0,3}\|(.+?)\|[ \t]*$")
 _PIPE_RE = re.compile(r"(?m)(?<![|\\])\|")
 _HTML_BR_RE = re.compile(r"(?i)<br[ \t]*/?>")
 _HTML_TAG_RE = re.compile(r"<[^<>]+>")
+# 提示词语法（<lora:name:0.8>、<hypernet:…>）长得像 HTML 标签，但它不是。
+# 通用标签正则会把整段删掉 —— 用户从文档里取提示词时那些词条就没了。
+_PROMPT_TAG_RE = re.compile(r"<\w[\w.\-]*:[^<>\n]*>")
 _EMOJI_RE = re.compile(r"(?<![:`\w]):[a-z0-9_+-]+:(?![:`\w])")
 _ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!>~|])")
 _TRAIL_WS_RE = re.compile(r"(?m)[ \t]+$")
@@ -190,6 +232,13 @@ def md_to_plain(text):
 
     # 6. HTML / emoji / 转义
     s = _HTML_BR_RE.sub("\n", s)
+    prompt_tags = []
+
+    def _stash_tag(match):
+        prompt_tags.append(match.group(0))
+        return "\x00PT%d\x00" % (len(prompt_tags) - 1)
+
+    s = _PROMPT_TAG_RE.sub(_stash_tag, s)
     s = _HTML_TAG_RE.sub("", s)
     s = _EMOJI_RE.sub("", s)
     s = _ESCAPE_RE.sub(lambda m: m.group(1), s)
@@ -201,6 +250,12 @@ def md_to_plain(text):
         return "\n" + code.strip("\n") + "\n"
 
     s = re.sub(r"\x00CB(\d+)\x00", _restore, s)
+    # 提示词语法还原（放在所有清理之后，免得再被当成标签删一次）
+    s = re.sub(
+        r"\x00PT(\d+)\x00",
+        lambda m: prompt_tags[int(m.group(1))] if int(m.group(1)) < len(prompt_tags) else "",
+        s,
+    )
 
     # 8. 收尾清理
     s = _TRAIL_WS_RE.sub("", s)

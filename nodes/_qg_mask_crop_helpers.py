@@ -143,16 +143,22 @@ def _dominant_colour(strip: torch.Tensor) -> torch.Tensor:
     an accident of one noisy pixel; the returned value is the mean of the
     winning bucket, so it still lands between the steps.
     """
-    channels = min(3, int(strip.shape[-1]))
-    quantised = torch.clamp((strip[..., :channels] * 15.0).round().long(), 0, 15)
+    channels = int(strip.shape[-1])
+    # 桶号是 16 ** 参与量化的通道数。4 通道（RGBA）已经是 65536 个桶，再往上
+    # bincount 就没法用了；超过 4 个通道时只拿前 3 个定桶，其余通道跟着一起取
+    # 均值。以前这里是 min(3, C)，只返回 3 个值 —— 给 4 通道图填边时形状对不上，
+    # 崩在这一行：out[..., :pad] = 三通道颜色。
+    key_channels = min(3, channels)
+    quantised = torch.clamp((strip[..., :key_channels] * 15.0).round().long(), 0, 15)
     index = torch.zeros(quantised.shape[0], dtype=torch.long, device=strip.device)
-    for channel in range(channels):
+    for channel in range(key_channels):
         index = index * 16 + quantised[:, channel]
-    counts = torch.bincount(index, minlength=16 ** channels)
+    counts = torch.bincount(index, minlength=16 ** key_channels)
     bucket = int(counts.argmax())
-    picked = quantised[index == bucket].to(strip.dtype) / 15.0
+    picked = strip[index == bucket]
     if picked.numel() == 0:
         return torch.zeros(channels, dtype=strip.dtype, device=strip.device)
+    # 取中选桶里**原始**像素的均值（量化档位只用来选桶，不用来回坐台阶）。
     return picked.mean(dim=0)
 
 
@@ -305,7 +311,19 @@ def stitch_back(
     if tuple(mask.shape[-2:]) != (height, width):
         mask = resize_mask(mask, height, width)
     if patch.shape[0] != background.shape[0]:
-        patch = patch[:1].expand(background.shape[0], -1, -1, -1)
+        # 帧数对不上时要选方向，而不是永远把结果砍成第一帧（8 帧结果丢 7 帧
+        # 且没有任何提示）。
+        if patch.shape[0] == 1:
+            patch = patch.expand(background.shape[0], -1, -1, -1)
+        elif background.shape[0] == 1:
+            # 单帧背景接了多帧结果：把背景铺成同样的帧数。
+            background = background.expand(patch.shape[0], -1, -1, -1)
+        else:
+            raise ValueError(
+                "the processed crop has %d frames but the picture has %d; "
+                "crop and stitch have to agree on the frame count"
+                % (patch.shape[0], background.shape[0])
+            )
 
     x_start, y_start = max(0, x), max(0, y)
     x_end, y_end = min(dst_w, x + width), min(dst_h, y + height)
@@ -316,6 +334,17 @@ def stitch_back(
     span_w, span_h = x_end - x_start, y_end - y_start
     patch_region = patch[:, src_y:src_y + span_h, src_x:src_x + span_w]
     mask_region = mask[:, src_y:src_y + span_h, src_x:src_x + span_w].unsqueeze(-1)
+
+    # 采样器回的可能真是 RGBA（Qwen Image 2.1 的 VAE 解出来就是 4 通道），
+    # 而背景是 RGB，或者反过来。混之前先统一到背景的通道数：多的丢掉，
+    # 少的从背景对应位置补。不统一的话，下面那一行加法直接 RuntimeError。
+    channels = int(background.shape[-1])
+    if int(patch_region.shape[-1]) != channels:
+        if int(patch_region.shape[-1]) > channels:
+            patch_region = patch_region[..., :channels]
+        else:
+            fill = background[:, y_start:y_end, x_start:x_end][..., int(patch_region.shape[-1]):]
+            patch_region = torch.cat([patch_region, fill], dim=-1)
 
     out = background.clone()
     base = out[:, y_start:y_end, x_start:x_end]

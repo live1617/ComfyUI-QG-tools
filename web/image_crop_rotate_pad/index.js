@@ -1,7 +1,7 @@
-import { TRANSFORM_MIN_WIDTH, registerTransformExtension, transformPanelFloor } from "../shared/transform_editor.mjs?v=2026102915";
-import { chainCallback, keepDomWidgetWidthAuto } from "../shared/index.mjs?v=2026102915";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026102915";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102915";
+import { TRANSFORM_MIN_WIDTH, registerTransformExtension, transformPanelFloor } from "../shared/transform_editor.mjs?v=2026103135";
+import { chainCallback, keepDomWidgetWidthAuto } from "../shared/index.mjs?v=2026103135";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026103135";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
 
 const PANEL_MIN_WIDTH = TRANSFORM_MIN_WIDTH;
 

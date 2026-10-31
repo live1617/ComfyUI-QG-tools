@@ -14,29 +14,37 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, zh } from "../shared/index.mjs?v=2026102915";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102915";
+import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import {
+  BRAND,
+  chainCallback,
+  keepDomWidgetWidthAuto,
+  notifyQgChange,
+  zh,
+} from "../shared/index.mjs?v=2026103135";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026103135";
 import {
   detachDomWidget,
   installModeWatcher,
-} from "../shared/vue_mode.mjs?v=2026102915";
+} from "../shared/vue_mode.mjs?v=2026103135";
 import {
   cachedLayer,
   createTimer,
-  formatElapsed,
+  historyLine,
   layerScale,
+  noteExecution,
+  splitDigits,
   startTimer,
   stopTimer,
   tickTimer,
-} from "../shared/run_timer.mjs?v=2026102915";
+} from "../shared/run_timer.mjs?v=2026103135";
 
 const NODE_CLASS = "QG_RunTimer";
 const CSS_ID = "qgtools-run-timer-css";
 const WIDGET_NAME = "qg_run_timer_panel";
 const PROPERTY = "qg_run_timer"; // { history: [seconds, newest first] }
 const BASE_WIDTH = sizeFor("QG_RunTimer").w;
-const BASE_HEIGHT = 56;
+const BASE_HEIGHT = sizeFor("QG_RunTimer").h ?? 56;
 const MIN_WIDTH = sizeFor("QG_RunTimer").minW;
 const TICK_MS = 100;
 const NO_TITLE = globalThis.LiteGraph?.NO_TITLE ?? 1;
@@ -54,20 +62,6 @@ const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monos
 function savedHistory(node) {
   const stored = node.properties?.[PROPERTY];
   return Array.isArray(stored?.history) ? stored.history : [];
-}
-
-// "1:05" + ".3", or "12" + ".3" + "s": the whole seconds carry the weight,
-// the tenths ride small beside them, hours fold in as h:mm:ss.
-function splitDigits(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return { main: "0", tenths: ".0", unit: "s" };
-  const whole = Math.floor(seconds);
-  const tenths = `.${Math.floor((seconds - whole) * 10)}`;
-  if (whole < 60) return { main: String(whole), tenths, unit: "s" };
-  const hours = Math.floor(whole / 3600);
-  const minutes = Math.floor((whole % 3600) / 60);
-  const rest = String(whole % 60).padStart(2, "0");
-  if (hours) return { main: `${hours}:${String(minutes).padStart(2, "0")}:${rest}`, tenths: "", unit: "" };
-  return { main: `${minutes}:${rest}`, tenths, unit: "" };
 }
 
 // What the readout shows right now: the digits, the LED status and the
@@ -93,10 +87,14 @@ function stopTicking(state) {
 function finish(state, outcome) {
   if (!state.timer.running) return;
   stopTicking(state);
+  const before = state.timer.history;
   state.timer = stopTimer(state.timer, performance.now(), outcome);
-  if (outcome === "done") {
+  // 只有历史真的变了才写、才标脏：一轮全缓存（或失败、被中断）不记账，也就
+  // 不该把工作流标成「未保存」—— 用户跑一次没算东西的图不该被提示保存。
+  if (state.timer.history !== before) {
     state.node.properties ??= {};
     state.node.properties[PROPERTY] = { history: state.timer.history };
+    notifyQgChange();
   }
   state.render();
 }
@@ -114,6 +112,13 @@ function begin(state) {
 function listen(state) {
   const { signal } = state.abort;
   api.addEventListener("execution_start", () => begin(state), { signal });
+  // 核心只为真的在算的节点发 "executing"：缓存命中的节点在 execute() 里
+  // 拿到结果就 return 了。所以这一轮一个都没收到，就是全缓存 —— 那 0.0 s
+  // 不该进历史（见 stopTimer）。detail.node 为 null 是收尾，不算。
+  api.addEventListener("executing", ({ detail }) => {
+    if (detail?.node === undefined || detail?.node === null) return;
+    state.timer = noteExecution(state.timer);
+  }, { signal });
   api.addEventListener("execution_success", () => finish(state, "done"), { signal });
   api.addEventListener("execution_error", () => finish(state, "error"), { signal });
   api.addEventListener("execution_interrupted", () => finish(state, "interrupted"), { signal });
@@ -533,7 +538,7 @@ app.registerExtension({
       // Built at click time, so the translation plugin's DOM watcher never
       // sees it - these three go through zh() like every other composed
       // string. The history is a joined list, so it rides the {a} slot.
-      const previous = state.timer.history.slice(0, 5).map(formatElapsed).join(" · ");
+      const previous = historyLine(state.timer.history);
       options.unshift(
         {
           content: previous
@@ -548,6 +553,9 @@ app.registerExtension({
             this.properties ??= {};
             this.properties[PROPERTY] = { history: [] };
             state.render();
+            // 清历史是改存档：不记一笔的话「未保存」不亮、撤销也拉不回来，
+            // 关掉工作流历史又原样回来了。
+            notifyQgChange();
           },
         },
         null,

@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import os
 import struct
 from pathlib import Path
 
@@ -123,26 +124,41 @@ def write_psd(path, layers, composite, alpha=None) -> Path:
         raise ValueError("这些图层太大，塞不进一个 PSD 文件。")
 
     target = Path(path)
-    with open(target, "wb") as file:
-        # 版本 1、每通道 8 位、RGB；通道数是 3，带扁平图透明通道时 4。
-        file.write(b"8BPS" + struct.pack(">H6xHIIHH", 1, len(flat_planes), height, width, 8, 3))
-        file.write(struct.pack(">I", 0))  # 没有颜色表
-        file.write(struct.pack(">I", 0))  # 没有图像资源
-        # 图层块：块长、图层清单，然后是一个空的整份文档蒙版设置。
-        # 图层数写负数表示扁平图的第四个通道是透明通道。
-        file.write(struct.pack(">I", 4 + layer_info + 4))
-        file.write(struct.pack(">Ih", layer_info, -len(records) if alpha is not None else len(records)))
-        for record in records:
-            file.write(record)
-        for plane in planes:
+    # 🔴 不能直接 open(target, "wb")：那会先把同名旧文件截成 0 字节，然后才
+    # 开始写。写到一半磁盘满、断电、或者在 ComfyUI 里按了取消，原来那份好好的
+    # PSD 就没了，留下一个半截文件 —— 而用户只是又导出了一次。写临时文件再
+    # 原子改名：失败时原文件原样还在。
+    temp = target.with_name(target.name + ".qg-part")
+    try:
+        with open(temp, "wb") as file:
+            # 版本 1、每通道 8 位、RGB；通道数是 3，带扁平图透明通道时 4。
+            file.write(b"8BPS" + struct.pack(">H6xHIIHH", 1, len(flat_planes), height, width, 8, 3))
+            file.write(struct.pack(">I", 0))  # 没有颜色表
+            file.write(struct.pack(">I", 0))  # 没有图像资源
+            # 图层块：块长、图层清单，然后是一个空的整份文档蒙版设置。
+            # 图层数写负数表示扁平图的第四个通道是透明通道。
+            file.write(struct.pack(">I", 4 + layer_info + 4))
+            file.write(struct.pack(">Ih", layer_info, -len(records) if alpha is not None else len(records)))
+            for record in records:
+                file.write(record)
+            for plane in planes:
+                file.write(RAW)
+                file.write(plane.tobytes())
+            file.write(b"\x00" * padding)
+            file.write(struct.pack(">I", 0))
+            # 扁平图：一个压缩标记，然后红绿蓝（带透明通道时再加一路）。
             file.write(RAW)
-            file.write(plane.tobytes())
-        file.write(b"\x00" * padding)
-        file.write(struct.pack(">I", 0))
-        # 扁平图：一个压缩标记，然后红绿蓝（带透明通道时再加一路）。
-        file.write(RAW)
-        for plane in flat_planes:
-            file.write(np.ascontiguousarray(plane).tobytes())
+            for plane in flat_planes:
+                file.write(np.ascontiguousarray(plane).tobytes())
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temp, target)
+    except BaseException:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     return target
 
 

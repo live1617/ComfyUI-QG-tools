@@ -8,12 +8,13 @@
 // 移植自 ComfyUI-AusBoss（MIT，js/shared/compare_erase_stage.mjs）。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026102915";
-import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026102915";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102915";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102915";
-import { makeSlideSwitch } from "./slide_switch.mjs?v=2026102915";
-import { extendStroke } from "./compare_erase.mjs?v=2026102915";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026103135";
+import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026103135";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026103135";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026103135";
+import { makeSlideSwitch } from "./slide_switch.mjs?v=2026103135";
+import { zhPair } from "./zh.mjs?v=2026103135";
+import { extendStroke } from "./compare_erase.mjs?v=2026103135";
 import {
   CHECKER,
   ERASE_OUTSIDE,
@@ -38,7 +39,7 @@ import {
   steppedSoft,
   strokeFits,
   typedName,
-} from "./compare_erase.mjs?v=2026102915";
+} from "./compare_erase.mjs?v=2026103135";
 
 // 图上面那行工具、图下面那行保存，各有多高。节点窄的时候这两行会折成两行，
 // 而不是把节点撑宽——地方从图上出。
@@ -60,6 +61,88 @@ const COPY_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" s
   + '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>';
 const SAVE_ROUTE = "/qg/compare/save";
 const ALIGN_ROUTE = "/qg/compare/align";
+
+// 服务端的报错只回一个 code + 参数，句子在这里出。
+//
+// 英文那份与 nodes/_qg_compare_helpers.py 的 MESSAGES 一一对应：两边键必须
+// 齐全，这边漏一条那边就会退回英文原文（不会崩，但中文界面会冒英文）。
+// 以前服务端直接回中文，英文界面上弹出来也是中文。
+const FIELD_TEXT = {
+  stroke_x: ["the stroke's x coordinate", "笔画上的横坐标"],
+  stroke_y: ["the stroke's y coordinate", "笔画上的纵坐标"],
+  stroke_mode: ["the stroke's kind", "笔画的种类"],
+  brush_width: ["the brush width", "笔宽"],
+  softness: ["the softness", "软度"],
+};
+
+const SERVER_TEXT = {
+  number: (params) => {
+    const field = FIELD_TEXT[params?.field] ?? [String(params?.field ?? ""), String(params?.field ?? "")];
+    return zhPair(
+      `Image Compare: ${field[0]} must be a number.`,
+      `图像对比：${field[1]} 必须是一个数。`);
+  },
+  strokes_not_list: () => zhPair("Image Compare: the strokes must be a list.", "图像对比：笔画必须是一个列表。"),
+  too_many_strokes: (params) => zhPair(
+    `Image Compare: at most ${params?.max} strokes in one mix.`,
+    `图像对比：一次最多 ${params?.max} 笔。`),
+  stroke_not_object: () => zhPair("Image Compare: a stroke must be an object.", "图像对比：每一笔必须是一个对象。"),
+  stroke_path_missing: () => zhPair(
+    "Image Compare: a stroke needs a path of x, y pairs.",
+    "图像对比：每一笔要有一条 x、y 成对的路径。"),
+  too_many_points_in_stroke: (params) => zhPair(
+    `Image Compare: at most ${params?.max} points in one stroke.`,
+    `图像对比：一笔最多 ${params?.max} 个点。`),
+  too_many_points: (params) => zhPair(
+    `Image Compare: at most ${params?.max} points in one mix.`,
+    `图像对比：一次最多 ${params?.max} 个点。`),
+  top_not_ab: () => zhPair(
+    "Image Compare: the top picture is either A or B.",
+    "图像对比：上面那张只能是 A 或 B。"),
+  pictures_too_large: (params) => zhPair(
+    `Image Compare: a mix is limited to ${params?.max} pixels on the long side.`,
+    `图像对比：能混合的图最长边不超过 ${params?.max} 像素。`),
+  pictures_gone: () => zhPair(
+    "The two pictures are no longer on the server. Run the workflow again, then save.",
+    "那两张图在服务器上已经没了。重新运行一次工作流，然后再保存。"),
+  align_gone: () => zhPair(
+    "The two pictures are no longer on the server. Run the workflow again, then align.",
+    "那两张图在服务器上已经没了。重新运行一次工作流，然后再对齐。"),
+  align_failed: () => zhPair(
+    "Align could not line the pictures up. They may differ too much, or have too little detail to measure.",
+    "对齐没能把两张图对上。它们可能差得太多，或者细节太少量不出来。"),
+  align_settled: () => zhPair("B already lines up with A.", "B 本来就对齐着 A。"),
+  align_moved: (params) => zhPair(
+    `B is now lined up with A. They were up to ${params?.pixels} pixels apart.`,
+    `B 已经对齐到 A。原来最多差 ${params?.pixels} 像素。`),
+  save_name: (params) => zhPair(
+    `Image Compare: a file name takes letters, digits, spaces, dots, dashes and underscores, `
+      + `up to ${params?.max} of them. It goes into the output folder; a folder cannot be part of it.`,
+    `图像对比：文件名只能用字母、数字、空格、点、横线和下划线，最多 ${params?.max} 个字符。`
+      + `文件写进 output 目录，名字里不能带目录。`),
+  preview_outside_temp: () => zhPair(
+    "Image Compare: the preview is not in ComfyUI's temp folder. Run the workflow again.",
+    "图像对比：预览图不在 ComfyUI 的 temp 目录里。重新运行一次工作流。"),
+  save_outside_output: () => zhPair(
+    "Image Compare: the save has to stay inside ComfyUI's output folder.",
+    "图像对比：保存目标必须留在 ComfyUI 的 output 目录里。"),
+  bad_request: () => zhPair("Image Compare: the request could not be read.", "图像对比：请求读不出来。"),
+  save_failed: () => zhPair(
+    "The mix could not be saved. ComfyUI's console has the reason.",
+    "混合图没能保存，ComfyUI 的控制台里有原因。"),
+  align_failed_unexpected: () => zhPair(
+    "The alignment could not be made. ComfyUI's console has the reason.",
+    "对齐没能做出来，ComfyUI 的控制台里有原因。"),
+};
+
+// 认 code 就用自己的句子，不认识就退回服务端给的原文（老版本服务端 / 新加的
+// code 都会有这一档，不能空着）。
+function serverText(code, params, raw, fallback) {
+  const build = SERVER_TEXT[code];
+  if (build) return build(params ?? {});
+  return raw || fallback;
+}
+
 const UNDO_KEPT = 60;
 // 视图按它在屏幕上的大小画，最多这么多像素。
 const VIEW_SIDE = 2600;
@@ -365,43 +448,49 @@ function syncTools(er) {
   const top = topOf(er);
   const other = top === "A" ? "B" : "A";
   er.kindSwitch.set(er.back !== Boolean(er.flipKey) ? "restore" : "erase");
-  er.kindSwitch.describe("erase", { title: `画笔把 ${top} 擦掉，露出 ${other}。按住 Ctrl，或按鼠标右键，改成画回来。` });
-  er.kindSwitch.describe("restore", { title: `画笔把 ${top} 画回来。按住 Ctrl，或按鼠标右键，改成擦掉。` });
+  er.kindSwitch.describe("erase", { title: zhPair(`The brush rubs ${top} away, so ${other} shows through. Holding Ctrl, or the right mouse button, paints it back instead.`, `画笔把 ${top} 擦掉，露出 ${other}。按住 Ctrl，或按鼠标右键，改成画回来。`) });
+  er.kindSwitch.describe("restore", { title: zhPair(`The brush paints ${top} back. Holding Ctrl, or the right mouse button, rubs it away instead.`, `画笔把 ${top} 画回来。按住 Ctrl，或按鼠标右键，改成擦掉。`) });
   er.topSwitch.set(top);
   const layers = er.node.properties?.[LAYERS_PROPERTY] === true;
   er.layersSwitch.set(layers ? "on" : "off");
   const aligned = Boolean(er.refs?.aligned);
   er.alignButton.disabled = !ready || er.aligning;
-  er.alignButton.textContent = er.aligning ? "对齐中" : "对齐";
+  er.alignButton.textContent = er.aligning ? zhPair("ALIGNING", "对齐中") : zhPair("ALIGN", "对齐");
   er.alignButton.classList.toggle("active", aligned);
   er.alignButton.title = !ready
-    ? "先运行一次工作流：对齐需要那两张图。"
+    ? zhPair("Run the workflow first: Align needs the two pictures.", "先运行一次工作流：对齐需要那两张图。")
     : aligned
-      ? "B 已经对齐到 A 了。再点一下回到 B 原来的样子。"
-      : "对齐：模型把图画得偏了一点或放大了一点时，把 B 对齐到 A。再点一下撤销。";
+      ? zhPair("B is lined up with A. Click to go back to B as it came.", "B 已经对齐到 A 了。再点一下回到 B 原来的样子。")
+      : zhPair("Align: lines B up with A when the model moved or zoomed the picture a little. Click again to undo.", "对齐：模型把图画得偏了一点或放大了一点时，把 B 对齐到 A。再点一下撤销。");
   er.undoButton.disabled = !er.history.length && !er.strokes.length;
   er.clearButton.disabled = !er.strokes.length;
   er.saveButton.disabled = !ready || er.saving;
-  er.saveLabel.textContent = er.saving ? "保存中" : "保存";
+  er.saveLabel.textContent = er.saving ? zhPair("Saving", "保存中") : zhPair("Save", "保存");
   er.copyButton.disabled = !ready || er.copying;
-  er.copyLabel.textContent = er.copying ? "复制中" : "复制";
+  er.copyLabel.textContent = er.copying ? zhPair("Copying", "复制中") : zhPair("Copy", "复制");
   er.copyButton.title = ready
-    ? "把这张混合图按原尺寸复制到剪贴板，可以直接粘进编辑器或聊天窗。不会存文件。"
-    : "先运行一次工作流：复制需要那两张图。";
+    ? zhPair("Copy this mix to the clipboard at full size, to paste into an editor or a chat. Nothing is saved.", "把这张混合图按原尺寸复制到剪贴板，可以直接粘进编辑器或聊天窗。不会存文件。")
+    : zhPair("Run the workflow first: Copy needs the two pictures.", "先运行一次工作流：复制需要那两张图。");
   // 名字：在这里打，或者显示运行从输入里拿到的那个。
   const wired = nameIsWired(er);
   const typed = String(er.node.properties?.[NAME_PROPERTY] ?? "");
   er.nameInput.disabled = wired;
   if (wired) er.nameInput.value = er.refs?.name || "";
   else if (document.activeElement !== er.nameInput) er.nameInput.value = typed;
-  er.nameInput.placeholder = wired ? "来自 filename 输入" : "compare";
+  er.nameInput.placeholder = wired ? zhPair("from the filename input", "来自 filename 输入") : "compare";
   const hint = nameHint(wired ? er.refs?.name : typed, layers);
   er.nameInput.title = wired
-    ? `文件名由 filename 输入决定：${hint}。它们写进 ComfyUI 的 output 目录。`
-    : `保存的文件叫什么。保存会把 ${hint} 写进 ComfyUI 的 output 目录，编号会往后数。可用字母、数字、空格、点、横线和下划线。`;
+    ? zhPair(
+      `The filename input names the files: ${hint}. They go to ComfyUI's output folder.`,
+      `文件名由 filename 输入决定：${hint}。它们写进 ComfyUI 的 output 目录。`
+    )
+    : zhPair(
+      `What the saved files are called. Save writes ${hint} to ComfyUI's output folder, and the number counts up. Letters, digits, spaces, dots, dashes and underscores.`,
+      `保存的文件叫什么。保存会把 ${hint} 写进 ComfyUI 的 output 目录，编号会往后数。可用字母、数字、空格、点、横线和下划线。`
+    );
   er.saveButton.title = ready
-    ? `把这张混合图存进 ComfyUI 的 output 目录，文件名 ${hint}。不会重新运行。`
-    : "先运行一次工作流：保存需要那两张图。";
+    ? zhPair(`Save this mix to ComfyUI's output folder as ${hint}. Nothing is run again.`, `把这张混合图存进 ComfyUI 的 output 目录，文件名 ${hint}。不会重新运行。`)
+    : zhPair("Run the workflow first: Save needs the two pictures.", "先运行一次工作流：保存需要那两张图。");
 }
 
 // 笔画跟着节点存，这样切标签页或者 ComfyUI 自己撤销时还找得回来。
@@ -429,7 +518,7 @@ function finishStroke(er, event, cancelled) {
       change(er, [...er.strokes, made]);
       drawStroke(er.mask.getContext("2d"), made, er.maskScale);
     } else if (made) {
-      showToast({ severity: "warn", detail: "这张混合图能装下的笔迹已经到顶了。先保存，或者按「清空」重来。" });
+      showToast({ severity: "warn", detail: zhPair("This mix holds as much paint as it can. Save it, or press Clear to start again.", "这张混合图能装下的笔迹已经到顶了。先保存，或者按「清空」重来。") });
     }
   }
   schedule(er);
@@ -614,12 +703,15 @@ async function save(er) {
     if (!response.ok) {
       // 路由没话可说：这个 ComfyUI 是在更新之前启动的。
       const missing = (response.status === 404 || response.status === 405) && !answer?.error;
-      throw new Error(missing ? "重启一次 ComfyUI 再保存：这次更新只加载了一半。" : (answer?.error || `服务器答复 ${response.status}。`));
+      throw new Error(missing
+        ? zhPair("Restart ComfyUI, then save: this update only half loaded.", "重启一次 ComfyUI 再保存：这次更新只加载了一半。")
+        : serverText(answer?.code, answer?.params, answer?.error,
+            zhPair(`The server answered ${response.status}.`, `服务器答复 ${response.status}。`)));
     }
-    showToast({ severity: "success", summary: "图像对比", detail: savedMessage(answer?.files) });
+    showToast({ severity: "success", summary: zhPair("Image Compare", "图像对比"), detail: savedMessage(answer?.files) });
     er.onSaved?.(answer?.files ?? []);
   } catch (error) {
-    showToast({ severity: "error", summary: "图像对比", detail: String(error?.message ?? error), life: 8000 });
+    showToast({ severity: "error", summary: zhPair("Image Compare", "图像对比"), detail: String(error?.message ?? error), life: 8000 });
   } finally {
     er.saving = false;
     syncTools(er);
@@ -644,7 +736,7 @@ function mixBlob(er) {
   ctx.drawImage(under, 0, 0, width, height);
   ctx.drawImage(cut, 0, 0);
   return new Promise((resolve, reject) => {
-    out.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("浏览器没能做出这张图。"))), "image/png");
+    out.toBlob((blob) => (blob ? resolve(blob) : reject(new Error(zhPair("The browser could not make the picture.", "浏览器没能做出这张图。")))), "image/png");
   });
 }
 
@@ -668,16 +760,30 @@ async function align(er) {
     if (!response.ok) {
       // 路由没有回话：这个 ComfyUI 是在更新之前启动的。
       const missing = (response.status === 404 || response.status === 405) && !answer?.error;
-      throw new Error(missing ? "重启一次 ComfyUI 再对齐：QG-tools 的更新只加载了一半。" : (answer?.error || `服务器回了 ${response.status}。`));
+      throw new Error(missing
+        ? zhPair("Restart ComfyUI, then align: the QG-tools update only half loaded.", "重启一次 ComfyUI 再对齐：QG-tools 的更新只加载了一半。")
+        : serverText(answer?.code, answer?.params, answer?.error,
+            zhPair(`The server answered ${response.status}.`, `服务器回了 ${response.status}。`)));
     }
     if (answer?.aligned && answer.b?.filename && typeof answer.pair === "string") {
-      showToast({ severity: "success", summary: "图像对比", detail: answer.message, life: 4000 });
+      showToast({
+        severity: "success",
+        summary: zhPair("Image Compare", "图像对比"),
+        detail: serverText(answer.message_code, answer.message_params, answer.message),
+        life: 4000,
+      });
       er.onAligned?.({ ...er.refs, b: answer.b, pair: answer.pair, aligned: true, original: er.refs });
     } else {
-      showToast({ severity: "info", summary: "图像对比", detail: answer?.message || "B 保持原样。", life: 6000 });
+      showToast({
+        severity: "info",
+        summary: zhPair("Image Compare", "图像对比"),
+        detail: serverText(answer?.message_code, answer?.message_params, answer?.message,
+          zhPair("B was left as it is.", "B 保持原样。")),
+        life: 6000,
+      });
     }
   } catch (error) {
-    showToast({ severity: "error", summary: "图像对比", detail: String(error?.message ?? error), life: 8000 });
+    showToast({ severity: "error", summary: zhPair("Image Compare", "图像对比"), detail: String(error?.message ?? error), life: 8000 });
   } finally {
     er.aligning = false;
     syncTools(er);
@@ -691,8 +797,8 @@ function copy(er) {
   if (!window.isSecureContext || !navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
     showToast({
       severity: "warn",
-      summary: "图像对比",
-      detail: "这个浏览器只允许以 localhost 或 https 打开的页面复制图片。保存不受影响，哪里都能用。",
+      summary: zhPair("Image Compare", "图像对比"),
+      detail: zhPair("This browser only lets a page copy a picture when ComfyUI is opened as localhost or over https. Save works from anywhere.", "这个浏览器只允许以 localhost 或 https 打开的页面复制图片。保存不受影响，哪里都能用。"),
       life: 8000,
     });
     return;
@@ -708,13 +814,13 @@ function copy(er) {
     write = picture.then((blob) => navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]));
   }
   write.then(
-    () => showToast({ severity: "success", summary: "图像对比", detail: "混合图已经在剪贴板里了，粘进编辑器或聊天窗就行。", life: 3000 }),
+    () => showToast({ severity: "success", summary: zhPair("Image Compare", "图像对比"), detail: zhPair("The mix is on the clipboard. Paste it into an editor or a chat.", "混合图已经在剪贴板里了，粘进编辑器或聊天窗就行。"), life: 3000 }),
     (error) => showToast({
       severity: "error",
-      summary: "图像对比",
+      summary: zhPair("Image Compare", "图像对比"),
       detail: error?.name === "NotAllowedError"
-        ? "浏览器没让这个页面复制图片。保存不受影响，哪里都能用。"
-        : `复制混合图失败：${error?.message ?? error}`,
+        ? zhPair("The browser did not let this page copy a picture. Save works from anywhere.", "浏览器没让这个页面复制图片。保存不受影响，哪里都能用。")
+        : zhPair(`Could not copy the mix: ${error?.message ?? error}`, `复制混合图失败：${error?.message ?? error}`),
       life: 8000,
     }),
   ).finally(() => {
@@ -777,14 +883,17 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved,
   er.bar = document.createElement("div");
   er.bar.className = "qgtools-compare-erasebar";
   er.kindSwitch = makeSlideSwitch({
-    label: "画笔做什么",
-    options: [{ value: "erase", label: "擦掉" }, { value: "restore", label: "画回" }],
+    label: zhPair("What the brush does", "画笔做什么"),
+    options: [
+      { value: "erase", label: zhPair("Erase", "擦掉") },
+      { value: "restore", label: zhPair("Restore", "画回") },
+    ],
     value: "erase",
     signal,
     onChange: (value) => { er.back = value === "restore"; syncTools(er); schedule(er); },
   });
-  const SIZE_HELP = "笔有多宽，单位是图上像素。在这里或数字上拖动就能改。也可以用 [ 和 ] 键，或者按住 Alt 加鼠标右键在图上左右拖。";
-  const SOFT_HELP = "笔边有多软：0 是硬边，100 从最中间就开始淡。在这里或数字上拖动就能改。也可以用 Shift 加 [ ]，或者按住 Alt 加鼠标右键在图上上下拖（往上软、往下硬）。";
+  const SIZE_HELP = zhPair("How wide the brush is, in pixels of the picture. Drag here or on the number to change it. Also: the [ and ] keys, or hold Alt and the right mouse button on the picture and drag left or right.", "笔有多宽，单位是图上像素。在这里或数字上拖动就能改。也可以用 [ 和 ] 键，或者按住 Alt 加鼠标右键在图上左右拖。");
+  const SOFT_HELP = zhPair("How soft the brush's edge is: 0 is a hard edge, 100 fades all the way from the middle. Drag here or on the number to change it. Also: Shift with [ and ], or hold Alt and the right mouse button on the picture and drag up (softer) or down (harder).", "笔边有多软：0 是硬边，100 从最中间就开始淡。在这里或数字上拖动就能改。也可以用 Shift 加 [ ]，或者按住 Alt 加鼠标右键在图上上下拖（往上软、往下硬）。");
   er.sizeBox = makeScrubInput({
     value: brushSize(er),
     min: ERASE_SIZE[0],
@@ -821,12 +930,15 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved,
     wrap.addEventListener("pointerdown", (event) => event.stopPropagation(), { signal });
     return wrap;
   };
-  const sizeField = scrubField("笔宽", er.sizeBox, SIZE_HELP);
-  const softField = scrubField("软度", er.softBox, SOFT_HELP);
-  const TOP_HELP = "从哪张图开始看。画笔把另一张透出来。换的时候画好的笔迹留着。";
+  const sizeField = scrubField(zhPair("Size", "笔宽"), er.sizeBox, SIZE_HELP);
+  const softField = scrubField(zhPair("Soft", "软度"), er.softBox, SOFT_HELP);
+  const TOP_HELP = zhPair("Which picture you start from. The brush shows the other one through it. Swapping keeps your paint.", "从哪张图开始看。画笔把另一张透出来。换的时候画好的笔迹留着。");
   er.topSwitch = makeSlideSwitch({
-    label: "上面那张图",
-    options: [{ value: "A", label: "A", title: "A 在上面；画笔露出 B。" }, { value: "B", label: "B", title: "B 在上面；画笔露出 A。" }],
+    label: zhPair("The picture on top", "上面那张图"),
+    options: [
+      { value: "A", label: "A", title: zhPair("A is on top; the brush shows B.", "A 在上面；画笔露出 B。") },
+      { value: "B", label: "B", title: zhPair("B is on top; the brush shows A.", "B 在上面；画笔露出 A。") },
+    ],
     value: topOf(er),
     signal,
     onChange: (value) => {
@@ -837,11 +949,11 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved,
       schedule(er);
     },
   });
-  const topField = labelled("在上面", TOP_HELP, er.topSwitch.root).wrap;
+  const topField = labelled(zhPair("On top", "在上面"), TOP_HELP, er.topSwitch.root).wrap;
   // 对齐、撤销、清空贴在一起，放在右端，折行时也还在一起。
   const steps = document.createElement("div");
   steps.className = "qgtools-compare-steps";
-  er.undoButton = click(makeToolButton("撤销", "撤掉最后一笔，或者一次清空。"), () => {
+  er.undoButton = click(makeToolButton(zhPair("UNDO", "撤销"), zhPair("Take back the last stroke, or a Clear.", "撤掉最后一笔，或者一次清空。")), () => {
     if (!er.history.length && !er.strokes.length) return;
     // 跟着工作流一起进来的笔迹没有自己的步骤可退：就把它最后一笔拿掉。
     er.strokes = er.history.length ? er.history.pop() : er.strokes.slice(0, -1);
@@ -850,26 +962,26 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved,
     syncTools(er);
     schedule(er);
   });
-  er.clearButton = click(makeToolButton("清空", "把笔迹全去掉。撤销能拿回来。"), () => {
+  er.clearButton = click(makeToolButton(zhPair("CLEAR", "清空"), zhPair("Take all the paint off. Undo brings it back.", "把笔迹全去掉。撤销能拿回来。")), () => {
     if (!er.strokes.length) return;
     change(er, []);
     rebuildMask(er);
     schedule(er);
   });
-  er.alignButton = click(makeToolButton("对齐", ""), () => align(er));
+  er.alignButton = click(makeToolButton(zhPair("ALIGN", "对齐"), ""), () => align(er));
   steps.append(er.alignButton, er.undoButton, er.clearButton);
   er.bar.append(er.kindSwitch.root, sizeField, softField, topField, steps);
 
   // 图下面那行保存：名字、要不要图层、右端（眼睛最后落到的地方）的保存。
   er.saveRow = document.createElement("div");
   er.saveRow.className = "qgtools-compare-saverow";
-  const nameField = labelled("名字", "保存的文件叫什么。");
+  const nameField = labelled(zhPair("Name", "名字"), zhPair("What the saved files are called.", "保存的文件叫什么。"));
   nameField.wrap.classList.add("qgtools-compare-name");
   er.nameInput = document.createElement("input");
   er.nameInput.type = "text";
   er.nameInput.spellcheck = false;
   er.nameInput.maxLength = 80;
-  er.nameInput.setAttribute("aria-label", "文件名");
+  er.nameInput.setAttribute("aria-label", zhPair("File name", "文件名"));
   er.nameInput.addEventListener("pointerdown", (event) => event.stopPropagation(), { signal });
   er.nameInput.addEventListener("keydown", (event) => {
     keepKeyInField(event);
@@ -883,11 +995,14 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved,
   }, { signal });
   er.nameInput.addEventListener("change", () => { notifyQgChange(); syncTools(er); }, { signal });
   nameField.wrap.append(er.nameInput);
-  const LAYERS_HELP = "开：保存时另写一个 PSD，两张图各一层、笔迹作上面那层的图层蒙版，给 Photoshop 或 GIMP 用，遮罩再单独存一张 PNG。关：只存 PNG。";
+  const LAYERS_HELP = zhPair("On: Save also writes one PSD with both pictures as layers and your paint as a layer mask on the top one, for Photoshop or GIMP, and the mask as its own PNG. Off: the PNG only.", "开：保存时另写一个 PSD，两张图各一层、笔迹作上面那层的图层蒙版，给 Photoshop 或 GIMP 用，遮罩再单独存一张 PNG。关：只存 PNG。");
   er.layersSwitch = makeSlideSwitch({
-    label: "另存一个带图层的 PSD",
+    label: zhPair("Save a PSD with the layers too", "另存一个带图层的 PSD"),
     offLeft: true,
-    options: [{ value: "off", label: "关", title: LAYERS_HELP }, { value: "on", label: "开", title: LAYERS_HELP }],
+    options: [
+      { value: "off", label: zhPair("off", "关"), title: LAYERS_HELP },
+      { value: "on", label: zhPair("on", "开"), title: LAYERS_HELP },
+    ],
     value: "off",
     signal,
     onChange: (value) => {
@@ -902,7 +1017,7 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved,
   er.saveButton.className = "qgtools-compare-savebtn";
   er.saveButton.innerHTML = SAVE_ICON;
   er.saveLabel = document.createElement("span");
-  er.saveLabel.textContent = "保存";
+  er.saveLabel.textContent = zhPair("Save", "保存");
   er.saveButton.append(er.saveLabel);
   click(er.saveButton, () => save(er));
   er.copyButton = document.createElement("button");
@@ -910,7 +1025,7 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved,
   er.copyButton.className = "qgtools-compare-copybtn";
   er.copyButton.innerHTML = COPY_ICON;
   er.copyLabel = document.createElement("span");
-  er.copyLabel.textContent = "复制";
+  er.copyLabel.textContent = zhPair("Copy", "复制");
   er.copyButton.append(er.copyLabel);
   click(er.copyButton, () => copy(er));
   // PSD 开关、复制和保存贴在右端一起。

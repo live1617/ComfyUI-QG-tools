@@ -15,6 +15,7 @@ import threading
 import time
 
 import av
+import numpy as np
 from PIL import Image, ImageOps, ImageSequence
 
 try:
@@ -32,6 +33,23 @@ LOCAL_PATH_RULE = (
     "folder. Move the video there, or use Upload."
 )
 
+# 单帧像素上限（1.5 亿）。PIL 自己的解压炸弹阈值是 1.78 亿，但那只管单帧。
+MAX_IMAGE_PIXELS = 150_000_000
+
+# 帧数上限。多帧图在 ComfyUI 里没有「播放」语义，一条 800 帧的 1080×1080
+# 动画会先吃掉 3.5 GB（每帧都要转成 RGBA 常驻）才轮到下游报错。
+MAX_IMAGE_FRAMES = 256
+
+# 所有帧加起来的上限（像素）。只卡帧数是不够的：MAX_IMAGE_FRAMES 放行到
+# 256，而 256 帧 4K 是 256 × 31.6 MB ≈ **7.9 GB**，100 帧 4000×4000 也有 6 GB ——
+# 一次加载就能把整台机器打到换页。这里按像素总量兜：3 亿约合 1.2 GB 常驻，
+# 够放 4K 的 30 帧、1080p 的 100 帧，也够放一张顶到单帧上限的图。
+MAX_IMAGE_TOTAL_PIXELS = 300_000_000
+
+# 没有可用时间戳的视频只能从头顺序读。读到这里还没到目标就交出手里这一帧 ——
+# 正常拖时间轴远用不到这么多，再往后就是「一次预览请求卡几分钟」。
+FRAME_SCAN_LIMIT = 20_000
+
 VIDEO_EXTENSIONS = {
     ".avi",
     ".m2ts",
@@ -47,12 +65,27 @@ VIDEO_EXTENSIONS = {
 
 
 def list_input_images() -> list[str]:
+    """Images in ComfyUI's input folder, as paths relative to it.
+
+    ``clipspace/`` is ComfyUI's own scratch folder and ours too: the mask
+    editor writes three files there per save, and two of them exist only so
+    the loader can pair a painted picture back with its untouched copy
+    (``qg-src-<stamp>.png``) or read the colours back (``qg-view-<stamp>.png``).
+    Listing those in the dropdown is noise at best — pick one and you get a
+    picture with no mask attached, under a name nobody recognises. Other packs
+    draw the same line (Crystools excludes the whole folder).
+
+    The painted file itself stays: a saved workflow points at it by name, and
+    it is the only handle on the mask the user drew.
+    """
     if folder_paths is None:
         return [""]
     root = Path(folder_paths.get_input_directory())
     results: list[str] = []
     for path in root.rglob("*"):
         if not path.is_file():
+            continue
+        if _is_internal_sidecar(path):
             continue
         try:
             if folder_paths.filter_files_content_types([path.name], ["image"]):
@@ -61,6 +94,15 @@ def list_input_images() -> list[str]:
             if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}:
                 results.append(path.relative_to(root).as_posix())
     return sorted(results, key=str.casefold) or [""]
+
+
+# Files the mask editor writes only for the loader to read back. Not pictures
+# to pick: no mask of their own, and a name the user never chose.
+_INTERNAL_SIDECAR = re.compile(r"^qg-(?:src|view)-\d{13}\.png$", re.IGNORECASE)
+
+
+def _is_internal_sidecar(path: Path) -> bool:
+    return path.parent.name == "clipspace" and bool(_INTERNAL_SIDECAR.match(path.name))
 
 
 def list_input_videos() -> list[str]:
@@ -139,17 +181,77 @@ def local_preview_allowed(candidate: str) -> bool:
     return any(resolved == root or root in resolved.parents for root in _comfy_managed_roots())
 
 
+def _frame_to_rgba(frame: Image.Image) -> Image.Image:
+    """一帧 → RGBA，16 位 / 浮点灰度先线性缩到 8 位。
+
+    ``convert("RGBA")`` 对 ``I`` / ``I;16`` / ``F`` 模式是按 255 直接**裁切**，
+    不是按位深缩放：16 位灰度（0–65535）整片被裁成 255，导出来是一张纯白图。
+    """
+    if frame.mode.startswith("I;16") or frame.mode == "I":
+        array = np.asarray(frame, dtype=np.float64)
+        # 16 位量纲固定按 65535 → 255 缩；32 位整数按峰值判断（≤255 视为已是 8 位）
+        scale = 257.0 if frame.mode.startswith("I;16") or array.max(initial=0.0) > 255 else 1.0
+        array = np.clip(np.rint(array / scale), 0, 255).astype(np.uint8)
+        frame = Image.fromarray(array, mode="L")
+    elif frame.mode == "F":
+        array = np.asarray(frame, dtype=np.float64)
+        peak = float(array.max(initial=0.0))
+        # 浮点图的值域没统一：0–1（归一化）和 0–255 两种都见过。
+        array = array * 255.0 if peak <= 1.0 else array
+        array = np.clip(np.rint(array), 0, 255).astype(np.uint8)
+        frame = Image.fromarray(array, mode="L")
+    return frame.convert("RGBA")
+
+
+def _oriented(frame: Image.Image) -> Image.Image:
+    """按 EXIF 摆正，且只在真的需要时摆。
+
+    ``ImageOps.exif_transpose`` 在图片**没有**方向标记时也会整份拷贝一份
+    （Pillow 13 实测 `out is frame` 为 False）—— 4800 万像素的图就是白拷
+    144 MB，多帧图更是每帧拷一次。先看标记，没有就原样交回去。
+    """
+    try:
+        if int(frame.getexif().get(0x0112) or 1) <= 1:
+            return frame
+    except (AttributeError, TypeError, ValueError):
+        pass    # 读不出 EXIF（少见格式）：交给 exif_transpose 自己判断，宁可慢也别歪
+    return ImageOps.exif_transpose(frame)
+
+
 def load_image_frames(path: Path) -> list[Image.Image]:
     frames: list[Image.Image] = []
     with Image.open(path) as source:
+        width, height = source.size
+        if width * height > MAX_IMAGE_PIXELS:
+            raise ValueError(
+                "the picture is %dx%d (%d pixels); the limit is %d"
+                % (width, height, width * height, MAX_IMAGE_PIXELS)
+            )
+        total = int(getattr(source, "n_frames", 1) or 1)
+        if total > MAX_IMAGE_FRAMES:
+            raise ValueError(
+                "the picture has %d frames; the limit is %d"
+                % (total, MAX_IMAGE_FRAMES)
+            )
         expected_size: tuple[int, int] | None = None
+        total_pixels = 0
         for frame in ImageSequence.Iterator(source):
-            converted = ImageOps.exif_transpose(frame).convert("RGBA")
+            # 🔴 别再 `.copy()`：`convert("RGBA")` 本身就是新对象（mode 相同时
+            # Pillow 内部就是 self.copy()），外面再拷一次等于每帧白花一份整图内存
+            # ——4800 万像素时是 192 MB。
+            converted = _frame_to_rgba(_oriented(frame))
             if expected_size is None:
                 expected_size = converted.size
             if converted.size != expected_size:
                 raise ValueError("Image source contains frames with inconsistent dimensions.")
-            frames.append(converted.copy())
+            total_pixels += converted.size[0] * converted.size[1]
+            if total_pixels > MAX_IMAGE_TOTAL_PIXELS:
+                raise ValueError(
+                    "the picture reaches %d pixels by frame %d; the limit is %d "
+                    "(every frame is decoded into memory at once)"
+                    % (total_pixels, len(frames) + 1, MAX_IMAGE_TOTAL_PIXELS)
+                )
+            frames.append(converted)
             if source.format == "MPO":
                 break
     if not frames:
@@ -288,12 +390,18 @@ def _decode_with_seek(path: Path, requested_time: float, fps: float):
 
 
 def _decode_sequential(path: Path, target_index: int, fps: float):
+    # 🔴 target_index 来自 HTTP 查询串，没有上限。文件没有可用时间戳时这里是
+    # 唯一的兜底，而它从第一帧顺序读到目标 —— 一个二十万帧的大 mkv 会把一次
+    # 预览请求卡上好几分钟，还占着线程池里的一个 worker。超过这个数就放弃
+    # 「精确到那一帧」，把能拿到的最远一帧交回去（返回的 index 是真实的，
+    # 前端显示的就是它，用户看得出没跳到位）。
+    stop_at = max(0, min(int(target_index), FRAME_SCAN_LIMIT))
     with av.open(str(path)) as container:
         stream = _video_stream(container)
         last = None
         for index, frame in enumerate(container.decode(stream)):
             last = (frame, index)
-            if index >= target_index:
+            if index >= stop_at:
                 break
         if last is None:
             raise ValueError("The requested video frame could not be decoded.")
@@ -460,7 +568,9 @@ def seek_target(metadata: dict, seek_mode: str, frame_index: int, frame_time: fl
         requested_time = max(0.0, float(frame_time))
         target_index = int(round(requested_time * fps)) if fps > 0 else 0
     elif seek_mode == "frame index":
-        target_index = max(0, int(frame_index))
+        # 查询串里的帧号没有上限，按帧号换算出的秒数可能是天文数字（seek 直接
+        # 落在文件尾）。钳一个远大于任何真实素材的值，行为也更可预期。
+        target_index = max(0, min(int(frame_index), FRAME_SCAN_LIMIT * 50))
         requested_time = target_index / fps if fps > 0 else 0.0
     else:
         raise ValueError("Video seek mode must be 'frame index' or 'time seconds'.")

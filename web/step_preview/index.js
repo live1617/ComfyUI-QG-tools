@@ -11,11 +11,11 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026102915";
-import { keepDomWidgetWidthAuto } from "../shared/index.mjs?v=2026102915";
-import { hideCanvasWidget } from "../shared/core_preview.mjs?v=2026102915";
-import { zhPair } from "../shared/zh.mjs?v=2026102915";
+import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026103135";
+import { keepDomWidgetWidthAuto } from "../shared/index.mjs?v=2026103135";
+import { hideCanvasWidget } from "../shared/core_preview.mjs?v=2026103135";
+import { zhPair } from "../shared/zh.mjs?v=2026103135";
 
 const NODE_TYPE = "QG_StepPreview";
 const PANEL_WIDGET = "qg_step_preview_panel";
@@ -42,6 +42,11 @@ const METHOD_OPTIONS = [
     ["taesd", "清晰", "Sharp"],
     ["none", "关闭", "Off"],
 ];
+
+// 老存档里 method 存的是中文值（后端 @combo_legacy 会换成英文再执行）。
+// 下拉里没有中文项 —— 只在显示上回落成 "auto" 的话，界面说「自动」，
+// 实际仍按「关闭」跑，而且不动一下下拉就永远对不上。
+const LEGACY_METHOD = Object.fromEntries(METHOD_OPTIONS.map(([value, label]) => [label, value]));
 
 const HIDDEN = new Set();   // 这些节点 id 上的缩略图不该显示
 const COLLAPSED = new Set(); // 这些节点 id 的原生控件要收起来
@@ -549,8 +554,13 @@ function mountPanel(node) {
     /** 把三个原生控件的当前值抄进浮层。打开浮层和加载工作流时都要来一次。 */
     const syncUi = () => {
         const method = String(widgetOf("method")?.value ?? "auto");
-        // 老存档可能存着中文值；不在选项里就落回默认，避免下拉显示成空白。
-        methodSel.value = METHOD_OPTIONS.some(([v]) => v === method) ? method : "auto";
+        // 先把老中文值升级成英文，再判断它是不是合法选项。只改下拉的显示
+        // 不改控件值，会出现「下拉写着自动、实际按关闭跑」。
+        const upgraded = LEGACY_METHOD[method] ?? method;
+        const shown = METHOD_OPTIONS.some(([value]) => value === upgraded) ? upgraded : "auto";
+        const methodWidget = widgetOf("method");
+        if (methodWidget && methodWidget.value !== shown) methodWidget.value = shown;
+        methodSel.value = shown;
         const size = Number(widgetOf("max_size")?.value ?? 512);
         sizeInput.value = String(Number.isFinite(size) ? size : 512);
         const hide = widgetOf("hide_sampler")?.value;

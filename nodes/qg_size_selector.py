@@ -5,14 +5,16 @@ Ported from ComfyUI_Muye (tool/size_selector.py, class MuyeSizeSelector),
 MIT licensed, authored by Muye. QG changes:
 
   * ASCII input names, Chinese tooltips, debug print removed.
-  * Two upstream bugs fixed:
-      - ``latent_channels`` is now explicit. Upstream always built a 16-channel
-        latent, which is right for Flux / SD3 / Hunyuan video but wrong for
-        SD 1.5 and SDXL (4 channels) - those silently produced unusable latents.
-        Default is 4; switch to 16 for Flux / SD3 / video models.
+  * Two upstream defects, plus one thing that only looked like one:
       - With ``ratio`` left at "无" and ``long_edge`` set, upstream assigned the
         long edge to *both* dimensions (a square). It now scales the preset so
         its long edge equals ``long_edge`` and the aspect ratio is preserved.
+      - Upstream's private ratio parser needs two numbers, so a bare ``1.85``
+        (the usual way to write 1.85:1) parsed to nothing. A single number is now
+        read as ``n:1``.
+      - ``latent_channels`` was hardcoded to 16 and is now a control - but see
+        the note further down, core rewrites the channel count of an empty latent
+        anyway, so this is not the bug it was thought to be.
   * Everything else is unchanged: preset resolution, optional width/height
     overrides of any type (parsed as numbers), a ratio override, a frame count
     for video models, and rounding up to a factor (typically 8 or 16).
@@ -22,8 +24,15 @@ Changes queued for v0.9.4 (not upstream):
   * ``downscale_ratio_spacial`` is now declared on the LATENT output. Core's
     EmptyLatentImage always ships it, and ``comfy.sample.fix_empty_latent_channels``
     only rescales an empty latent when that key is present and disagrees with the
-    model. Without it, a 16x model (Qwen Image 2.x, Flux 2 Klein) read our 8x
-    latent as-is and produced a picture TWICE the size asked for on the node.
+    model. Without it, a 16x model (Qwen Image 2.x, Flux 2) read our 8x latent as-is
+    and produced a picture TWICE the size asked for on the node. 32x models
+    (LTXV, HunyuanImage 2.1) came out four times too big.
+  * ``downscale_ratio_temporal`` is declared too, but only when ``frames > 0``.
+    Same mechanism, same trap, on the time axis: we build the latent with the
+    ``(frames-1)//4+1`` convention (4x temporal compression), so an 8x video model
+    (LTXV) expanded our 31-frame latent into 241 frames when 121 were asked for.
+    Never declared for image latents - core reads ``shape[2]`` as the time axis,
+    which for a 4-D image latent is the HEIGHT.
   * ``mp`` (megapixels): pick the area instead of the pixels. The shape comes from
     ``ratio`` (or from the preset), and the size is solved on the exact ratio.
   * Ratio handling is now exact AND on-grid in one pass. Upstream reshaped the
@@ -32,6 +41,14 @@ Changes queued for v0.9.4 (not upstream):
     ``w = rx*k, h = ry*k`` over a stride of ``lcm(step/gcd(step,rx),
     step/gcd(step,ry))``, so the ratio stays mathematically exact while both
     sides stay multiples of ``factor`` - no second snapping pass, no drift.
+  * ``latent_channels`` is a convenience, NOT a fix. Core rewrites the channel
+    count of every empty latent to whatever the model wants
+    (``fix_empty_latent_channels`` -> ``repeat_to_batch_size(..., dim=1)``),
+    so 4 or 16 makes no difference once a sampler is in the loop - measured: a
+    16-channel empty latent through SDXL comes out with 4. Upstream's hardcoded
+    16 was never the reason anyone had trouble; what broke 16x and 32x models was
+    the undeclared spatial downscale above. The parameter only matters on the
+    paths that skip the sampler (reading the shape, decoding an empty latent).
 
 v0.9.4 later revision - ``ratio`` became a real dropdown:
 
@@ -65,6 +82,13 @@ MIN_RESOLUTION = 64
 # one latent cell per 8 pixels. A model whose latent_format packs pixels
 # differently (16x, 32x) is then rescaled for us by fix_empty_latent_channels.
 LATENT_SPACIAL_DOWNSCALE = 8
+
+# Our frame formula ((frames - 1) // 4 + 1) is the 4x convention, matching
+# EmptyHunyuanLatentVideo / Wan / CogVideo. Declared on the latent so an 8x
+# temporal model (LTXV, Cosmos) gets its time axis divided by 2 instead of
+# coming out with twice the frames. Only declared when frames > 0 - an image
+# latent is 4-D and core would treat shape[2] (the height) as time.
+LATENT_TEMPORAL_DOWNSCALE = 4
 
 PRESETS = (
     "3840x2160 - 16:9",
@@ -215,13 +239,14 @@ class QGSizeSelector:
     DESCRIPTION = (
         "Builds an empty latent from a preset resolution and returns its width "
         "and height as integers. Optional width/height inputs override the "
-        "preset, a ratio string (16:9, 2.39:1, ...) reshapes it, long_edge sets "
-        "the long side while keeping the ratio, mp (megapixels) picks the area "
-        "instead of the pixels, frames > 0 produces a video latent, and factor "
-        "rounds dimensions up while keeping the ratio exact - the ratio is "
-        "solved as w = rx*k, h = ry*k so it never drifts. latent_channels is 4 "
-        "for SD 1.5 / SDXL and 16 for Flux / SD3 / video; the latent also "
-        "declares its 8x downsample so a 16x model gets rescaled by the sampler."
+        "preset, a ratio string (16:9, 2.39:1, 1.85, ...) reshapes it, long_edge "
+        "sets the long side while keeping the ratio, mp (megapixels) picks the "
+        "area instead of the pixels, frames > 0 produces a video latent, and "
+        "factor rounds dimensions up while keeping the ratio exact - the ratio is "
+        "solved as w = rx*k, h = ry*k so it never drifts. The latent declares its "
+        "8x spatial downsample and, for video, its 4x temporal one, so a model "
+        "packing pixels differently gets rescaled by the sampler instead of "
+        "rendering at the wrong size."
     )
     SEARCH_ALIASES = [
         "size", "resolution", "latent", "aspect ratio", "megapixel", "mp",
@@ -262,7 +287,9 @@ class QGSizeSelector:
                         "max": MAX_RESOLUTION,
                         "step": 8,
                         "tooltip": "Long-edge pixels. 0 uses the preset's own size; any other value scales the long "
-                                   "edge to it while keeping the aspect ratio.",
+                                   "edge to it while keeping the aspect ratio. Both sides must stay multiples of 8 "
+                                   "on an exact ratio, so the real long edge can land a few percent off the "
+                                   "number you type (13:19 at 1024 becomes 1064; nothing in between is on grid).",
                     },
                 ),
                 "ratio": (
@@ -295,8 +322,9 @@ class QGSizeSelector:
                         "step": 1,
                         "tooltip": (
                             "Snaps width and height to a multiple of this number while keeping "
-                            "the aspect ratio. 0 adds no snapping, though solving the ratio "
-                            "still holds a multiple of 8, which is how latents unfold. The "
+                            "the aspect ratio. 0 adds no snapping, but both sides are always a "
+                            "multiple of 8 anyway - a latent unfolds 8 pixels per cell, so "
+                            "anything else would silently come out smaller than reported. The "
                             "coarser the snap, the further apart the sizes a ratio can reach: "
                             "at 32 a 16:9 frame moves in width steps of 512. Leave 0 when the "
                             "ratio matters."
@@ -307,19 +335,31 @@ class QGSizeSelector:
                     ["4", "16"],
                     {
                         "default": "4",
-                        "tooltip": "Latent channels: 4 for SD 1.5 and SDXL, 16 for Flux, SD3 and video models.",
+                        "tooltip": (
+                            "Channels of the latent this node hands out. Any sampler rewrites this "
+                            "to whatever the model wants before denoising, so 4 versus 16 almost "
+                            "never matters - it only shows on the paths that skip the sampler. "
+                            "4 for SD 1.5 / SDXL, 16 for Flux / SD3 / video."
+                        ),
                     },
                 ),
             },
             "optional": {
                 "width": (
                     "*",
-                    {"tooltip": "Optional width override of any type, parsed as a number. Wired in and above 0, "
-                                "it takes priority over the preset."},
+                    {
+                        "forceInput": True,
+                        "tooltip": "Optional width override of any type, parsed as a number. Wired in and above 0, "
+                                   "it takes priority over the preset. Rounded up to a multiple of 8.",
+                    },
                 ),
                 "height": (
                     "*",
-                    {"tooltip": "Optional height override of any type, parsed as a number."},
+                    {
+                        "forceInput": True,
+                        "tooltip": "Optional height override of any type, parsed as a number. Rounded up to a "
+                                   "multiple of 8.",
+                    },
                 ),
                 # 必须排在 optional 末尾：LiteGraph 按位置还原 widgets_values，
                 # 插在中间会让老存档整体错位。
@@ -381,6 +421,17 @@ class QGSizeSelector:
             if rx <= 0 or ry <= 0:
                 return None
             return rx, ry
+        if len(numbers) == 1:
+            # 银幕比例常写成单个数字："1.85" 就是 1.85:1、"2.39" 就是 2.39:1。
+            # 上游要求两个数字，于是这两种写法静默失效（落回预设像素），
+            # 而 tooltip 又写着支持 1.85 —— 现在按 n:1 读。
+            try:
+                rx = float(numbers[0])
+            except ValueError:
+                return None
+            if rx <= 0:
+                return None
+            return rx, 1.0
         return None
 
     @staticmethod
@@ -425,8 +476,21 @@ class QGSizeSelector:
 
     @staticmethod
     def _clamp(width, height):
-        return (max(MIN_RESOLUTION, min(MAX_RESOLUTION, int(width))),
-                max(MIN_RESOLUTION, min(MAX_RESOLUTION, int(height))))
+        """Clamp to the allowed range **and** snap down to the 8-pixel grid.
+
+        The snap is not cosmetic: the latent is built as ``out_w // 8`` cells,
+        so a width of 1021 really comes out 1016 wide while the node reports
+        1021 - the number and the picture disagree. Integer ratios always land
+        on a multiple of 8 through ``_ratio_stride``; the solvers also accept
+        floats, and ``1.85:1`` at step 8 solves to 1021.2x552. ``explicit`` and
+        the preset paths have already been aligned by ``_adjust_to_factor``,
+        which lands on a multiple of at least 8, so this is a no-op for them.
+        """
+        def snap(value):
+            raw = max(MIN_RESOLUTION, min(MAX_RESOLUTION, int(value)))
+            return (raw // LATENT_SPACIAL_DOWNSCALE) * LATENT_SPACIAL_DOWNSCALE
+
+        return snap(width), snap(height)
 
     def execute(self, preset, batch_size, long_edge, ratio, frames, factor,
                 latent_channels, width=0, height=0, mp=0.0, ratio_custom=""):
@@ -456,8 +520,11 @@ class QGSizeSelector:
         if width_num > 0 and height_num > 0:
             # Explicit pixel overrides win over everything, like upstream.
             explicit = True
-            out_w = self._adjust_to_factor(width_num, factor)
-            out_h = self._adjust_to_factor(height_num, factor)
+            # 贴到 8，和求解路径一样：latent 是 ``out_w // 8`` 展开的，不贴的话
+            # 接一个 1001 进来，节点报 1001、张量只有 125 格 = 1000 像素。
+            align = max(int(factor), LATENT_SPACIAL_DOWNSCALE)
+            out_w = self._adjust_to_factor(width_num, align)
+            out_h = self._adjust_to_factor(height_num, align)
         elif megapixels > 0:
             # Area first: shape from the ratio override, else from the preset.
             rx, ry = ratio_value if ratio_value else _simplify_ratio(base_w, base_h)
@@ -487,12 +554,19 @@ class QGSizeSelector:
         out_w, out_h = self._clamp(out_w, out_h)
 
         channels = int(latent_channels)
+        latent_out = {
+            "samples": None,
+            "downscale_ratio_spacial": LATENT_SPACIAL_DOWNSCALE,
+        }
         if frames > 0:
             latent_frames = ((int(frames) - 1) // 4) + 1
             samples = torch.zeros(
                 [batch_size, channels, latent_frames, out_h // 8, out_w // 8],
                 device=self._device,
             )
+            # 🔴 只在有帧的时候声明。图像 latent 是 4 维，核心把 shape[2]
+            #    当成时间轴 —— 对 4 维来说那是高度，声明了会把高度当帧数缩放。
+            latent_out["downscale_ratio_temporal"] = LATENT_TEMPORAL_DOWNSCALE
         else:
             samples = torch.zeros(
                 [batch_size, channels, out_h // 8, out_w // 8],
@@ -500,11 +574,9 @@ class QGSizeSelector:
             )
             frames = 0
 
+        latent_out["samples"] = samples
         return (
-            {
-                "samples": samples,
-                "downscale_ratio_spacial": LATENT_SPACIAL_DOWNSCALE,
-            },
+            latent_out,
             out_w,
             out_h,
             frames,

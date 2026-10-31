@@ -6,6 +6,8 @@
 //
 // 移植自 ComfyUI-AusBoss（MIT，js/shared/brush.mjs）。
 
+import { zhPair } from "./zh.mjs?v=2026103135";
+
 // 笔宽能到的最大范围。范围更窄的节点传自己的进来。
 export const BRUSH_SIZE = [2, 2000];
 export const BRUSH_SOFT_DEFAULT = 50;
@@ -150,5 +152,8 @@ export function brushReach(size, soft) {
 
 // 正在调笔时，指针下面那行字里的两个值。
 export function brushWords(size, soft) {
-  return [`笔宽 ${size} px`, `软度 ${soft}%`];
+  return [
+    zhPair(`Size ${size} px`, `笔宽 ${size} px`),
+    zhPair(`Soft ${soft}%`, `软度 ${soft}%`),
+  ];
 }

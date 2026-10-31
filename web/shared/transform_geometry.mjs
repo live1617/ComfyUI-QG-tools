@@ -3,7 +3,7 @@
 // zh() so the composed sentences come out translated; the zh plugin's DOM
 // translator whole-string-matches and can never reach these. Without the
 // dictionary everything falls back to the English source strings.
-import { zh, zhSep } from "./zh.mjs?v=2026102915";
+import { zh, zhSep } from "./zh.mjs?v=2026103135";
 
 export const MIN_CROP_SIZE = 8;
 
@@ -332,13 +332,20 @@ export function resizeCrop(start, handle, dx, dy, source, aspectRatio = null) {
   };
 }
 
-export function zoomAround(view, nextZoom, anchor) {
+// 以 anchor（屏幕坐标）为不动点缩放。渲染的真实映射是
+//   screen = origin + world * scale,  origin = 居中项 - union*fit + pan
+// 居中那一项不是 0，所以不能按 `screen = world*zoom + pan` 反推 —— 那样
+// 光标下的世界点会随每次滚轮往外漂。把 origin 传进来，反解 pan 才准。
+// 没给 origin（还没画过第一帧）时退化成「origin == pan」，与旧行为一致。
+export function zoomAround(view, nextZoom, anchor, render = null) {
   const zoom = clamp(nextZoom, 0.2, 6);
   const ratio = zoom / view.zoom;
+  const originX = render ? render.originX : view.panX;
+  const originY = render ? render.originY : view.panY;
   return {
     zoom,
-    panX: anchor.x - (anchor.x - view.panX) * ratio,
-    panY: anchor.y - (anchor.y - view.panY) * ratio,
+    panX: view.panX + (anchor.x - originX) * (1 - ratio),
+    panY: view.panY + (anchor.y - originY) * (1 - ratio),
   };
 }
 
@@ -497,14 +504,22 @@ export function alignChanges(chain) {
 // plus warnings. A step that changes nothing is left out.
 export function sizeChainTokens(chain) {
   const size = ({ width, height }) => `${width}×${height}`;
-  const tokens = [{ label: chain.cropped ? zh("crop") : "", text: size(chain.crop) }];
+  // 🔴 `kind` 是给代码看的、永远英文；`label` 是给人看的、要翻译。原来只有
+  // label，transform_editor 的 litTokens 拿它跟 "crop" / "pad" 比 —— 中文界面
+  // 下 label 是「裁剪」「填充」，一个都对不上，「pad to 16:9 …」那段标注就
+  // 静默消失了（英文界面正常，所以很难发现）。
+  const tokens = [{
+    kind: chain.cropped ? "crop" : "",
+    label: chain.cropped ? zh("crop") : "",
+    text: size(chain.crop),
+  }];
   if (chain.padded.width !== chain.crop.width || chain.padded.height !== chain.crop.height) {
-    tokens.push({ label: zh("pad"), text: size(chain.padded) });
+    tokens.push({ kind: "pad", label: zh("pad"), text: size(chain.padded) });
   }
   if (chain.canvas.width !== chain.padded.width || chain.canvas.height !== chain.padded.height) {
-    tokens.push({ label: zh("round to {n}").replace("{n}", String(chain.multiple)), text: size(chain.canvas) });
+    tokens.push({ kind: "round", label: zh("round to {n}").replace("{n}", String(chain.multiple)), text: size(chain.canvas) });
   }
-  if (chain.resized) tokens.push({ label: zh("resize"), text: size(chain.resized) });
+  if (chain.resized) tokens.push({ kind: "resize", label: zh("resize"), text: size(chain.resized) });
   const warnings = [];
   if (Math.abs(chain.stretch) > STRETCH_WARNING) {
     warnings.push(zh(chain.stretch > 0

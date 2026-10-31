@@ -22,15 +22,15 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026102915";
-import { createMediaPicker } from "../shared/media_picker.mjs?v=2026102915";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026102915";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102915";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102915";
-import { commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026102915";
-import { vueNodesEnabled } from "../shared/vue_mode.mjs?v=2026102915";
-import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "../shared/widget_visibility.mjs?v=2026102915";
-import { zh, zhPair } from "../shared/zh.mjs?v=2026102915";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026103135";
+import { createMediaPicker } from "../shared/media_picker.mjs?v=2026103135";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026103135";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
+import { commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026103135";
+import { vueNodesEnabled } from "../shared/vue_mode.mjs?v=2026103135";
+import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "../shared/widget_visibility.mjs?v=2026103135";
+import { zh, zhPair } from "../shared/zh.mjs?v=2026103135";
 
 const NODE_CLASS = "QG_LoadImage";
 const CSS_ID = "qgtools-load-image-css";
@@ -62,7 +62,7 @@ const FONT = `-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`;
 let maskEditor = null;
 function loadMaskEditor() {
   if (maskEditor) return Promise.resolve(maskEditor);
-  return import("../shared/mask_editor.mjs?v=2026102915").then(
+  return import("../shared/mask_editor.mjs?v=2026103135").then(
     (module) => (maskEditor = module),
     (error) => {
       console.error("[QG-tools] mask editor failed to load", error);
@@ -188,22 +188,34 @@ function loadPicture(src) {
 // 关键是「画完就在屏幕上」：canvas 直接当显示层，不 toBlob、不 encode、不进 blob URL。
 // 以前那版要把合成结果编码成 PNG 再让浏览器解码回来，1 兆像素的图光编码就 700~800ms，
 // 白等一秒只是为了显示已经躺在显存里的像素。
+//
+// 🔴 画布按「长边 1024」建，不按原图像素建。色块只是个半透明叠层，最终由 CSS
+// 缩到面板里那 350 来像素宽；按原图建的话，6000×4000 就是 2400 万像素的画布
+// （RGBA 约 96 MB），建一次几百毫秒，只为了显示 351×234 的一块绿。宽高比不变，
+// CSS 的 `max-width/max-height:100%` 照样等比铺满，肉眼看不出差别。
+const VEIL_MAX_SIDE = 1024;
+
 function paintVeil(canvas, maskImage, natural) {
   const width = natural?.width || maskImage.naturalWidth || maskImage.width;
   const height = natural?.height || maskImage.naturalHeight || maskImage.height;
   if (!width || !height) return false;
+  const shrink = Math.min(1, VEIL_MAX_SIDE / Math.max(width, height));
+  const outW = Math.max(1, Math.round(width * shrink));
+  const outH = Math.max(1, Math.round(height * shrink));
   try {
     // 设 width/height 会顺带重置整份绘图状态，所以每次都从这里重新开始。
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = outW;
+    canvas.height = outH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return false;
     ctx.fillStyle = `rgba(${OVERLAY_RGB[0]},${OVERLAY_RGB[1]},${OVERLAY_RGB[2]},${OVERLAY_ALPHA / 255})`;
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, outW, outH);
     ctx.globalCompositeOperation = "destination-out";
     // 成品只用来取 alpha；缩放到副本尺寸，防两张尺寸不一时错位。
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(maskImage, 0, 0, width, height);
+    // 平滑开着：缩小这么多倍时最近邻会把羽化边缘啃成阶梯。
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(maskImage, 0, 0, outW, outH);
     ctx.globalCompositeOperation = "source-over";
     return true;
   } catch (error) {
@@ -587,7 +599,10 @@ function mountPanel(node) {
     if (!selection) return;
     const module = maskEditor ?? (await loadMaskEditor());
     if (!module) {
-      note.textContent = "Mask editor is not available.";
+      note.textContent = zhPair(
+        "Mask editor could not be loaded. Refresh the page and try again.",
+        "遮罩编辑器没有加载出来，刷新页面再试。",
+      );
       return;
     }
     // 画面用副本（不透明），遮罩另从成品自己的 alpha 里读回来 —— 这样二次编辑

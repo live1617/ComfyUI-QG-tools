@@ -1,9 +1,15 @@
 """QG LoRA Loader.
 
-Ported from ComfyUI-AusBoss (nodes/node_lora_loader.py + js/node_lora_loader/),
-MIT licensed. Renamed to the QG_ prefix, category moved
-under ``QG-tools/加载器``, UI text translated to Chinese; the six HTTP routes
-(list / thumb / info / hash / civitai / triggers) are kept as-is.
+Originally ported from ComfyUI-AusBoss (nodes/node_lora_loader.py), MIT licensed.
+The backend (this file and nodes/_qg_lora_helpers.py) was rewritten for
+ComfyUI-QG-tools on 2026-10-30: the six HTTP routes keep their URLs and payloads
+(list / thumb / info / hash / civitai / triggers) because the front end calls
+them, but every routine behind them is this pack's own. The node's interface -
+ID, inputs, outputs, the serialized stack format - is unchanged, so saved
+workflows keep working.
+
+The front end under web/lora_loader/ is still the ported one, hence the origin
+in ORIGINS.json stays "ported".
 
 Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
 display name localized, tooltips and comments rewritten.
@@ -115,7 +121,8 @@ class QGLoraLoader:
         # out of the prompt. A row parked at strength 0 keeps them on purpose
         # (see the node docs): comparing with and without it changes only
         # the weights.
-        worded = [row for row in rows if not any(row is gone for gone in missing)]
+        skipped = {id(row) for row in missing}
+        worded = [row for row in rows if id(row) not in skipped]
         return model, clip, collect_trigger_words(worded, str(trigger_separator))
 
     @classmethod
@@ -128,6 +135,17 @@ class QGLoraLoader:
         # named: ComfyUI keeps checking the rest, and files a failure once
         # per named input. The LoRA names live inside the loras text, so no
         # list check ever applied to them.
+        #
+        # 🔴 clip is deliberately NOT named here. Naming an input makes the
+        # core file the same failure once per named input, and the signature
+        # only ever sees the link ("[node, slot]"), never the CLIP itself -
+        # so it could at best tell "not wired". The rows below are therefore
+        # checked as if CLIP were connected: a row with model strength 0 and
+        # a non-zero CLIP strength survives that check even when no CLIP is
+        # wired, and its missing file still stops the queue. That is the
+        # conservative direction - one extra stop on a rare arrangement beats
+        # letting a file that really is needed slip through. Execution uses
+        # the real value (apply_lora_stack knows whether clip is None).
         try:
             rows = parse_lora_stack(loras)
         except ValueError as exc:
@@ -150,11 +168,26 @@ class QGLoraLoader:
         return True
 
     @classmethod
-    def IS_CHANGED(cls, loras, **_values):
+    def IS_CHANGED(cls, loras, trigger_separator=", ", clip=None, **_values):
+        # 🔴 一旦定义了 IS_CHANGED，核心就**只**看它的返回值，不再逐个比较输入。
+        # 所以凡是会改变 outputs 的值都得进来，这里是两个容易被忘掉的：
+        #
+        #   trigger_separator —— 齿轮菜单里的设置，只影响 triggers 那一路。改了
+        #   之后栈没动，漏掉它就会命中上一次的输出缓存，分隔符还是旧的。
+        #
+        #   clip 有没有接 —— 一行「模型强度 0、CLIP 强度非 0」在接了 CLIP 时才
+        #   算「会加载」，文件缺失才会被记进 missing、它的词才会被排除；拔掉
+        #   CLIP 线之后同一个栈的 triggers 就变了。只记「接没接」这个布尔，
+        #   不拼对象本身：对象每次运行都可能是新的，拼进去会让缓存永不命中。
+        #
+        # （on_missing 不用进：error 模式下缺文件在采样前就被拦下，根本走不到
+        # 缓存这一层。）
+        has_clip = 1 if clip is not None else 0
         try:
-            return stack_fingerprint(parse_lora_stack(loras))
+            fingerprint = stack_fingerprint(parse_lora_stack(loras))
         except ValueError:
-            return loras
+            fingerprint = loras
+        return "%s|sep=%s|clip=%d" % (fingerprint, trigger_separator, has_clip)
 
 
 NODE_CLASS_MAPPINGS = {"QG_LoraLoader": QGLoraLoader}

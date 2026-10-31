@@ -24,6 +24,8 @@ all, so it could never report False.
 
 import torch
 
+from ._qg_any_type import ANY
+
 try:  # 旧版本 ComfyUI 没有这个模块，缺了也不影响判定
     from comfy_execution.graph import ExecutionBlocker
 except Exception:  # pragma: no cover
@@ -32,22 +34,6 @@ except Exception:  # pragma: no cover
 # 遮罩上低于这个值的像素肉眼看不出来，当作噪声抹平再判空。孤海那份节点用的也是
 # 0.02 —— Qwen Image 2.1 的 RGBA 存盘再读回来会带 1/255 ~ 3/255 的残差。
 MASK_VISIBLE_THRESHOLD = 0.02
-
-
-class AnyType(str):
-    """ComfyUI 的「任意类型」占位：与任何类型比较都返回相等，槽类型标 * 即可。"""
-
-    def __ne__(self, value):
-        return False
-
-    def __eq__(self, value):
-        return True
-
-    def __str__(self):
-        return "*"
-
-
-ANY = AnyType("*")
 
 
 def _is_black(tensor):

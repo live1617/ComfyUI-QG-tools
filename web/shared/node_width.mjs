@@ -28,7 +28,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026102915";
+import { chainCallback } from "./index.mjs?v=2026103135";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════
@@ -56,6 +56,10 @@ export const SIZES = {
     QG_MaskCrop: { w: 270, minW: 160, h: 315, minH: 315 },
     QG_CropRestore: { w: 270, minW: 160, h: 170, minH: 170 },
     QG_MaskAlign: { w: 270, minW: 160, h: 150, minH: 150 },
+    // 18 个控件（3 必填 + 15 可选），没有面板，高度就是控件叠起来。
+    QG_CropForInpaint: { w: 270, minW: 160, h: 460, minH: 460 },
+    // 5 个控件（2 必填 + 3 可选）。
+    QG_StitchInpaint: { w: 270, minW: 160, h: 140, minH: 140 },
     QG_RouteBlocker: { w: 210, minW: 140, h: 82, minH: 82 },
     QG_SizeSelector: { w: 270, minW: 140, h: 310, minH: 310 },
     QG_TextConcat: { w: 270, minW: 140, h: 78, minH: 78 },

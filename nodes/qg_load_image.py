@@ -75,6 +75,25 @@ def _paired_source(path: Path) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _pair_frame(source_frames, index, want_shape):
+    """The untouched frame that goes with painted frame ``index``, as
+    (RGB, alpha), or None when there is nothing usable.
+
+    A copy with fewer frames than the painted file repeats its last frame,
+    which is what the old code did and what a still picture needs. A copy of
+    a different size is refused rather than stretched: the mask would land
+    away from the pixels it was painted on.
+    """
+    if not source_frames:
+        return None
+    frame = np.asarray(
+        source_frames[min(index, len(source_frames) - 1)], dtype=np.float32
+    ) / 255.0
+    if frame.shape[:2] != tuple(want_shape):
+        return None
+    return frame[..., :3], frame[..., 3]
+
+
 def _has_baked_colour(colour, clean, mask):
     """Did the editor burn colours into the painted file?
 
@@ -213,6 +232,7 @@ class QGLoadImage:
             try:
                 source_frames = load_image_frames(source)
             except Exception:
+                # 副本坏了就当它不在：下面那条「副本不见了」的说明会讲清楚。
                 source_frames = None
 
         tint = None
@@ -232,36 +252,39 @@ class QGLoadImage:
             # untouched copy saved beside it.
             mask = 1.0 - stored_alpha
             masks.append(mask)
+
             clean = colour
+            base = stored_alpha
             if painted:
-                if source_frames:
-                    source = np.asarray(
-                        source_frames[min(index, len(source_frames) - 1)],
-                        dtype=np.float32,
-                    ) / 255.0
-                    base = source[..., 3]
-                    if base.shape != stored_alpha.shape:
-                        base = np.ones_like(stored_alpha)
-                    else:
-                        # The editor bakes the picked colours into the painted
-                        # file's RGB, so the clean picture has to come from the
-                        # untouched copy -- otherwise every colour painted in
-                        # the editor would leak into IMAGE.
-                        clean = source[..., :3]
+                original = _pair_frame(source_frames, index, stored_alpha.shape)
+                if original is not None:
+                    # The editor bakes the picked colours into the painted
+                    # file's RGB, so the clean picture has to come from the
+                    # untouched copy -- otherwise every colour painted in the
+                    # editor would leak into IMAGE.
+                    clean, base = original
+                elif not tint_output:
+                    # 副本没了（或被换成了别的尺寸）：原图的像素再也拿不回来，
+                    # 能给出去的只有那张被烧了颜色的画。与其悄悄把颜色当原图
+                    # 交出去，不如说清楚 —— 用户还能去编辑器里重存一次。
+                    # 带色输出不受影响：那本来就是用户要的东西。
+                    raise ValueError(
+                        "[QG-tools] 加载图像：这张图是遮罩编辑器存的成品，但和它配对的原图副本 "
+                        "%s 不见了，还原不出原图。请重新在编辑器里存一次，或改选原图。"
+                        "（若你本来就要带色图，把「输出带色图」打开即可。）"
+                        % (source.name if source is not None else "qg-src-<时间戳>.png")
+                    )
                 else:
-                    # The untouched copy is gone: the mask cannot be undone,
-                    # so treat the picture as fully opaque rather than punch
-                    # holes in it.
+                    # 带色输出：painted 的 RGB 本来就是用户要的，整张不透明地交出去
+                    # —— 别让 alpha 把遮罩区打成白洞，那比带色更难解释。
                     base = np.ones_like(stored_alpha)
-            else:
-                base = stored_alpha
 
             if tint is not None:
                 if painted and _has_baked_colour(colour, clean, mask):
                     # The file already carries the editor's colours (one per
                     # brush stroke), so hand it back as it is -- mixing our own
                     # tint on top would repaint every colour into one.
-                    colour = colour
+                    pass
                 else:
                     # Mix by how strongly the mask covers each pixel, so a
                     # feathered edge fades instead of ending in a hard line.

@@ -25,21 +25,22 @@
 // decisions live in js/shared/workflow_switches.mjs under node:test.
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026102915";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102915";
-import { holdNodeMinWidth, holdVueNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102915";
-import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026102915";
+import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zhPair } from "../shared/index.mjs?v=2026103135";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026103135";
+import { holdNodeMinWidth, holdVueNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026103135";
+import { cardHeight, commitWidgetValue, ensureCardCss } from "../shared/widget_card.mjs?v=2026103135";
 import {
-  DEFAULT_SETTINGS, SETTINGS_PROPERTY, SWITCHES_MAX, TITLE_MAX, addMembers, addSwitch, cardView, choiceState, choosePlan, flipTo, frameBounds, groupBounds, heldCount,
-  hideGroup, listedRows, modeMatters, moveSwitch, normalizeSettings, pairValue, placeNodes, readGroups, readSwitches,
-  removeMembers, removeSwitch, renameSwitch, restoreGroups, rowLabel, rowsSignature, saveValues, snapshotNode, suggestTitle, switchAllPlan,
-  switchPlan, valueAllPlan, valuePlan,
-} from "../shared/workflow_switches.mjs?v=2026102915";
+  DEFAULT_SETTINGS, SETTINGS_PROPERTY, SWITCHES_MAX, TITLE_MAX, addMembers, addOffMembers, addSwitch, cardView, choiceState, choosePlan,
+  flipTo, frameBounds, groupBounds, hasOffSide, heldCount, hideGroup, listedRows, modeMatters, moveSwitch, normalizeSettings, offFreshCount,
+  offHeldCount, pairValue, placeNodes, readGroups, readSwitches, removeMembers, removeOffMembers, removeSwitch, renameSwitch, repointSwitches,
+  restoreGroups, rowLabel, rowsSignature, saveValues, snapshotNode, suggestTitle, switchAllPlan, switchPlan, valueAllPlan, valuePlan,
+} from "../shared/workflow_switches.mjs?v=2026103135";
+import { onPaste } from "../shared/paste_remap.mjs?v=2026103135";
 // Sentences the DOM translator cannot reach: every one here is built at
 // runtime (a name, a count, or a branch), or written onto a title after the
 // fact. zh() looks the whole English sentence up and falls back to it.
-import { zh, zhOn, zhReady, zhSep } from "../shared/zh.mjs?v=2026102915";
+import { zh, zhOn, zhReady, zhSep } from "../shared/zh.mjs?v=2026103135";
 
 const NODE_CLASS = "QG_WorkflowSwitches";
 const CSS_ID = "qgtools-workflow-switches-css";
@@ -105,6 +106,11 @@ function ensureCss() {
 .qgtools-ws-pill.mixed{background:repeating-linear-gradient(135deg,rgba(0,180,170,.2) 0 3px,transparent 3px 7px),#0f1516}
 .qgtools-ws-pill.mixed button{color:#bfe6e2}
 .qgtools-ws-row.empty .qgtools-ws-pill{opacity:.35;pointer-events:none}
+.qgtools-ws-sides{display:none;place-items:center;width:14px;color:#6f8a88}
+.qgtools-ws-sides svg{display:block}
+.qgtools-ws.edit .qgtools-ws-row.sided{grid-template-columns:10px minmax(0,1fr) 14px auto 84px 26px 26px}
+.qgtools-ws.edit .qgtools-ws-row.sided .qgtools-ws-sides{display:grid}
+.qgtools-ws-row.sided .qgtools-ws-sides:hover{color:#d8ecea}
 .qgtools-ws-tool{display:none;place-items:center;width:26px;height:26px;padding:0;border:1px solid #2a3437;border-radius:6px;background:#0f1516;color:#8ba3a1;font:600 13px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}
 .qgtools-ws.edit .qgtools-ws-tool{display:grid}
 .qgtools-ws-tool:hover,.qgtools-ws-tool.open{border-color:${BRAND};color:#fff}
@@ -190,6 +196,18 @@ function frameIcon() {
 function moreIcon() {
   return svgIcon((add) => {
     for (const cx of ["3", "8", "13"]) add("circle", { cx, cy: "8", r: "1.5", fill: "currentColor" });
+  });
+}
+
+// Two solid-headed arrows pointing opposite ways, one over the other: this
+// switch hands over to its other side when it flips.
+function sidesIcon() {
+  const line = { fill: "none", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round" };
+  return svgIcon((add) => {
+    add("path", { d: "M2.5 5.2H12", ...line });
+    add("path", { d: "M14 5.2l-2.8-1.9v3.8z", fill: "currentColor" });
+    add("path", { d: "M13.5 10.8H4", ...line });
+    add("path", { d: "M2 10.8l2.8 1.9v-3.8z", fill: "currentColor" });
   });
 }
 
@@ -419,40 +437,177 @@ function settingsRow(label, title) {
   return { row, control };
 }
 
-// A segmented pill over one setting; `labels` maps values to what the pill
-// says. An off | on pill (`flips`) is one switch like the rows above it: a
-// click on either half flips it.
-function segmentRow(state, key, label, title, values, labels = {}, { flips = false } = {}) {
+// Put one setting to a value. Nothing is written when it already holds that
+// value: a write means one more undo step and one more redraw of the card,
+// and clicking the half that is already lit changes nothing.
+function setSetting(state, key, value) {
+  if (settingsOf(state.node)[key] === value) return;
+  patchSettings(state, { [key]: value });
+}
+
+// One row and one control. The control answers two things: how to tell this
+// row a new value was picked (`commit`), and how to show the value it holds
+// now (`sync`). The pill and the drop-down differ only in the control they
+// draw, so the row around them is built here once.
+function controlRow(state, key, label, title, make) {
   const { row, control } = settingsRow(label, title);
-  const seg = el("div", "qgtools-card-seg");
-  const buttons = new Map();
-  for (const value of values) {
-    const choice = button("", labels[value] ?? String(value), title);
-    choice.addEventListener("click", () => patchSettings(state, { [key]: flips ? !settingsOf(state.node)[key] : value }));
-    seg.append(choice);
-    buttons.set(value, choice);
-  }
-  control.append(seg);
-  const sync = (settings) => {
-    for (const [value, choice] of buttons) choice.classList.toggle("on", settings[key] === value);
-  };
+  const { element, sync } = make((value) => setSetting(state, key, value));
+  control.append(element);
   return { row, sync };
+}
+
+// A segmented pill over one setting; `labels` maps values to what the pill
+// says. Each half stands for its own value: a click on "off" puts the setting
+// off. (It used to flip whatever was there, which made the left half switch
+// the setting to the right half's value and the right half do the opposite -
+// the two halves were crossed.)
+function segmentRow(state, key, label, title, values, labels = {}) {
+  return controlRow(state, key, label, title, (commit) => {
+    const seg = el("div", "qgtools-card-seg");
+    const buttons = new Map();
+    for (const value of values) {
+      const choice = button("", labels[value] ?? String(value), title);
+      choice.addEventListener("click", () => commit(value));
+      seg.append(choice);
+      buttons.set(value, choice);
+    }
+    return {
+      element: seg,
+      sync: (settings) => {
+        for (const [value, choice] of buttons) choice.classList.toggle("on", settings[key] === value);
+      },
+    };
+  });
 }
 
 // A select over one setting, for choices too long to sit side by side.
 function selectRow(state, key, label, title, labels) {
-  const { row, control } = settingsRow(label, title);
-  const select = el("select", "qgtools-card-select");
-  select.title = zh(title);
-  for (const [value, text] of Object.entries(labels)) {
-    const option = el("option", "", text);
-    option.value = value;
-    select.append(option);
+  return controlRow(state, key, label, title, (commit) => {
+    const select = el("select", "qgtools-card-select");
+    select.title = zh(title);
+    for (const [value, text] of Object.entries(labels)) {
+      const option = el("option", "", text);
+      option.value = value;
+      select.append(option);
+    }
+    select.addEventListener("change", () => commit(select.value));
+    return {
+      element: select,
+      sync: (settings) => {
+        if (select.value !== settings[key]) select.value = settings[key];
+      },
+    };
+  });
+}
+
+// Every setting the card has, as data: what it is called, what it explains,
+// and when it shows. `on` is the only place a row's condition is written -
+// both the drawing and the height the card asks for read it from here, so a
+// new row can never be added to one and forgotten in the other.
+const SETTING_SPECS = [
+  {
+    key: "off",
+    kind: "segment",
+    label: "When off",
+    title: "What a switched-off part does. Bypass: its nodes hand their inputs straight through, so the rest of the workflow still runs. Mute: its nodes do not run, and nor does anything that needs their output.",
+    values: ["bypass", "mute"],
+  },
+  {
+    key: "groups",
+    kind: "select",
+    label: "Groups",
+    title: "Which groups get a switch of their own, listed under the switches you made: none, every group, the numbered ones (titles starting with a digit, like 1 · Load), or titles matching text.",
+    options: { none: "No groups", all: "Every group", numbered: "Numbered groups", matching: "Titles matching…" },
+  },
+  {
+    key: "match",
+    kind: "text",
+    label: "Match",
+    title: "Comma-separated text; a group is listed when its title contains any of it",
+    placeholder: "upscale, face",
+    on: (settings) => settings.groups === "matching",
+  },
+  {
+    key: "order",
+    kind: "segment",
+    label: "Group order",
+    title: "The order of the group rows. Canvas: the way the workflow reads, column by column from the left and top to bottom within a column. Title: by title, with numbers in numeric order.",
+    values: ["canvas", "title"],
+    on: (settings) => settings.groups !== "none",
+  },
+  {
+    key: "exclusive",
+    kind: "toggle",
+    label: "One at a time",
+    title: "Switching a row on switches the other rows off - for alternatives such as two upscalers.",
+  },
+  {
+    key: "show",
+    kind: "segment",
+    label: "Show as",
+    title: "Rows gives each switch a row with its own off | on. One pill makes the switches choices in a single pill, where one is always picked.",
+    values: ["rows", "pill"],
+    labels: { pill: "one pill" },
+    on: (settings) => !settings.exclusive,
+  },
+  {
+    key: "hidden",
+    kind: "restore",
+    label: "Hidden groups",
+    title: "Group rows removed with their delete button. Restore puts every one back on the card.",
+    on: (settings) => Boolean(settings.hidden?.length),
+  },
+];
+
+// Whether a setting is on the card at all, for these settings.
+function settingShown(spec, settings) {
+  return spec.on ? Boolean(spec.on(settings)) : true;
+}
+
+// One setting's row, built from its description. Every kind answers the same
+// way - a row to hang on the card, and a function that brings it up to date -
+// so the caller never has to know which kind it got.
+function buildSettingRow(state, spec) {
+  if (spec.kind === "segment" || spec.kind === "toggle") {
+    const toggle = spec.kind === "toggle";
+    const built = segmentRow(
+      state,
+      spec.key,
+      spec.label,
+      spec.title,
+      toggle ? [false, true] : spec.values,
+      toggle ? { false: "off", true: "on" } : (spec.labels ?? {}),
+    );
+    if (toggle) built.row.querySelector(".qgtools-card-seg")?.classList.add("qgtools-card-bool");
+    return built;
   }
-  select.addEventListener("change", () => patchSettings(state, { [key]: select.value }));
-  control.append(select);
+  if (spec.kind === "select") {
+    return selectRow(state, spec.key, spec.label, spec.title, spec.options);
+  }
+  const { row, control } = settingsRow(spec.label, spec.title);
+  if (spec.kind === "restore") {
+    // The rows taken off the card with a row's delete button, and the way back.
+    const restore = button("qgtools-ws-restore", "Restore", "Restore every removed group row");
+    restore.addEventListener("click", () => patchSettings(state, { hidden: [] }));
+    control.append(restore);
+    return { row, sync: () => {} };
+  }
+  // A text setting.
+  const text = el("input", "qgtools-card-text");
+  text.type = "text";
+  text.spellcheck = false;
+  text.placeholder = spec.placeholder ?? "";
+  text.title = zh(spec.title);
+  text.addEventListener("input", () => patchSettings(state, { [spec.key]: text.value }, { settle: false }));
+  text.addEventListener("change", () => notifyQgChange());
+  text.addEventListener("keydown", (event) => {
+    keepKeyInField(event);
+    if (event.key === "Enter" || event.key === "Escape") text.blur();
+  });
+  control.append(text);
+  // Never written over while it is being typed into.
   const sync = (settings) => {
-    if (select.value !== settings[key]) select.value = settings[key];
+    if (document.activeElement !== text) text.value = settings[spec.key];
   };
   return { row, sync };
 }
@@ -467,82 +622,22 @@ function buildSettings(state) {
     refresh(state);
   });
 
-  const off = segmentRow(
-    state, "off", "When off",
-    "What a switched-off part does. Bypass: its nodes hand their inputs straight through, so the rest of the workflow still runs. Mute: its nodes do not run, and nor does anything that needs their output.",
-    ["bypass", "mute"],
-  );
-  const groups = selectRow(
-    state, "groups", "Groups",
-    "Which groups get a switch of their own, listed under the switches you made: none, every group, the numbered ones (titles starting with a digit, like 1 · Load), or titles matching text.",
-    { none: "No groups", all: "Every group", numbered: "Numbered groups", matching: "Titles matching…" },
-  );
-
-  const match = settingsRow("Match", "Comma-separated text; a group is listed when its title contains any of it");
-  const text = el("input", "qgtools-card-text");
-  text.type = "text";
-  text.spellcheck = false;
-  text.placeholder = "upscale, face";
-  text.title = zh("Comma-separated text; a group is listed when its title contains any of it");
-  text.addEventListener("input", () => patchSettings(state, { match: text.value }, { settle: false }));
-  text.addEventListener("change", () => notifyQgChange());
-  text.addEventListener("keydown", (event) => {
-    keepKeyInField(event);
-    if (event.key === "Enter" || event.key === "Escape") text.blur();
-  });
-  match.control.append(text);
-
-  const order = segmentRow(
-    state, "order", "Group order",
-    "The order of the group rows. Canvas: the way the workflow reads, column by column from the left and top to bottom within a column. Title: by title, with numbers in numeric order.",
-    ["canvas", "title"],
-  );
-  const exclusive = segmentRow(
-    state, "exclusive", "One at a time",
-    "Switching a row on switches the other rows off - for alternatives such as two upscalers.",
-    [false, true],
-    { false: "off", true: "on" },
-    { flips: true },
-  );
-  exclusive.row.querySelector(".qgtools-card-seg")?.classList.add("qgtools-card-bool");
-
-  const show = segmentRow(
-    state, "show", "Show as",
-    "Rows gives each switch a row with its own off | on. One pill makes the switches choices in a single pill, where one is always picked.",
-    ["rows", "pill"],
-    { pill: "one pill" },
-  );
-
-  // The rows taken off the card with a row's delete button, and the way back.
-  const hiddenRow = settingsRow("Hidden groups", "Group rows removed with their delete button. Restore puts every one back on the card.");
-  const restore = button("qgtools-ws-restore", "Restore", "Restore every removed group row");
-  restore.addEventListener("click", () => patchSettings(state, { hidden: [] }));
-  hiddenRow.control.append(restore);
-
-  const rows = { off, groups, match: { row: match.row }, order, hidden: { row: hiddenRow.row }, exclusive, show };
+  const built = SETTING_SPECS.map((spec) => ({ spec, ...buildSettingRow(state, spec) }));
   const sync = (settings, edit, open) => {
     header.classList.toggle("open", open);
     header.style.display = edit ? "" : "none";
-    const listing = settings.groups !== "none";
-    for (const entry of Object.values(rows)) entry.row.classList.toggle("hidden", !edit || !open);
-    match.row.classList.toggle("hidden", !edit || !open || settings.groups !== "matching");
-    order.row.classList.toggle("hidden", !edit || !open || !listing);
-    hiddenRow.row.classList.toggle("hidden", !edit || !open || !settings.hidden?.length);
-    show.row.classList.toggle("hidden", !edit || !open || !settings.exclusive);
-    for (const entry of [off, groups, order, exclusive, show]) entry.sync(settings);
-    if (document.activeElement !== text) text.value = settings.match;
+    for (const item of built) {
+      item.row.classList.toggle("hidden", !edit || !open || !settingShown(item.spec, settings));
+      item.sync(settings);
+    }
   };
-  return { header, rows: Object.values(rows).map((entry) => entry.row), sync };
+  return { header, rows: built.map((item) => item.row), sync };
 }
 
-// How many setting rows are showing, for the card's height.
+// How many setting rows are showing, for the card's height. Read from the
+// same descriptions the rows are built from, so the two cannot drift.
 function settingsRowCount(settings) {
-  let count = 3; // when off, groups, one at a time
-  if (settings.groups !== "none") count += 1; // group order
-  if (settings.groups === "matching") count += 1; // match
-  if (settings.exclusive) count += 1; // show as
-  if (settings.hidden?.length) count += 1; // removed group rows and Restore
-  return count;
+  return SETTING_SPECS.filter((spec) => settingShown(spec, settings)).length;
 }
 
 // ---------- making and changing switches ----------
@@ -552,7 +647,11 @@ function newSwitch(state) {
   if (!pick.count) {
     showToast({
       summary: "Workflow Switches",
-      detail: "Select the nodes this switch should turn off and on first, then press it again. A box and its Save, for example.",
+      // toast 是 PrimeVue、挂在 app root 外面，汉化插件的 DOM 翻译器看不到它。
+      detail: zhPair(
+        "Select the nodes this switch should turn off and on first, then press it again. A box and its Save, for example.",
+        "先选中这个开关要关掉/打开的节点，再按一次它。比如一个盒子连同它里面的 Save。",
+      ),
     });
     return;
   }
@@ -608,7 +707,9 @@ function selectMembers(state, key) {
   const row = read(state).rows.find((candidate) => rowKey(candidate) === key);
   const canvas = app.canvas;
   if (!row || !canvas) return;
-  const nodes = [...row.members, ...(row.valueNodes ?? [])];
+  // Both sides and the nodes it changes settings on: everything a click on
+  // this row is about.
+  const nodes = [...row.members, ...(row.offMembers ?? []), ...(row.valueNodes ?? [])];
   canvas.deselectAll?.();
   if (typeof canvas.select === "function") for (const node of nodes) canvas.select(node);
   else canvas.selectNodes?.(nodes);
@@ -647,89 +748,160 @@ function closeMenu() {
   openMenu = null;
 }
 
-// The three-dot menu of a made switch.
-function showMenu(state, key, anchor) {
+// A rule between groups of choices. Shared, since a rule carries nothing of
+// its own and every menu can name the same one.
+const SEP = Object.freeze({ rule: true });
+
+// One menu at a time, hung under the button that asked for it. A second
+// click on the same button closes it instead of opening another.
+//
+// The caller hands over the menu as a list of parts - a heading, a rule, or
+// a choice - and nothing else: when a choice is dimmed, what it looks like
+// when it is the dangerous one, and the fact that picking anything closes the
+// menu first all live here, so no menu can forget one of them.
+function openRowMenu(anchor, parts) {
   const wasOpen = openMenu?.anchor === anchor;
   closeMenu();
   if (wasOpen) return;
+  const menu = el("div", "qgtools-ws-menu");
+  for (const part of parts) {
+    if (part.head !== undefined) {
+      // A heading is a name the user gave or a sentence of ours: whatever
+      // arrives here is already the text to show, as it is.
+      const heading = el("div", `qgtools-ws-menu-head${part.sub ? " sub" : ""}`, part.head);
+      // The switch's own name (not a sub-heading of ours) is the user's text.
+      if (!part.sub) heading.setAttribute("translate", "no");
+      menu.append(heading);
+      continue;
+    }
+    if (part.rule) {
+      menu.append(el("div", "qgtools-ws-menu-rule"));
+      continue;
+    }
+    const choice = button(`qgtools-ws-menu-item${part.danger ? " danger" : ""}`, part.label, part.title);
+    choice.disabled = Boolean(part.disabled);
+    choice.addEventListener("click", () => {
+      closeMenu();
+      part.run();
+    });
+    menu.append(choice);
+  }
+  positionMenu(menu, anchor);
+}
+
+// What "add the N selected" says: the counted sentence when there is a
+// count, the plain one otherwise. Both arrive already translated - a
+// dictionary lookup cannot follow a variable, so the literals stay at the
+// call site where the audit tools can see them.
+function counted(one, many, count) {
+  return count > 0 ? many.replace("{n}", String(count)) : one;
+}
+
+// The three-dot menu of a made switch.
+function showMenu(state, key, anchor) {
   const id = Number(key.slice(1));
   const settings = settingsOf(state.node);
-  const index = settings.switches.findIndex((entry) => entry.id === id);
+  const index = settings.switches.findIndex((item) => item.id === id);
   const entry = settings.switches[index];
+  // The switch is already gone - an undo, another card saving over it, a row
+  // whose settings have not been redrawn yet. Asking for its menu would hang
+  // an empty box under the button, so there is nothing to open.
   if (!entry) return;
   const pick = picked(state);
   const ids = pickedIds(pick);
   const held = heldCount(entry, ids);
   const fresh = pick.count - held;
-  const menu = el("div", "qgtools-ws-menu");
-  menu.append(el("div", "qgtools-ws-menu-head", entry.title));
-  const item = (label, run, { disabled = false, danger = false, title = "" } = {}) => {
-    const choice = button(`qgtools-ws-menu-item${danger ? " danger" : ""}`, label, title);
-    choice.disabled = disabled;
-    choice.addEventListener("click", () => {
-      closeMenu();
-      run();
-    });
-    menu.append(choice);
-  };
-  const rule = () => menu.append(el("div", "qgtools-ws-menu-rule"));
-  item("Rename", () => startRename(state, key));
-  item("Select its nodes", () => selectMembers(state, key), { title: "Select every node this switch turns off and on" });
-  rule();
-  item(
-    fresh > 0 ? zh("Add the {n} selected").replace("{n}", String(fresh)) : zh("Add the selected"),
-    () => writeSettings(state, addMembers(settings, id, ids)),
-    { disabled: fresh < 1, title: "Select nodes or groups on the canvas first, then add them to this switch" },
-  );
-  item(
-    held > 0 ? zh("Take out the {n} selected").replace("{n}", String(held)) : zh("Take out the selected"),
-    () => writeSettings(state, removeMembers(settings, id, ids)),
-    { disabled: held < 1, title: "Select nodes this switch holds first, then take them out of it" },
-  );
-  rule();
-  // A switch that changes settings instead of turning nodes off.
-  menu.append(el("div", "qgtools-ws-menu-head sub", "Change settings instead"));
+  // A node on the other side is already part of the switch: "take out" has
+  // to see it, or it would look like nothing of the selection is in here.
+  const offHeld = offHeldCount(entry, ids);
+  const offFresh = offFreshCount(entry, ids);
+  const inside = held + offHeld;
   const count = pick.nodes.length;
-  const how = "Makes this a switch that changes settings instead of turning nodes off. Set the selected nodes the way they should be for this side, then save it. Do both sides: the switch changes the values that differ.";
-  item(count ? zh("Save the {n} selected as on").replace("{n}", String(count)) : zh("Save the selected as on"), () => saveSide(state, key, "on", pick), { disabled: !count, title: how });
-  item(count ? zh("Save the {n} selected as off").replace("{n}", String(count)) : zh("Save the selected as off"), () => saveSide(state, key, "off", pick), { disabled: !count, title: how });
-  rule();
-  item("Move up", () => writeSettings(state, moveSwitch(settings, id, -1)), { disabled: index < 1 });
-  item("Move down", () => writeSettings(state, moveSwitch(settings, id, 1)), { disabled: index >= settings.switches.length - 1 });
-  rule();
-  item("Delete this switch", () => writeSettings(state, removeSwitch(settings, id)), {
-    danger: true, title: "Removes the switch. Its nodes stay as they are.",
-  });
+  const holdHow = "Select nodes or groups on the canvas first, then add them to this switch";
+  const outHow = "Select nodes this switch holds first, then take them out of it";
+  const sideHow = "Select nodes or groups on the canvas first. They run only while this switch is off, and are bypassed (or muted, per Settings) while it is on.";
+  const offOutHow = "Select nodes that run only while this is off, then take them off that side. They stay as they are.";
+  const valueHow = "Makes this a switch that changes settings instead of turning nodes off. Set the selected nodes the way they should be for this side, then save it. Do both sides: the switch changes the values that differ.";
 
-  positionMenu(menu, anchor);
+  openRowMenu(anchor, [
+    { head: entry.title },
+    { label: zh("Rename"), run: () => startRename(state, key) },
+    { label: zh("Select its nodes"), run: () => selectMembers(state, key), title: "Select every node this switch turns off and on" },
+    SEP,
+    {
+      label: counted(zh("Add the selected"), zh("Add the {n} selected"), fresh),
+      run: () => writeSettings(state, addMembers(settings, id, ids)),
+      disabled: fresh < 1,
+      title: holdHow,
+    },
+    {
+      label: counted(zh("Take out the selected"), zh("Take out the {n} selected"), inside),
+      run: () => writeSettings(state, removeMembers(settings, id, ids)),
+      disabled: inside < 1,
+      title: outHow,
+    },
+    SEP,
+    // The other side: what runs only while this switch is off. Two paths
+    // that take turns, one click each way.
+    { head: zh("Its other side"), sub: true },
+    {
+      label: counted(zh("The selected run only while this is off"), zh("{n} of the selected run only while this is off"), offFresh),
+      run: () => writeSettings(state, addOffMembers(settings, id, ids)),
+      disabled: offFresh < 1,
+      title: sideHow,
+    },
+    {
+      label: counted(zh("Take the selected off that side"), zh("Take the {n} selected off that side"), offHeld),
+      run: () => writeSettings(state, removeOffMembers(settings, id, ids)),
+      disabled: offHeld < 1,
+      title: offOutHow,
+    },
+    SEP,
+    // A switch that changes settings instead of turning nodes off.
+    { head: zh("Change settings instead"), sub: true },
+    {
+      label: counted(zh("Save the selected as on"), zh("Save the {n} selected as on"), count),
+      run: () => saveSide(state, key, "on", pick),
+      disabled: !count,
+      title: valueHow,
+    },
+    {
+      label: counted(zh("Save the selected as off"), zh("Save the {n} selected as off"), count),
+      run: () => saveSide(state, key, "off", pick),
+      disabled: !count,
+      title: valueHow,
+    },
+    SEP,
+    { label: zh("Move up"), run: () => writeSettings(state, moveSwitch(settings, id, -1)), disabled: index < 1 },
+    { label: zh("Move down"), run: () => writeSettings(state, moveSwitch(settings, id, 1)), disabled: index >= settings.switches.length - 1 },
+    SEP,
+    {
+      label: zh("Delete this switch"),
+      run: () => writeSettings(state, removeSwitch(settings, id)),
+      danger: true,
+      title: "Removes the switch. Its nodes stay as they are.",
+    },
+  ]);
 }
 
 // The three-dot menu of a group row: select what the group holds, or take
 // its row off the card (nothing on the canvas is touched).
 function showGroupMenu(state, key, anchor) {
-  const wasOpen = openMenu?.anchor === anchor;
-  closeMenu();
-  if (wasOpen) return;
   const row = read(state).rows.find((candidate) => rowKey(candidate) === key);
+  // The group is gone from under this row (renamed away, undone): there is
+  // no row to describe, and an empty menu box helps nobody.
   if (!row) return;
-  const menu = el("div", "qgtools-ws-menu");
-  menu.append(el("div", "qgtools-ws-menu-head", row.title));
-  const item = (label, run, { disabled = false, danger = false, title = "" } = {}) => {
-    const choice = button(`qgtools-ws-menu-item${danger ? " danger" : ""}`, label, title);
-    choice.disabled = disabled;
-    choice.addEventListener("click", () => {
-      closeMenu();
-      run();
-    });
-    menu.append(choice);
-  };
-  item("Select its nodes", () => selectMembers(state, key), { title: "Select every node this group holds" });
-  menu.append(el("div", "qgtools-ws-menu-rule"));
-  item("Delete this switch", () => writeSettings(state, hideGroup(settingsOf(state.node), { id: row.group?.id, title: row.title })), {
-    danger: true, title: "Remove this group's row from this card. Nothing on the canvas changes, and Restore in Settings brings the row back.",
-  });
-
-  positionMenu(menu, anchor);
+  openRowMenu(anchor, [
+    { head: row.title },
+    { label: zh("Select its nodes"), run: () => selectMembers(state, key), title: "Select every node this group holds" },
+    SEP,
+    {
+      label: zh("Delete this switch"),
+      run: () => writeSettings(state, hideGroup(settingsOf(state.node), { id: row.group?.id, title: row.title })),
+      danger: true,
+      title: "Remove this group's row from this card. Nothing on the canvas changes, and Restore in Settings brings the row back.",
+    },
+  ]);
 }
 
 // Hangs a menu by its anchor: on screen edge aware, closed by a click
@@ -760,19 +932,141 @@ function positionMenu(menu, anchor) {
 
 // ---------- rows ----------
 
+// All the wording one row carries, worked out before anything is written to
+// the page: the label, the hover text of each part, the count and the two
+// hints. Kept apart from the DOM so the sentences live in one place and can
+// be read without a browser in the way.
+function describeRow(data, settings, made) {
+  const label = rowLabel(data);
+  const pairs = data.pairs ?? [];
+  const offNodes = data.offMembers ?? [];
+  // The "and N more" tail is a sentence of its own so it can be translated;
+  // the names it follows are node titles and stay as they are.
+  const more = (total) => zh(" and {n} more").replace("{n}", String(total - 6));
+  const named = (list) => list.slice(0, 6).map(nodeTitle).join(", ") + (list.length > 6 ? more(list.length) : "");
+  const sets = pairs.slice(0, 6).map((pair) => `${nodeTitle(pair.live)} (${pair.row ?? pair.widget})`).join(", ");
+  const parts = [];
+  if (data.members.length) parts.push(zh("turns off and on {a}").replace("{a}", named(data.members)));
+  if (offNodes.length) parts.push(zh("runs only while it is off: {a}").replace("{a}", named(offNodes)));
+  if (pairs.length) parts.push(zh("changes {a}").replace("{a}", sets + (pairs.length > 6 ? more(pairs.length) : "")));
+  const hover = made
+    ? parts.length ? zh("{a}: {b}").replace("{a}", label).replace("{b}", parts.join(zhSep()))
+      : data.half ? zh("{a}: saved for one side only").replace("{a}", label)
+        : zh("{a}: its nodes are gone").replace("{a}", label)
+    : zh("{a}: every node inside this group").replace("{a}", label);
+
+  // What stops running while the row is on, said on the mark itself, since
+  // the row's label has no room for it.
+  // 🔴 两个词先取好再交给 zh()：审计工具按「zh( 之后第一个字符串字面量」取键，
+  // 写成 zh(a ? "muted" : "bypassed") 会把 muted 当成一个键。
+  const quiet = settings.off === "mute" ? "muted" : "bypassed";
+  const sided = hasOffSide(data.entry);
+  const sideHint = offNodes.length
+    ? zh("Runs only while this is off: {a} ({b} while it is on)").replace("{a}", named(offNodes)).replace("{b}", zh(quiet))
+    : zh("Nothing is on its other side now: the nodes or groups put there are gone or empty.");
+
+  // A row saved for one side only, with nothing else to show for itself.
+  const waiting = data.half && !pairs.length && !data.members.length && !offNodes.length;
+  // A setting changed by hand to a third value is neither on nor off.
+  const changed = data.state === "mixed" && pairs.some((pair) => pair.now === "other");
+  // Three of the four are words, and they go through zh() like every other
+  // sentence here: they are written on every redraw, so a translator that only
+  // reads a node when it is inserted would never get a second look at them.
+  // The fourth is "2/3", which is a number and reads the same everywhere.
+  const count = changed ? zh("changed")
+    : data.state === "mixed" ? `${data.on}/${data.total}`
+      : waiting ? zh("half set")
+        : data.state === "empty" ? zh("empty") : "";
+  // These were fragments bolted onto a counted start ("3 of its 5 " + X); a
+  // whole-string dictionary can never match that, so each is a sentence.
+  // Four of them, since a row with an off side counts its nodes the other way.
+  const countedTitle = offNodes.length
+    ? (pairs.length ? zh("{a} of its {b} nodes and settings are set for on") : zh("{a} of its {b} nodes are set for on"))
+    : (pairs.length ? zh("{a} of its {b} nodes and settings are on") : zh("{a} of its {b} nodes run"));
+  const countHint = changed
+    ? zh("A setting this switch changes was set by hand to something else. Click off or on to set it again.")
+    : data.state === "mixed" ? countedTitle.replace("{a}", String(data.on)).replace("{b}", String(data.total))
+      : waiting ? zh("Saved for one side only. Set its nodes the other way, select them, and save that side from its menu.")
+        : data.state !== "empty" ? ""
+          : made ? zh("Its nodes are gone. Add some from its menu in the edit view, or delete the switch.") : zh("No nodes inside this group yet");
+
+  // A switch with nothing of its own to stop is spoken of as "switch", not
+  // "run"; a switch with a second side says so, because the click moves two
+  // sets of nodes, not one.
+  const nothingOwn = pairs.length > 0 && !data.members.length;
+  const offLead = nothingOwn ? zh('Switch "{a}" off') : settings.off === "mute" ? zh('Mute "{a}"') : zh('Bypass "{a}"');
+  const onLead = nothingOwn ? zh('Switch "{a}" on') : zh('Run "{a}"');
+  const offTails = [];
+  if (offNodes.length) offTails.push(zh("its other side starts running"));
+  const onTails = [];
+  // One sentence per wording rather than one built from a verb: the
+  // dictionary matches whole strings only.
+  if (offNodes.length) onTails.push(settings.off === "mute" ? zh("its other side is muted") : zh("its other side is bypassed"));
+  // One at a time only ever quiets the other rows on the way on: turning a
+  // row off leaves them exactly as they are.
+  if (settings.exclusive) onTails.push(zh("the other rows are switched off"));
+  const say = (lead, tails) => [lead.replace("{a}", label), ...tails].join(zhSep());
+  return { label, hover, count, countHint, sided, sideHint, turnOff: say(offLead, offTails), turnOn: say(onLead, onTails) };
+}
+
+// The off | on pill of one row: two halves of one switch, either click flips
+// it. The halves come back with the pill so the row's sync can light the right
+// one and say what the next click does.
+function buildToggle(state, key) {
+  const pill = el("div", "qgtools-card-seg qgtools-card-bool qgtools-ws-pill");
+  pill.setAttribute("role", "group");
+  const off = button("", "off");
+  const on = button("", "on");
+  off.addEventListener("click", () => switchRow(state, key, false));
+  on.addEventListener("click", () => switchRow(state, key, true));
+  pill.append(off, on);
+  return { pill, off, on };
+}
+
+// The name box of a made switch: it sits where the label is while renaming and
+// is hidden the rest of the time. Enter keeps what was typed, Escape puts the
+// old name back, and leaving the box keeps it too.
+function buildName(state, key) {
+  const input = el("input", "qgtools-card-text qgtools-ws-name");
+  input.type = "text";
+  input.maxLength = TITLE_MAX;
+  input.spellcheck = false;
+  input.hidden = true;
+  input.title = zh("Name this switch, then press Enter");
+  input.addEventListener("keydown", (event) => {
+    keepKeyInField(event);
+    if (event.key === "Enter") input.blur();
+    else if (event.key === "Escape") stopRename(state, { keep: false });
+  });
+  input.addEventListener("blur", () => {
+    // Only this row's own rename ends here: a name box can lose focus because
+    // another row took it, and that must not write this one down.
+    if (state.renaming === key) stopRename(state, { keep: true });
+  });
+  return input;
+}
+
+// A quiet mark that this switch hands the run to another set of nodes when it
+// flips. CSS shows it in the edit view only, so it never clutters the card.
+function buildSides() {
+  const mark = el("span", "qgtools-ws-sides");
+  mark.append(sidesIcon());
+  return mark;
+}
+
 function buildRow(state, key, made) {
   const row = el("div", "qgtools-card-row qgtools-ws-row");
   const chip = el("span", "qgtools-ws-chip");
   const title = el("span", "qgtools-ws-title");
+  // The name is the user's own words, so it is marked as not-for-translation.
+  // Measured, not assumed: the page translator in use walks text nodes and
+  // rewrites any whose whole text matches a dictionary key, without looking at
+  // this attribute - a switch called "Fast" does show as the local word for
+  // fast. The attribute stays because it is the standard way to say it, and
+  // because a translator that reads it will then do the right thing.
+  title.setAttribute("translate", "no");
   const count = el("span", "qgtools-ws-count");
-  // One switch drawn as two halves: a click on either half flips it.
-  const pill = el("div", "qgtools-card-seg qgtools-card-bool qgtools-ws-pill");
-  pill.setAttribute("role", "group");
-  const offButton = button("", "off");
-  const onButton = button("", "on");
-  offButton.addEventListener("click", () => switchRow(state, key, false));
-  onButton.addEventListener("click", () => switchRow(state, key, true));
-  pill.append(offButton, onButton);
+  const toggle = buildToggle(state, key);
   const go = button("qgtools-ws-tool", undefined, "Bring this part into view");
   go.append(frameIcon());
   go.addEventListener("click", () => frameRow(state, key));
@@ -782,26 +1076,12 @@ function buildRow(state, key, made) {
   more.append(moreIcon());
   more.addEventListener("click", () => (made ? showMenu : showGroupMenu)(state, key, more));
 
-  let name = null;
-  if (made) {
-    name = el("input", "qgtools-card-text qgtools-ws-name");
-    name.type = "text";
-    name.maxLength = TITLE_MAX;
-    name.spellcheck = false;
-    name.hidden = true;
-    name.title = zh("Name this switch, then press Enter");
-    name.addEventListener("keydown", (event) => {
-      keepKeyInField(event);
-      if (event.key === "Enter") name.blur();
-      else if (event.key === "Escape") stopRename(state, { keep: false });
-    });
-    name.addEventListener("blur", () => {
-      if (state.renaming === key) stopRename(state, { keep: true });
-    });
-    row.append(chip, title, name, count, pill, go, more);
-  } else {
-    row.append(chip, title, count, pill, go, more);
-  }
+  // A made switch has a name box and the other-side mark; a group row is read
+  // only, so it gets neither.
+  const name = made ? buildName(state, key) : null;
+  const sides = made ? buildSides() : null;
+  row.append(chip, title, ...(made ? [name, sides] : []), count, toggle.pill, go, more);
+
   // A double-click on a label opens the edit view; there, it renames.
   title.addEventListener("dblclick", () => {
     if (!editOpen(state.node)) setEdit(state, true);
@@ -809,59 +1089,31 @@ function buildRow(state, key, made) {
   });
 
   const sync = (data, settings) => {
-    const label = rowLabel(data);
-    row.classList.toggle("off", data.state === "off");
-    row.classList.toggle("mixed", data.state === "mixed");
-    row.classList.toggle("empty", data.state === "empty");
+    const text = describeRow(data, settings, made);
+    // What the row is: three exclusive states, set as classes so the CSS owns
+    // the look of each.
+    for (const state of ["off", "mixed", "empty"]) row.classList.toggle(state, data.state === state);
     chip.style.setProperty("--chip", data.color ?? (made ? BRAND : NO_COLOR));
-    title.textContent = label;
-    const pairs = data.pairs ?? [];
-    // The "and N more" tail is a sentence of its own so it can be translated;
-    // the names it follows are node titles and stay as they are.
-    const more = (total) => zh(" and {n} more").replace("{n}", String(total - 6));
-    const names = data.members.slice(0, 6).map(nodeTitle).join(", ");
-    const tail = data.members.length > 6 ? more(data.members.length) : "";
-    const sets = pairs.slice(0, 6).map((pair) => `${nodeTitle(pair.live)} (${pair.row ?? pair.widget})`).join(", ");
-    const parts = [];
-    if (data.members.length) parts.push(zh("turns off and on {a}").replace("{a}", names + tail));
-    if (pairs.length) parts.push(zh("changes {a}").replace("{a}", sets + (pairs.length > 6 ? more(pairs.length) : "")));
-    title.title = made
-      ? parts.length ? zh("{a}: {b}").replace("{a}", label).replace("{b}", parts.join(zhSep()))
-        : data.half ? zh("{a}: saved for one side only").replace("{a}", label)
-          : zh("{a}: its nodes are gone").replace("{a}", label)
-      : zh("{a}: every node inside this group").replace("{a}", label);
-    const waiting = data.half && !pairs.length && !data.members.length;
-    // A setting changed by hand to a third value is neither on nor off.
-    const changed = data.state === "mixed" && pairs.some((pair) => pair.now === "other");
-    count.textContent = changed ? "changed" : data.state === "mixed" ? `${data.on}/${data.total}` : waiting ? "half set" : data.state === "empty" ? "empty" : "";
-    // These were fragments bolted onto a counted start ("3 of its 5 " + X);
-    // a whole-string dictionary can never match that, so each is a sentence.
-    count.title = changed
-      ? zh("A setting this switch changes was set by hand to something else. Click off or on to set it again.")
-      : data.state === "mixed" ? (pairs.length
-        ? zh("{a} of its {b} nodes and settings are on").replace("{a}", String(data.on)).replace("{b}", String(data.total))
-        : zh("{a} of its {b} nodes run").replace("{a}", String(data.on)).replace("{b}", String(data.total)))
-      : waiting ? zh("Saved for one side only. Set its nodes the other way, select them, and save that side from its menu.")
-        : data.state !== "empty" ? ""
-          : made ? zh("Its nodes are gone. Add some from its menu in the edit view, or delete the switch.") : zh("No nodes inside this group yet");
-    pill.classList.toggle("mixed", data.state === "mixed");
-    offButton.classList.toggle("on", data.state === "off");
-    onButton.classList.toggle("on", data.state === "on");
-    offButton.setAttribute("aria-pressed", String(data.state === "off"));
-    onButton.setAttribute("aria-pressed", String(data.state === "on"));
-    const valuesOnly = pairs.length > 0 && !data.members.length;
-    // One whole sentence per combination. The old code built these from a verb
-    // plus optional tails, which no whole-string dictionary can ever match.
-    const turnOff = (valuesOnly
-      ? zh('Switch "{a}" off')
-      : settings.off === "mute" ? zh('Mute "{a}"') : zh('Bypass "{a}"')).replace("{a}", label);
-    const turnOn = (valuesOnly
-      ? (settings.exclusive ? zh('Switch "{a}" on and switch the other rows off') : zh('Switch "{a}" on'))
-      : (settings.exclusive ? zh('Run "{a}" and switch the other rows off') : zh('Run "{a}"'))).replace("{a}", label);
-    // Either half flips the switch, so both say what the next click does;
-    // a mixed row goes to the half that is clicked.
-    offButton.title = data.state === "off" ? zhClick(turnOn) : data.state === "on" ? zhClick(turnOff) : turnOff;
-    onButton.title = data.state === "off" ? zhClick(turnOn) : data.state === "on" ? zhClick(turnOff) : turnOn;
+    title.textContent = text.label;
+    title.title = text.hover;
+    count.textContent = text.count;
+    count.title = text.countHint;
+    // The mark only exists on a made switch, and only shows in the edit view.
+    if (sides) {
+      row.classList.toggle("sided", text.sided);
+      sides.title = text.sideHint;
+    }
+    toggle.pill.classList.toggle("mixed", data.state === "mixed");
+    toggle.off.classList.toggle("on", data.state === "off");
+    toggle.on.classList.toggle("on", data.state === "on");
+    toggle.off.setAttribute("aria-pressed", String(data.state === "off"));
+    toggle.on.setAttribute("aria-pressed", String(data.state === "on"));
+    // From a settled row both halves do the same thing - the click that
+    // changes it - so both carry the same sentence; from a mixed row each half
+    // says what picking it would give.
+    const flip = data.state === "off" ? zhClick(text.turnOn) : data.state === "on" ? zhClick(text.turnOff) : null;
+    toggle.off.title = flip ?? text.turnOff;
+    toggle.on.title = flip ?? text.turnOn;
   };
   return { row, title, name, sync };
 }
@@ -897,38 +1149,29 @@ function buildPick(state) {
     const settled = stand.kind === "one";
     pill.classList.toggle("settled", settled);
     pill.classList.toggle("unsettled", !settled);
-    const seen = new Set();
-    let cursor = pill.firstElementChild;
-    for (const data of rows) {
-      const key = rowKey(data);
-      let choice = choices.get(key);
-      if (!choice) {
-        choice = button("");
+    syncChildren(pill, choices, rows, {
+      make: (data, key) => {
+        const choice = button("");
         choice.setAttribute("role", "radio");
+        choice.setAttribute("translate", "no");
         choice.addEventListener("click", () => chooseRow(state, key));
-        choices.set(key, choice);
-      }
-      const label = rowLabel(data);
-      const empty = data.state === "empty";
-      choice.textContent = label;
-      choice.classList.toggle("on", data.state === "on");
-      choice.classList.toggle("mixed", data.state === "mixed");
-      choice.classList.toggle("empty", empty);
-      choice.disabled = empty;
-      choice.setAttribute("aria-checked", String(data.state === "on"));
-      choice.title = empty ? zh('"{a}" holds no nodes, so there is nothing to pick.').replace("{a}", label)
-        : !settled ? zh('{a}. Click: use only "{b}".').replace("{a}", note).replace("{b}", label)
-          : data === stand.picked ? zh('"{a}" is picked. Click another one to change.').replace("{a}", label)
-            : zh('Click: use "{a}" and switch the others off').replace("{a}", label);
-      if (cursor === choice) cursor = cursor.nextElementSibling;
-      else pill.insertBefore(choice, cursor);
-      seen.add(key);
-    }
-    for (const [key, choice] of choices) {
-      if (seen.has(key)) continue;
-      choice.remove();
-      choices.delete(key);
-    }
+        return choice;
+      },
+      update: (choice, data) => {
+        const label = rowLabel(data);
+        const empty = data.state === "empty";
+        choice.textContent = label;
+        choice.classList.toggle("on", data.state === "on");
+        choice.classList.toggle("mixed", data.state === "mixed");
+        choice.classList.toggle("empty", empty);
+        choice.disabled = empty;
+        choice.setAttribute("aria-checked", String(data.state === "on"));
+        choice.title = empty ? zh('"{a}" holds no nodes, so there is nothing to pick.').replace("{a}", label)
+          : !settled ? zh('{a}. Click: use only "{b}".').replace("{a}", note).replace("{b}", label)
+            : data === stand.picked ? zh('"{a}" is picked. Click another one to change.').replace("{a}", label)
+              : zh('Click: use "{a}" and switch the others off').replace("{a}", label);
+      },
+    });
   };
 
   const syncList = (rows, stand, note) => {
@@ -996,46 +1239,74 @@ function measureCard(listed, edit, open, settings, picking) {
   return cardHeight(rows);
 }
 
+// The line under an empty card: what to do next, from where the card stands.
+// Every branch is a whole sentence, so the dictionary can match it. It cannot
+// be left in English: the card rewrites this text on every redraw, and a
+// sentence written onto an element that is already in the document is only
+// translated if the translator happens to have a moment to see it (C17) - the
+// "no group matches" line was showing English on a 中文界面 because of it,
+// and it was not in the dictionary either.
 function hintText(edit, groupCount, settings) {
-  if (!edit) return "No switches yet. Click here to make one.";
-  if (groupCount && settings.groups !== "none") return "No group matches the Groups setting. Select nodes and press + Switch.";
-  return "Select the nodes of one part, such as a box and its Save, then press + Switch.";
+  if (!edit) return zh("No switches yet. Click here to make one.");
+  if (groupCount && settings.groups !== "none") {
+    return zh("No group matches the Groups setting. Select nodes and press + Switch.");
+  }
+  return zh("Select the nodes of one part, such as a box and its Save, then press + Switch.");
 }
 
-function render(state, settings, rows, groupCount, pick) {
-  const node = state.node;
-  const edit = editOpen(node);
-  const open = settingsOpen(node);
-  const { view, width: pillWidth } = viewOf(settings, rows);
-  const picking = view !== "rows";
-  state.root.classList.toggle("edit", edit);
-  state.root.classList.toggle("pick", picking);
-  state.pick.sync(view, rows);
-  state.pillWidth = pillWidth;
-
+// The rows themselves: an element is reused for a key that is still listed, so
+// a rename in progress keeps its cursor; it is moved only when it is out of
+// place, since moving the row being renamed would take the cursor out of its
+// name box; and a row whose part is gone is dropped.
+// Keep a column of elements in step with a list of rows: one element per
+// row, found by its key, reused for as long as the row is there, moved when
+// the order changed, and taken away when the row is gone.
+//
+// The card's rows and the pick pill are the same job twice - one walk, one
+// set of rules about what "in place" means - so it is written once here.
+// Everything that differs (what an element is, how it is brought up to date,
+// what has to be tidied when one goes) arrives as an argument.
+function syncChildren(container, store, rows, { make, update, forget, elementOf = (entry) => entry }) {
   const seen = new Set();
-  let cursor = state.list.firstElementChild;
-  for (const data of rows) {
-    const key = rowKey(data);
-    let entry = state.rows.get(key);
+  let cursor = container.firstElementChild;
+  for (const row of rows) {
+    const key = rowKey(row);
+    let entry = store.get(key);
     if (!entry) {
-      entry = buildRow(state, key, data.kind === "switch");
-      state.rows.set(key, entry);
+      entry = make(row, key);
+      store.set(key, entry);
     }
-    entry.sync(data, settings);
-    // Only a row out of place is moved: moving the row being renamed would
-    // take the cursor out of its name box.
-    if (cursor === entry.row) cursor = cursor.nextElementSibling;
-    else state.list.insertBefore(entry.row, cursor);
+    update(entry, row);
+    // Only an element out of place is moved: moving the one being renamed
+    // would take the cursor out of its name box.
+    const element = elementOf(entry);
+    if (cursor === element) cursor = cursor.nextElementSibling;
+    else container.insertBefore(element, cursor);
     seen.add(key);
   }
-  for (const [key, entry] of state.rows) {
+  for (const [key, entry] of store) {
     if (seen.has(key)) continue;
-    if (state.renaming === key) state.renaming = null;
-    entry.row.remove();
-    state.rows.delete(key);
+    forget?.(entry, key);
+    elementOf(entry).remove();
+    store.delete(key);
   }
+}
 
+function syncRows(state, rows, settings) {
+  syncChildren(state.list, state.rows, rows, {
+    make: (data, key) => buildRow(state, key, data.kind === "switch"),
+    update: (entry, data) => entry.sync(data, settings),
+    elementOf: (entry) => entry.row,
+    // A row that is gone cannot be the one being renamed.
+    forget: (entry, key) => {
+      if (state.renaming === key) state.renaming = null;
+    },
+  });
+}
+
+// Everything around the rows: the hint line an empty card shows, the edit bar
+// and its button, and the settings block.
+function syncChrome(state, { edit, open, settings, rows, groupCount, pick, picking }) {
   state.hint.classList.toggle("hidden", rows.length > 0);
   state.hint.textContent = hintText(edit, groupCount, settings);
   state.hint.classList.toggle("link", !edit);
@@ -1048,18 +1319,37 @@ function render(state, settings, rows, groupCount, pick) {
     ? zh("+ Switch from {n} selected").replace("{n}", String(pick.count))
     : zh("Select nodes, then add a switch");
   state.settings.sync(settings, edit, open);
+}
 
-  const height = measureCard(rows.length, edit, open, settings, picking);
-  const floor = minWidth(node);
+// Grow the node to hold what the card now shows, and never narrower than the
+// pill needs. Both only when they actually moved: a size written on every
+// redraw would fight the canvas and fill the undo history.
+function fitCard(state, { edit, open, settings, picking, listed }) {
+  const height = measureCard(listed, edit, open, settings, picking);
+  const floor = minWidth(state.node);
   // Nodes 2.0 holds the floor on the node's element: told here, as the floor
   // follows the names in the pill and the node may not change size with it.
   holdVueNodeMinWidth(state.root, floor);
-  if (height !== state.height || (node.size?.[0] ?? 0) < floor) {
-    state.height = height;
-    const width = Math.max(floor, node.size?.[0] || NODE_WIDTH);
-    node.setSize?.([width, node.computeSize?.()[1] || declaredHeight(state)]);
-    node.graph?.setDirtyCanvas?.(true, true);
-  }
+  if (height === state.height && (state.node.size?.[0] ?? 0) >= floor) return;
+  state.height = height;
+  const width = Math.max(floor, state.node.size?.[0] || NODE_WIDTH);
+  state.node.setSize?.([width, state.node.computeSize?.()[1] || declaredHeight(state)]);
+  state.node.graph?.setDirtyCanvas?.(true, true);
+}
+
+function render(state, settings, rows, groupCount, pick) {
+  const edit = editOpen(state.node);
+  const open = settingsOpen(state.node);
+  const { view, width: pillWidth } = viewOf(settings, rows);
+  const picking = view !== "rows";
+  state.root.classList.toggle("edit", edit);
+  state.root.classList.toggle("pick", picking);
+  // The pill's width is read by minWidth, so it goes in before the size is fit.
+  state.pillWidth = pillWidth;
+  state.pick.sync(view, rows);
+  syncRows(state, rows, settings);
+  syncChrome(state, { edit, open, settings, rows, groupCount, pick, picking });
+  fitCard(state, { edit, open, settings, picking, listed: rows.length });
 }
 
 function refresh(state) {
@@ -1116,16 +1406,18 @@ function trimNodeBottom(node) {
   };
 }
 
-function buildPanel(node) {
-  if (node.__qgWorkflowSwitches) return node.__qgWorkflowSwitches;
+// The card's own parts, before anything is wired up: the frame, the hint, the
+// edit bar, one empty list for the rows, the pick row, and the settings block.
+// Nothing here listens to anything yet - that is wireCard's job.
+function createCard(node) {
   ensureCss();
   const root = el("div", "qgtools-ws");
   const card = el("div", "qgtools-card");
   const list = el("div", "qgtools-ws-list");
   const hint = button("qgtools-ws-hint hidden");
   const bar = el("div", "qgtools-card-row qgtools-ws-bar hidden");
-  const add = button("qgtools-ws-add", "+ Switch", "Select the nodes of one part on the canvas, then press this: they get one switch");
-  const done = button("qgtools-ws-done", "Done");
+  const add = button("qgtools-ws-add", zh("+ Switch"), "Select the nodes of one part on the canvas, then press this: they get one switch");
+  const done = button("qgtools-ws-done", zh("Done"));
   bar.append(add, done);
   root.append(card);
 
@@ -1138,20 +1430,29 @@ function buildPanel(node) {
   card.append(state.pick.row, list, hint, bar);
   state.settings = buildSettings(state);
   card.append(state.settings.header, ...state.settings.rows);
+  return state;
+}
 
-  add.addEventListener("click", () => newSwitch(state));
-  done.addEventListener("click", () => setEdit(state, false));
-  hint.addEventListener("click", () => setEdit(state, true));
-
-  // Clicks on controls stay out of the graph's drag and leave the selection
-  // alone; empty card space falls through, so the node still drags from its
-  // body.
-  root.addEventListener("pointerdown", (event) => {
+// What the three fixed parts of the card do, and how the card keeps events to
+// itself. A click on a control stays out of the graph's drag and leaves the
+// canvas selection alone; empty card space falls through, so the node still
+// drags from its body like any other.
+function wireCard(state) {
+  state.add.addEventListener("click", () => newSwitch(state));
+  state.done.addEventListener("click", () => setEdit(state, false));
+  state.hint.addEventListener("click", () => setEdit(state, true));
+  state.root.addEventListener("pointerdown", (event) => {
     if (event.target.closest("button,input,select")) event.stopPropagation();
   });
-  root.addEventListener("dblclick", (event) => event.stopPropagation());
+  state.root.addEventListener("dblclick", (event) => event.stopPropagation());
+}
 
-  const widget = node.addDOMWidget(WIDGET_NAME, "qg_workflow_switches", root, {
+// The DOM widget, and every rule about how big the card around it may be.
+// A list is sized to its rows and nothing else: the width may grow, the
+// height snaps back to what the rows need. Each line here was a bug once, so
+// the notes say why it is there rather than what it does.
+function attachCard(node, state) {
+  const widget = node.addDOMWidget(WIDGET_NAME, "qg_workflow_switches", state.root, {
     serialize: false,
     hideOnZoom: false,
     getMinHeight: () => declaredHeight(state),
@@ -1178,7 +1479,14 @@ function buildPanel(node) {
   holdNodeMinWidth(widget, () => minWidth(node));
   trimNodeBottom(node);
   state.widget = widget;
+  return widget;
+}
 
+function buildPanel(node) {
+  if (node.__qgWorkflowSwitches) return node.__qgWorkflowSwitches;
+  const state = createCard(node);
+  wireCard(state);
+  attachCard(node, state);
   live.add(state);
   ensureRedrawHook();
   return state;
@@ -1200,6 +1508,28 @@ app.registerExtension({
   name: "QG.WorkflowSwitches",
   setup() {
     ensureRedrawHook();
+    // A card copied together with its parts follows the copies. Without this
+    // a whole workflow pasted into a new tab shows "empty" on every row and
+    // none of them can be turned on: the copy keeps naming the ids it was
+    // saved with, and those now belong to nothing (or, pasted into another
+    // workflow, to something unrelated).
+    onPaste(({ nodes, groups, created }) => {
+      for (const node of created) {
+        if (!isSwitches(node)) continue;
+        const moved = repointSwitches(node.properties?.[SETTINGS_PROPERTY], nodes, groups);
+        if (!moved) continue;
+        node.properties ??= {};
+        node.properties[SETTINGS_PROPERTY] = moved;
+        const state = node.__qgWorkflowSwitches;
+        // The signature decides whether anything is redrawn: a card whose
+        // settings just changed has to be redrawn even if its rows read the
+        // same, so it is cleared rather than trusted.
+        if (state) {
+          state.signature = "";
+          refresh(state);
+        }
+      }
+    });
   },
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData?.name !== NODE_CLASS) return;

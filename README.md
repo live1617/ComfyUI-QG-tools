@@ -1,13 +1,13 @@
 # ComfyUI-QG-tools
 
-一个 ComfyUI 自定义节点包，目前包含四十五个节点：**LoRA 加载器**、**模型加载器（三合一）**、
+一个 ComfyUI 自定义节点包，目前包含四十七个节点：**LoRA 加载器**、**模型加载器（三合一）**、
 **图像裁剪 + 旋转 + 补边**、**加载图像**、**工作流说明卡**、**工作流开关**、**运行计时器**、**文本**、
 **加载文档**、**Google 翻译**、**任意切换**、**展示任意**、**是否判断**、**存在判断**、
 **路由阻断**、**字符串切换**、**布尔开关**、
 **数值**、**数值滑条**、**数学运算**、**颜色校正**、**颜色匹配**、**图像缩放**、
 **图像或 Latent 尺寸**、**种子**、**图像水印**、**文字叠加图像**、**宫格图像拼接**、
 **图像对比**、**导出图像**、**遮罩上色**、**遮罩拼接**、**遮罩精修**、
-**遮罩裁剪**、**裁剪恢复**、**遮罩对齐**、
+**遮罩裁剪**、**裁剪恢复**、**遮罩对齐**、**重绘裁剪**、**重绘缝合**、
 **文本合并**、**文本替换**、**文本按分隔符分割**、
 **尺寸选择器**、**空 Latent 分辨率**、**画布标签**、**Markdown 便签**、**释放显存**、**采样预览**。
 
@@ -74,9 +74,9 @@
 
 - **任意切换 —— 把多个同类型输入并成一路，输出第一个非空、已连接的那个**
 - **展示任意 —— 在节点上直接预览任意输入（文本/图像/遮罩/音频/视频），并原样透传**
-- **是否判断 —— 布尔分支：为真走「真时」，为假走「假时」，没走的那路不求值**
+- **是否判断 —— 布尔分支：为真走「真时」，为假走「假时」，没走的那路不求值；只接一路也能跑**
 - **存在判断 —— 有值就真、没值就假，同时把值原样传下去（可选输入没接也照跑）**
-- **路由阻断 —— 一条线路的总开关：通过时原样透传，阻断时置空或静默掐断下游**
+- **路由阻断 —— 一条线路的总开关：通过时原样透传，阻断时置空或静默掐断下游，且打开后上游根本不求值**
 - **字符串切换 —— 两段提示词写在节点上，拨一下布尔就换，不用再拉两个文本节点**
 - **布尔开关 —— 整张节点就是一枚开关：大号「开 / 关」+ 可点的胶囊，扇出到多个下游条件**
 - **数值 —— 整数和浮点合一：一张卡片里一个可拖的数字框，类型在标题栏齿轮里切**
@@ -95,6 +95,12 @@
 
 - 输入是通配类型，IMAGE / MASK / LATENT 都能接；Latent 内部尺寸是除以 8 存的，这里自动乘回 8
 - 输出 WIDTH / HEIGHT 两个整数，用来驱动按尺寸分流的节点
+- **遮罩的各种形状都认** —— `(B,H,W)`、`(B,1,H,W)`、`(H,W)` 都读得对。ComfyUI 的
+  `ImageToMask` 和 `LoadImage` 给的都是三维 `(B,H,W)`，这是最常见的一种
+- 没接线时宽高都给 0，不报错
+
+> 自写。思路来自 rgthree-comfy 的 `Image or Latent Size`（MIT），10-30 重写：修掉
+> 「只认四维张量」——原来接最常见的三维遮罩会得到 0×0，且不给任何提示。
 
 **种子 —— 一张卡片管住一个种子**
 
@@ -114,6 +120,12 @@
 - 选系统字体、字号、颜色（内置六色或自定义 RGB），横排 / 竖排随意，按中心点坐标定位
 - 除了画好的图像，还输出**文字形状的遮罩**，方便后续只在有字的区域做处理
 - 批次时每一帧都画同样的字（上游只画了第一帧）
+- **中心点按笔画算，不按行高** —— 「中心 Y」写 300，看到的字就真的居中在 300。
+  ⚠️ 10-30 修好了这件事：以前按字体行高居中，笔画实际比设定值高约字号的 19%
+  （100px 字号高 19px）。老工作流里的文字会因此**整体下移**
+
+> 自写。思路来自 ComfyUI_Muye 的 `TextOverlayImage`（MIT），10-30 重写：文字改成按
+> 实际笔画居中、空批次不再抛异常、`color_rgb` 补上 `forceInput`。
 
 **宫格图像拼接 —— 多图拼成一张，节点上直接看**
 
@@ -127,20 +139,42 @@
 
 **文本替换 —— 一次配好三组替换**
 
-- 最多三组「查找 → 替换」，规则按 1 → 2 → 3 顺序生效
+- 最多三组「查找 → 替换」，规则按 1 → 2 → 3 顺序生效，后一条看得到前一条的产物
 - **默认字面、正则可选**：字面模式下括号、点号、竖线都是普通字符，提示词里的 `(red:1.3)` 能整段删掉；
   切到正则模式可用 `\d+`、`\1` 反向引用，写错直接报错而不是悄悄退化
+- **查找留空就跳过整组** —— 不是「在每个字之间插替换串」（`str.replace("", x)` 会干这事）
+- **正则模式下替换内容是模板** —— `\1` 是第 1 个分组，所以想原样插一个反斜杠得写两次：
+  `C:\temp` 会静默变成「C: + 制表符 + emp」，`C:\xyz` 直接报错。要插 Windows 路径又不想
+  操心转义，就把那条规则换回字面模式
+- 写错时报错会点名**第几条规则**、错在「查找内容」还是「替换内容」
+
+> 自写。思路来自 Comfyroll 的 `CR_TextReplace`（MIT），10-30 重写：输出类型从任意改成
+> `STRING`，正则模式替换内容的报错从原始英文改成点名到栏位。
 
 **文本按分隔符分割 —— 切掉思考块、拆段落**
 
 - 分隔符支持正则；默认 `<think>` 正好用来切掉模型的思考块
 - 三路输出：`全部段落`（合集）、`单条切分`（选定那条输入的完整切分）、`指定段落`（第 N 段）
+- **三个序号各管各的** —— 列表序号设 0 只让「单条切分」空，「指定段落」照旧取它自己那一位
+- 空的段落会被丢掉，所以序号数的是**非空段**：文本开头就带分隔符时，不会有空段把序号顶偏
+- 正则里用了捕获组的话，分隔符本身会留在结果里（`(,)` 切 `a,b` 得 `a`、`,`、`b`）——
+  这是 Python 的 `re.split` 语义，需要连分隔符一起留下时才这么写
+
+> 自写。思路来自 ComfyUI_Muye 的 `TextSplitByDelimiterEnhanced`（MIT），10-30 重写：修掉
+> 「列表序号设 0 会把指定段落也清空」，非法正则的报错改成中文并点名分隔符。
 
 **文本合并 —— 两段文本拼成一段**
 
 - 就是 `文本1 + 分隔符 + 文本2`，原样拼接、不去空格；想要空格或换行就写进分隔符
 - 两个文本都是**输入槽**，从上游连过来；分隔符是文本框，直接填（常用来插「，」「 」或换行）
+- **只接一路也干净** —— 没接的那一路连同分隔符一起省掉。单接一段时结果就是那一段，
+  不会尾巴上多一个 `-`（也别指望靠它「补分隔符」）
+- **空文本仍算数** —— 接了线但是空字符串照样参与拼接，`空 + "-" + X` 还是 `-X`。
+  「没接线」和「接了但是空」是两件事，这一点和别的拼接节点不一样
 - 只有一路输出（上游声明了第二路「显示帮助」却从不返回值，这里删掉了）
+
+> 自写。思路来自 Comfyroll 的 `CR_TextConcatenate`（MIT），10-30 重写：修掉
+> 「只接一路时会多出孤零零的分隔符」，输出类型从任意改成 `STRING`。
 
 **尺寸选择器 —— 选好比例，直接出空 Latent**
 
@@ -170,16 +204,18 @@
 - 指针离开后自动停在「结果」那张图上——哪一路是结果按连线判断（B 通常是从 A 改出来的那张）
 - A 原样从输出送出，所以这个节点可以夹在流程中间，不影响下游
 
-- **当前版本**：v0.9.10（支持 Nodes 2.0 / Vue 渲染）
-- **节点**：45 个（`LoRA Loader` / `模型加载器` / `加载图像` / `Image Crop + Rotate + Pad` / `Workflow Note` /
-  `Workflow Switches` / `Run Timer` / `Text` / `加载文档` / `Google 翻译` /
+- **当前版本**：v0.9.11（支持 Nodes 2.0 / Vue 渲染）
+- **节点**：47 个（`LoRA 加载器` / `模型加载器` / `加载图像` / `图像裁剪 + 旋转 + 补边` / `工作流说明卡` /
+  `工作流开关` / `运行计时器` / `文本` / `加载文档` / `Google 翻译` /
   `任意切换` / `展示任意` / `是否判断` / `存在判断` / `路由阻断` / `字符串切换` / `布尔开关` / `数值` / `数值滑条` / `数学运算` /
   `颜色校正` / `颜色匹配` / `图像缩放` / `图像或 Latent 尺寸` / `种子` /
-  `图像水印` / `文字叠加图像` / `宫格图像拼接` / `图像对比` / `导出图像` / `遮罩上色` / `遮罩拼接` /
-  `文本合并` / `文本替换` / `文本按分隔符分割` / `尺寸选择器` / `空 Latent 分辨率` / `画布标签` / `Markdown 便签`）
-- **分类**：全部在 `QG-tools` 下，八个子分类
-  `Loaders` / `Text` / `Logic` / `Display` / `Workflow` / `Mask` / `Annotation` / `Image`
-  （中文界面上显示为 加载器 / 文本 / 逻辑 / 展示 / 工作流 / 遮罩 / 标注 / 图像）
+  `图像水印` / `文字叠加图像` / `宫格图像拼接` / `图像对比` / `导出图像` /
+  `遮罩上色` / `遮罩拼接` / `遮罩精修` / `遮罩裁剪` / `裁剪恢复` / `遮罩对齐` / `重绘裁剪` / `重绘缝合` /
+  `文本合并` / `文本替换` / `文本按分隔符分割` / `尺寸选择器` / `空 Latent 分辨率` /
+  `画布标签` / `Markdown 便签` / `释放显存` / `采样预览`）
+- **分类**：全部在 `QG-tools` 下，九个子分类
+  `Loaders` / `Text` / `Logic` / `Display` / `Workflow` / `Mask` / `Retouch` / `Annotation` / `Image`
+  （中文界面上显示为 加载器 / 文本 / 逻辑 / 展示 / 工作流 / 遮罩 / 重绘 / 标注 / 图像）
 - **依赖**：无额外 pip 包。只用 ComfyUI 运行期自带的模块（torch / numpy / PIL / PyAV / folder_paths / comfy.*）；
   `scipy`、`pymatting` 用到了才用，缺了有内置回退，不报错。
 - **许可证**：[GPL-3.0-or-later](LICENSE)
@@ -209,14 +245,14 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.10  |  45 nodes loaded  |  8 categories
+  QG-tools v0.9.11  |  47 nodes loaded  |  9 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```
 
-无需 `pip install` 任何东西。四十五个节点都在 `QG-tools` 分类下
-（细分：Loaders / Text / Logic / Display / Workflow / Mask / Annotation / Image，
-中文界面显示为 加载器 / 文本 / 逻辑 / 展示 / 工作流 / 遮罩 / 标注 / 图像），
+无需 `pip install` 任何东西。四十七个节点都在 `QG-tools` 分类下
+（细分：Loaders / Text / Logic / Display / Workflow / Mask / Retouch / Annotation / Image，
+中文界面显示为 加载器 / 文本 / 逻辑 / 展示 / 工作流 / 遮罩 / 重绘 / 标注 / 图像），
 节点标题按界面语言显示（中文界面 `图像水印`、英文界面 `Image Watermark`），
 搜索 `lora`、`crop`、`note`、`switch`、`timer`、`text`、`load`、
 `watermark`、`mask`、`size`、`compare` 这些英文词一样找得到（见下面「中英文搜索」）。
@@ -227,7 +263,7 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 
 ## 节点来源（原创 / 搬运）
 
-45 个节点 = **19 原创**（其中 6 个参考上游思路重写、3 个搬自作者自有旧插件） + **26 搬运**。
+47 个节点 = **41 原创**（其中 28 个参考上游思路重写、3 个搬自作者自有旧插件） + **6 搬运**。
 
 口径：**原创看代码是不是自己写的，搬运看是不是整段抄的。**
 
@@ -240,9 +276,29 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 
 | 节点 ID | 显示名 | 类型 | 上游 / 说明 |
 |---|---|---|---|
+| `QG_MaskRefine` | Mask Refine | 原创 | 本插件自己写（参考 ComfyUI-AusBoss（MIT）「Mask Refine 🆎」的用法，代码重写）；自写（10-30 换掉 v0.9.0 的搬运版）：六步顺序、九个控件、两路输出全不变。🔴 **收缩时画布外被当成白色** —— 上游用 `max_pool2d` 的默认 padding（-inf），取负之后等于「画布外是白的」，于是贴边的遮罩无论 `expand` 负到多少都一格不缩，实测整幅全 1 的遮罩 `expand=-2` 之后仍是全 1；现在按「画布外没有像素」处理，整幅收缩 2 就只剩中间 4x4，而不贴边的形状与旧实现逐位一致。🔴 **四维遮罩直接报错** —— 官方写明 MASK 是 [H,W] 或 [B,C,H,W]，上游只认前两种；现在单通道四维压成 [B,H,W]（结果与三维逐位相同），多通道报错并说清几通道。另：补洞的泛洪传播必须一步一格（一次用大核会跨过遮罩圈墙，把墙里的洞也算成外面 → 补洞整个失效且不报错）；无 scipy 的降级路径与 scipy 逐位一致（两条路径都验了）；预览改为覆盖整批帧（原来只写第 0 帧，批量跑完无从核对）；文件名改 uuid、失败改 logging（原来 print + 手拼 5 位随机后缀）。📌 刻意保留：`_qg_mask_helpers.py` 那份给裁剪/重绘用，仍走旧的边界语义 —— 六个节点在用它，改动要单独评估 |
+| `QG_ImageCropRotatePad` | 图像裁剪 + 旋转 + 补边 | 原创 | 本插件自己写（参考 ComfyUI-AusBoss（MIT）「Image Crop + Rotate + Pad 🆎」的用法，代码重写）；接口沿用 AusBoss（节点 ID / 槽名 / 控件组合），实现早就是自己的：这个文件只剩 192 行的壳（声明输入 → 调引擎 → 打包 7 路输出），像素运算全在自写的 `_qg_transform_engine.py`（586 行，24 个函数），另有 `_qg_transform_inputs.py`（241 行）与 `_qg_inpaint_crop_helpers.py`（1782 行）。10-30 核对后把标注从 ported 改成 original —— 按 FreeMemory 那条口径反过来也成立：代码主体是自己的就不该标搬运，标了是把原创率报低。引擎还被 `QG_LoadImage` 的遮罩编辑器共用，动它要连带验两条路 |
+| `QG_RunTimer` | Run Timer | 原创 | 本插件自己写（参考 ComfyUI-AusBoss（MIT）「Run Timer 🆎」的用法，代码重写）；接口沿用 AusBoss（节点 ID / 无输入无输出 / 属性键的存档结构），实现全部重写：后端只有 51 行声明（`noop` 永不执行 —— 无输出节点不进 prompt），读数的决策逻辑在 `web/shared/run_timer.mjs`、绘制在 `web/run_timer/index.js`。10-31 两处都重写后把标注从 ported 改成 original。上游那套「节点自发 run」过滤（`ownRuns`，为 MaskByTouch 的预览跑图准备的）本包没有对应节点，故不搬 |
+| `QG_TextEditOutput` | Text | 原创 | 本插件自己写（参考 ComfyUI_Muye（MIT）「Text Edit Output」的用法，代码重写）；自写（10-30 换掉 v0.6.0 的搬运版）：ID / 输入名 / 显示名 / 输出形态全不变。刻意保留 OUTPUT_IS_LIST —— 输出是「只有一项的列表」，普通 STRING 消费者会被 ComfyUI 拆回标量，只有声明列表输入的节点才拿到列表，删掉会静默改变那些图；同一条也定义了「不切分」：三行文本是一个元素，那是它和 QG_TextSplit 的分界 |
+| `QG_ImageWatermark` | 图像水印 | 原创 | 本插件自己写（参考 ComfyUI_Muye（MIT）「AddImageWatermark」的用法，代码重写）；v0.8.5 搬入，10-30 重写为自写实现 |
+| `QG_TextOverlayImage` | 文字叠加图像 | 原创 | 本插件自己写（参考 ComfyUI_Muye（MIT）「TextOverlayImage」的用法，代码重写）；自写（10-30 换掉 v0.8.5 的搬运版）：ID / 八个输入 / 两路输出 / 六个内置颜色 / 横竖排 / 每帧都画 / 不做 IS_CHANGED 全不变，老存档照开。⚠️ **唯一一处可见的行为变化：文字位置**。旧实现用 Pillow 的 `anchor="mm"`，那是按**字体行高**（ascender..descender）居中，而字体的行高比字母本身高，实测 100px 字号下 "AB" 的笔画中心比设定的 y 高 19px（两行、竖排、中文都一样偏差），节点承诺的「按中心定位」是虚的。现在先 `multiline_textbbox` 量真实墨迹框再按框心偏移，六组实测偏差 ≤1px，且不随字号放大（30px/300px 都是 1px 内）。🔴 代价：老工作流里所有文字会下移约 19% 字号，之前手调 y 补偿过的要调回来 —— 但旧位置本来就是错的（用户 10-30 确认要修）。另修三处：① `color_rgb` 漏了 forceInput（通配输入不加，前端画一个填不出颜色的文本框）；② **空批次以前抛 `stack expects a non-empty TensorList`** —— 那段 `if mask_out is None` 的兜底永远轮不到，因为 stack 先炸了，现在空进空出；③ `_FONT_INDEX` 是赋值了从不读的死变量（索引故意每次 INPUT_TYPES 重建，新装字体免重启），删掉，`_FONT_DIRS` 保留缓存 |
+| `QG_ImageGrid` | 宫格图像拼接 | 原创 | 本插件自己写（参考 ComfyUI_Muye（MIT）「MuyeGridImageConcat」的用法，代码重写）；自写（10-30 换掉 v0.8.5 的搬运版）：五个控件 / 自动行列几何（1→1x1、2→2x1、3~4→2x2、5~9→3 列、10~16→4 列）/ match_size 等比装入不裁 / 黑帧过滤 / 预览输出全不变，仍是 OUTPUT_NODE。🔴 **核心缺陷：灰度图被压成 1 像素宽** —— 搬运版按第 0 维判 `(H,W,C)` 还是 `(B,H,W)`，而灰度单图是 `(H,W,1)`，第 0 维是高度 → 被当成批次，`unsqueeze(-1)` 后变 `(64,64,1,1)`、通道扩三倍成 `(64,64,1,3)`、再取第一帧就只剩一行（实测 64x64 的灰度进 → **1x64** 出）。判据改成看**最后一维**（≤4 当通道维），与包内其他三维判据一致。同一个判据还修了反向错误：灰度批次 `(B,H,W)` 原来被当成一张图（实测 4x32x32 进 → 32x4 出），现在正常拆帧拼四格。另：两通道输入原来在画布赋值处崩（既不落 `channels==1` 也不落 `>3`），现在取第一通道当灰；`drop_black` 不再假设每个条目都是张量（列表套列表原来 `AttributeError`）；全黑报错补一句「把剔除全黑关掉」；`FUNCTION` 改 `execute`。📌 刻意不改：`drop_black` 默认开、真黑帧也会被丢（批次节点拿 zeros 填空槽的历史原因），以及 `MAX_IMAGES=16` / `MAX_COLS=4` 的截断。断言 `tools/_check_image_grid.py`（30 项） |
+| `QG_MaskColorize` | 遮罩上色 | 原创 | 本插件自己写（参考 ComfyUI_Muye（MIT）「MaskColorize」的用法，代码重写）；自写（10-30 换掉 v0.8.5 的搬运版）：三个输入、六个内置色、0.5 硬切、输出全不变。🔴 **核心缺陷：遮罩帧数比图像少时直接崩** —— 搬运版用 `mask[:image.shape[0]]` 处理帧数不等，遮罩短的时候等于没截，紧接着的乘法广播失败（实测 4 帧图配 2 帧遮罩 → `The size of tensor a (4) must match the size of tensor b (2)`）；现在短的按序重复补齐、长的截断。另修：① 通配输入 `color_rgb` 漏了 `forceInput`（前端会在画布上多画一个填不出颜色的文本框，本包第六处同款）；② 遮罩与图像尺寸不一致时给中文错误并点名两边尺寸，原来是泛泛的广播错误；③ 三元组解析统一进 `as_triple()`，非数字不再 `TypeError`（原版 `max(['a','b','c']) <= 1.0` 直接炸），逐分量钳到 0-255（原版 `[300,-20,0]` 会漏出 300），张量输入不用逐元素走 Python；④ 不再 `ones_like(image) * color` 造一张整幅纯色图。📌 刻意不改：0-1 与 0-255 的歧义（`[1,0,0]` 两档都说得通），规则仍是「三个都 ≤1 当 0-1」，只是写进 tooltip 而不是隐含 |
+| `QG_MaskConcat` | 遮罩拼接 | 原创 | 本插件自己写（参考 ComfyUI_Muye（MIT）「MaskConcatenate」的用法，代码重写）；自写（10-30 换掉 v0.8.5 的搬运版）：四个控件、方向取值、单帧输出尺寸全不变。🔴 **核心缺陷：批次被压成一条** —— 搬运版对 3 维遮罩用 `mask.max(dim=0)` 把 `(B,H,W)` 收成 `(H,W)`，四帧进、一帧出，不报错不提示；现在原样保留 `(B,H,W)`，两路帧数不同就短的重复补齐，B=1 时与搬运版逐字节一致。另修：混精度按 `promote_types` 取宽（原版按第一路 dtype 建画布，静默降位）；不认识的 direction 值按左右拼（原版按左右算画布却只在严格等于 `left-right` 时填充，给出全黑）；空批次不再 `max(dim=0)` 抛错。📌 刻意不改：`match_size` 会把小遮罩连同纵横比一起拉到对方的框（512x512 配 1024x256 变成 512x512，圆变椭圆）—— 那是这个选项的代价不是疏漏，要保比例得先各自缩放 |
+| `QG_TextSplit` | 文本按分隔符分割 | 原创 | 本插件自己写（参考 ComfyUI_Muye（MIT）「TextSplitByDelimiterEnhanced」的用法，代码重写）；自写（10-30 换掉 v0.8.5 的搬运版）：三路输出（ALL / LIST / SEGMENT）、四个序号、空段丢弃、默认 <think> 全不变，老存档照开。🔴 **修掉一个真假判**：SEGMENT 的取数池写成 `total if input_source == "文本框" else selected_pieces`，而这个输入的值从 v0.8.5 起就是 text-field / external-list，条件永假 → 永远读 selected_pieces。文本框模式下两者同源所以看不出来，唯独 list_index=0（LIST 被清空）时 SEGMENT 跟着一起空掉 —— 而它只该受 segment_index 支配（实测：segment_index=2 + list_index=0，修前 ""，修后 "b"）。现在按常量 TEXT_FIELD 比。另外两处：① 非法正则分隔符原来抛裸英文 `missing ), unterminated subpattern`，改成中文点名「分隔符」并提示可以关掉「用正则」；② FUNCTION 改 execute 统一命名（存档不存方法名）。📌 保留一个已知行为不改：正则模式用捕获组时分隔符会留在结果里（`re.split("(,)", "a,b")` → `['a', ',', 'b']`），那是 Python 的语义、偶尔正是想要的，只在文档里写明 |
+| `QG_SizeSelector` | 尺寸选择器 | 原创 | 本插件自己写（参考 ComfyUI_Muye（MIT）「MuyeSizeSelector」的用法，代码重写）；v0.8.5 搬入，v0.9.4 起多次重写，10-30 收口为自写实现 |
 | `QG_EmptyLatentResolution` | 空 Latent 分辨率 | 原创 | 本插件自己写（作者自有旧插件 ComfyUI-EmptyLatentResolution（MIT）「EmptyLatentResolution」合并进来）；把官方 ResolutionSelector（比例 + 百万像素 → 宽高）与 EmptyLatentImage（宽高 + 批量 → LATENT）合成一个节点，省掉中间两根线。尺寸算法与 ResolutionSelector 逐行一致（同样的 sqrt 缩放与 multiple 取整，128 组参数实测逐个相同），latent 结构与 EmptyLatentImage 一致（4 通道、intermediate_device / intermediate_dtype、downscale_ratio_spacial=8）；另给 RESOLUTION_PREVIEW 预览控件（optional，三个 *_widget 指向真实输入） |
+| `QG_TextConcat` | 文本合并 | 原创 | 本插件自己写（参考 ComfyUI_Comfyroll_CustomNodes（MIT）「CR_TextConcatenate」的用法，代码重写）；自写（10-30 换掉 v0.9.4 的搬运版）：ID / 输入名 / 槽名 / 分隔符是控件 / 不做 trim，全不变，老工作流照开。真改进是分得开「没接线」和「接了但是空」—— 搬运版两路默认都是 ""，于是判不出某一路是不是根本没接，分隔符照样吐：只接文本1 得 "A-"、只接文本2 得 "-B"、两路都不接得一个孤零零的 "-"。现在没接的那一路用 _MISSING 哨兵认出来，连同分隔符一起省掉；接了线但是空字符串仍算参与（空 + "-" + X 还是 "-X"）。🔴 判据依赖函数签名默认值是哨兵 —— ComfyUI 的 get_input_data 只返回 prompt 里真有的输入，没出现的交给 Python 用签名默认值补；哪天改成拿 INPUT_TYPES 的 default 填，这个区分会静默失效，_check_text_concat.py 里那条断言就是盯这个的。输出类型同时从 * 改成 STRING（原来名字写 STRING、类型是任意，自相矛盾） |
+| `QG_TextReplace` | 文本替换 | 原创 | 本插件自己写（参考 ComfyUI_Comfyroll_CustomNodes（MIT）「CR_TextReplace」的用法，代码重写）；自写（10-30 换掉 v0.9.4 的 Comfyroll 搬运版；更早的 v0.8.5 ~ v0.9.3 搬的是 Muye BatchTextReplace，两份旧存档都由 web/text_replace/ 自动迁移）。ID / 文本槽 / 六组查找替换 / 三条规则按序 / 空查找跳过 / 不做 trim 全不变。保留了我们自己加的两处：mode（literal 默认，字面量下括号点号竖线都是普通字符）与空查找跳过（str.replace("", x) 会在每个字之间插替换串）。这次修的三处 —— ① RETURN_TYPES 是 * 而 RETURN_NAMES 写 STRING，自相矛盾，改真类型 STRING、槽名 text；② FUNCTION 改 execute 统一命名（存档不存方法名，前端 web/text_replace/ 只按 widget 位置迁移，不受影响）；③ 🔴 regex 模式只 catch 了 compile 阶段的错，sub 阶段的错会漏出原始英文 —— 而 sub 阶段最常见的正是替换内容里的反斜杠：Python 的 re.sub 把替换文本当模板，C:\temp 会静默变成「C: + 制表符 + emp」（	 是合法转义，拦不住，只能文档说明），C:\xyz 直接抛 bad escape \x。现在两个阶段都 catch，错误用中文点名「第几条规则」+「查找内容还是替换内容」+「反斜杠要写两次」。🔴 前端迁移依赖 widgets_values 的长度是 7（text 是 forceInput 不产生 widget），改输入数量会整排错位 |
 | `QG_ColorCorrect` | 颜色校正 | 原创 | 本插件自己写（参考 comfyui-art-venture（MIT）「ColorCorrect」的用法，代码重写）；只沿用六个滑条的参数划分与作用顺序（色温/色调/明度/对比度/饱和度/伽马），实现整段自己写：纯 torch、全 float、不依赖 cv2，并修掉参考实现的三处问题（逐帧 8bit 往返导致色阶、饱和度实际改的是 HLS 明度通道、色温乘单通道会连带变亮） |
 | `QG_ColorMatch` | 颜色匹配 | 原创 | 本插件自己写；十种方法都是公开算法的自写实现，代码未搬任何插件：Haar 小波 3 层只匹配低频子带、AdaIN 逐通道实例归一化（sRGB 上、单尺度）、RBF 核 MMD 拟合仿射映射、逐通道 CDF 分位匹配、Reinhard LAB 逐通道均值/标准差（2001）、LAB 3x3 协方差匹配（Pitié 2007 线性 MKL 的核心：白化再着色）、两种三步串联（直方图-多元高斯-直方图、直方图-MMD-直方图）、Reinhard 的整批 4D 实现、仅匹配均值；训练无关、纯 torch，出口走 LCh 保色相缩 chroma 而非逐通道硬裁；遮罩 / 羽化 / 强度 / 匹配范围 / 参考取帧 / 目标统计 / 遮罩用途 / 参考遮罩 / 细节回填是本插件自己的参数划分 |
+| `QG_ImageResize` | 图像缩放 | 原创 | 本插件自己写（参考 rgthree-comfy（MIT）「RgthreeImageResize」的用法，代码重写）；自写（10-30 换掉 v0.8.0 的搬运版）：ID / 六个控件的顺序 / 三路输出都不变，仍走核心 common_upscale。修掉三处 —— percentage 下 1% 的窄图换算后是 0 像素，与「没填」的哨兵撞车，原版会把 1% 读成整宽；1000x1 这种图按宽推高算出 0，common_upscale 直接抛；无操作分支原版返回输入张量本身（其余分支返回新张量），输出是否与上游共 storage 取决于走哪条分支 |
+| `QG_ImageOrLatentSize` | 图像或 Latent 尺寸 | 原创 | 本插件自己写（参考 rgthree-comfy（MIT）「Image or Latent Size」的用法，代码重写）；自写（10-30 换掉搬运版）：ID / 通配输入 / 两路 INT / WIDTH·HEIGHT 槽名全不变。🔴 **修掉的核心缺陷：只认四维张量**，而 ComfyUI 的 MASK 主流是**三维** —— `ImageToMask` 给 `image[:,:,:,channel]`、`LoadImage` 给 `mask.unsqueeze(0)`，都是 `(B,H,W)`。旧版 `if len(shp)==4` 之外一律 `return (0,0)`，于是接最常见的遮罩得到 0×0，且没有任何提示（真机：同一张图 IMAGE 读 2560×3413、MASK 读 0×0）。现在 2/3/4 维都认：三维 `(B,H,W)`、二维 `(H,W)`、四维 `(B,1,H,W)`。🔴 四维歧义（`(B,H,W,C)` 与 `(B,1,H,W)` 都是四维）不能只看第二维 —— 高度为 1 的图会被当成遮罩；判据改成「第二维为 1 **且** 末维不是通道数（1/3/4）才算遮罩」。另修一处：通配 `*` 输入漏了 `forceInput`，前端会在画布上多画一个填了也没用的文本框（QG_Exists / QG_RouteBlocker 同款）。LATENT 取最后两维（支持五维视频 latent）×8。断言 `tools/_check_image_or_latent_size.py`（29 项）+ 真机 `_check_image_or_latent_size_live.py`（12 项） |
+| `QG_GoogleTranslateText` | Google Translate | 原创 | 本插件自己写（参考 ComfyUI_Custom_Nodes_AlekPet（MIT）「GoogleTranslateTextNode」的用法，代码重写）；上游依赖 googletrans（驱动未公开的 Google 网页端点，隔几个月坏一次）；这里直接用 requests 打同一批端点，代码里没有一行上游实现 |
+| `QG_AnySwitch` | 任意切换 | 原创 | 本插件自己写（参考 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiAnySwitch」的用法，代码重写）；自写（10-30 换掉 v0.8.5 的搬运版）：ID / 16 个槽名 / 输出名 / 分类 / * 通配类型全不变，槽序仍只认数字后缀（前端会把槽名改成「图像_1」这种可读文字，按名字认槽会乱序丢线）。修掉三处 —— ① 音频 {waveform} 和任意字典同算 dict，混接被放行（真机复现：音频配一路杂字典，原版原样输出）；② 报错只列类型不列槽，IMAGE, LATENT 得自己数到第几路，现在写 any_02 是 LATENT；③ 「一路没接」与「接了但值全空」都报「所有输入均为空」，可两者修法完全不同（去接线 / 查上游为什么吐空），现在分开报。另修：AnyType 覆盖 __eq__ 却没给回 __hash__，Python 会把 __hash__ 置空让实例不可哈希（实测 TypeError，任何 {类型: …} 或 set() 都会炸），通配类型已抽到 nodes/_qg_any_type.py 复用。📌 刻意不做懒执行：判空必须先求值，输入一懒就变成逐路索要 + 反复重调度；真要省掉整条分支的计算，If / Else 才合适 |
+| `QG_DisplayAny` | 展示任意 | 原创 | 本插件自己写（参考 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiDisplayAny」的用法，代码重写）；自写（10-30 换掉 v0.8.5 的搬运版）：ID / 槽名 Any / 输出名 Any / OUTPUT_NODE / ui 键 qg_display 及其 type/size/text/images/audio/video 字段全不变。修掉四处 —— ① **四维遮罩预览不了**：官方写明 MASK 是 [H,W] 或 [B,C,H,W]，原版只认前两种，拿到 [B,1,H,W] 直接抛「遮罩应为 [B,H,W] 或 [H,W]」，界面上只看到「预览失败」；② **没接线时显示字符串 "None"**（describe(None) 的返回值），现在发 notice 代码让前端出提示；③ 后端把「预览失败」「该视频格式不支持」两句中文拼进 text，英文界面也是中文，现在后端只说代码、文案在前端 zhPair；④ **prompt 钩子会把唯一目标也摘掉** —— 「只执行选中的节点」选中展示节点时 targets 只有它，摘完变成空列表，核心 validate_prompt 判 Prompt has no outputs 直接拒单（真机复现）；现在摘完为空就不摘。另修：顶层超长文本原样全推（10MB 就整段走 WebSocket 再进 DOM），现封顶 100000 字符并给 notice；AnyType 覆盖 __eq__ 未给 __hash__（见 _qg_any_type.py）；PromptServer.instance 是实例属性、无服务器时直接访问是 AttributeError 不是 None，原版那句会让整包 import 失败。前端面板另把 20 处硬编码中文改成 zhPair（槽位类型名 / 文本字号 / 复制保存提示 / 画册按钮 / 右键菜单），并新增 notice 渲染。📌 保留：预览失败绝不阻断数据流、out 与 in 是同一个对象 |
+| `QG_RouteBlocker` | 路由阻断 | 原创 | 本插件自己写（参考 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiRouteBlocker」的用法，代码重写）；自写（10-30 换掉 v0.8.0 的搬运版）：ID / 槽名 / 选项值 / 三种结果全不变，老工作流照开。真改进是给 any 加 lazy —— 搬运版先求值上游再判断，开关打开时整条上游照样跑完（贵采样器白跑一遍）才把结果丢掉；现在开关打开时上游一个节点都不排队。any 没接线用 _MISSING 哨兵区分，lazy 输入下 None 表示「接了还没求值」，混用会让没接的线一直空等 |
+| `QG_IfElse` | 是否判断 | 原创 | 本插件自己写（参考 ComfyUI-Easy-Use（GPL-3.0）「easy ifElse」的用法，代码重写）；自写（10-30 换掉 v0.8.0 的搬运版）：ID / 槽名 / 懒执行都不变，老工作流照开。两路改成 optional + lazy，只接一路也成立（那一路总被选中），读法与核心 ComfySwitchNode 一致；两路全空在 VALIDATE_INPUTS 拦，否则懒状态会一直索要一个不存在的输入 |
 | `QG_MDReader` | 加载文档 | 原创 | 本插件自己写（作者自有旧插件 ComfyUI-MD-Reader（MIT）「MarkdownFileReader」合并进来）；扫 input（4 层）与旁边 md / markdown / prompts / prompt 目录；节点内带预览、放大窗与一键复制 |
 | `QG_TripleLoader` | 模型加载器 | 原创 | 本插件自己写（作者自有旧插件 ComfyUI-TripleLoader（MIT）「TripleLoader」合并进来）；import 期就实例化内置 UNET / CLIP / VAE Loader |
 | `QG_StringSwitch` | 字符串切换 | 原创 | 本插件自己写（参考 ComfyUI-Crystools（GPL-3.0）「Switch string [Crystools]」的用法，代码重写）；只借「两个分支是可编辑框而不是槽」这个思路，文案也全部重写 |
@@ -259,32 +315,14 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 | `QG_MaskCrop` | 遮罩裁剪 | 原创 | 本插件自己写（参考 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GH_MaskCropV2」的用法，代码重写）；自写。功能对位孤海「遮罩裁剪V2」，代码一行没抄：几何全在 nodes/_qg_mask_crop_helpers.py 的纯函数里（plan_crop 负责四方向按最短边倍数扩展、native / square / custom 三种取景、multiple 向上取整），不依赖 PIL / cv2 / scipy；越界部分按方向取边缘众数色或边缘拉伸填充（孤海是 PIL putpixel 逐像素写）；custom 用 cover 语义先扩矩形再 resize，不会像 fit 那样把主体压窄；整批共用并集包围盒，视频帧不抖 |
 | `QG_CropRestore` | 裁剪恢复 | 原创 | 本插件自己写（参考 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GH_CropRestore」的用法，代码重写）；自写。功能对位孤海「裁剪恢复」，代码重写：像素级 expand / feather 取代百分比；只写落在画面内的部分，遮罩外像素与原件逐像素相同（同尺寸回贴实测差 0）；另加可选的整体中位配色对齐，孤海那套排除重绘区的加权最小二乘没有照搬 |
 | `QG_MaskAlign` | 遮罩对齐 | 原创 | 本插件自己写（参考 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「孤海-遮罩对齐」的用法，代码重写）；自写。功能对位孤海「遮罩对齐v2」，代码重写：两个轴各给四个锚点（center / left / right / top / bottom / none），不是开关二选一；搬移保留原始软边，不重画成矩形；整批只算一个偏移（包围盒取并集），视频帧不漂；aligned 与 bbox 拆成两个输出，union_bbox 才与参考取并集 |
+| `QG_CropForInpaint` | 重绘裁剪 | 原创 | 本插件自己写（参考 ComfyUI-AusBoss（MIT）「Crop For Inpaint 🆎」的用法，代码重写）；自写。参数与上游逐项一致、范围默认值都对齐（tools/_check_stitch_inpaint.py 的 A 组断言），因为缝合数据是跨插件契约：同一个 stitcher 必须能被两边的 Stitch Inpaint 读出同样结果。算法不另写，直接用 v0.5.0 随「裁剪+旋转+补边」搬进来的 _qg_inpaint_crop_helpers.build_crop；节点层只做三件事——把 18 个控件原样转进去、接住空遮罩、在开头结尾查中断。比上游多一步：核心加载图像没画遮罩时给的 64×64 全零占位先换成同尺寸零遮罩，让它走「选整图、原样贴回」那条分支，而不是被判尺寸不符整条 prompt 崩掉（10-29 在遮罩裁剪上踩过同一个坑） |
+| `QG_StitchInpaint` | 重绘缝合 | 原创 | 本插件自己写（参考 ComfyUI-AusBoss（MIT）「Stitch Inpaint 🆎」的用法，代码重写）；自写。上游整个 stitch() 就是 apply_stitch + stitch_blend_mask 两行，算法同样直接用搬进来的 helper，节点层只补输入校验和老存档容错：seam 为空串/None 时按 classic 走（VALIDATE_INPUTS 也要放行，否则老工作流排不进队列）。输出与上游逐像素一致（含 color_match、fix_edge_halo、seam=blend in 对 Crop 缝合数据降级这三种组合），四种交叉接线也一一验过：AusBoss 的 stitcher 喂本节点、本节点的 stitcher 喂 AusBoss 节点，结果全等 |
 | `QG_FreeMemory` | Free Memory | 搬运 | ComfyUI-AusBoss（MIT）「Free Memory 🆎」 |
-| `QG_MaskRefine` | Mask Refine | 搬运 | ComfyUI-AusBoss（MIT）「Mask Refine 🆎」 |
 | `QG_LoraLoader` | LoRA Loader | 搬运 | ComfyUI-AusBoss（MIT）「LoRA Loader 🆎」 |
-| `QG_ImageCropRotatePad` | Image Crop + Rotate + Pad | 搬运 | ComfyUI-AusBoss（MIT）「Image Crop + Rotate + Pad 🆎」 |
 | `QG_WorkflowNote` | Workflow Note | 搬运 | ComfyUI-AusBoss（MIT）「Workflow Note 🆎」 |
 | `QG_WorkflowSwitches` | Workflow Switches | 搬运 | ComfyUI-AusBoss（MIT）「Workflow Switches 🆎」 |
-| `QG_RunTimer` | Run Timer | 搬运 | ComfyUI-AusBoss（MIT）「Run Timer」 |
 | `QG_ImageCompare` | 图像对比 | 搬运 | ComfyUI-AusBoss（MIT）「Image Compare A/B 🆎」 |
 | `QG_Seed` | 种子 | 搬运 | ComfyUI-AusBoss + rgthree-comfy（MIT）「Seed 🆎 / Seed」 |
-| `QG_TextEditOutput` | Text | 搬运 | ComfyUI_Muye（MIT）「Text Edit Output」 |
-| `QG_ImageWatermark` | 图像水印 | 搬运 | ComfyUI_Muye（MIT）「AddImageWatermark」 |
-| `QG_TextOverlayImage` | 文字叠加图像 | 搬运 | ComfyUI_Muye（MIT）「TextOverlayImage」 |
-| `QG_ImageGrid` | 宫格图像拼接 | 搬运 | ComfyUI_Muye（MIT）「MuyeGridImageConcat」 |
-| `QG_MaskColorize` | 遮罩上色 | 搬运 | ComfyUI_Muye（MIT）「MaskColorize」 |
-| `QG_MaskConcat` | 遮罩拼接 | 搬运 | ComfyUI_Muye（MIT）「MaskConcatenate」 |
-| `QG_TextSplit` | 文本按分隔符分割 | 搬运 | ComfyUI_Muye（MIT）「TextSplitByDelimiterEnhanced」 |
-| `QG_SizeSelector` | 尺寸选择器 | 搬运 | ComfyUI_Muye（MIT）「MuyeSizeSelector」 |
-| `QG_TextConcat` | 文本合并 | 搬运 | ComfyUI_Comfyroll_CustomNodes（MIT）「CR_TextConcatenate」 |
-| `QG_TextReplace` | 文本替换 | 搬运 | ComfyUI_Comfyroll_CustomNodes（MIT）「CR_TextReplace」 |
-| `QG_ImageResize` | 图像缩放 | 搬运 | rgthree-comfy（MIT）「RgthreeImageResize」 |
-| `QG_ImageOrLatentSize` | 图像或 Latent 尺寸 | 搬运 | rgthree-comfy（MIT）「Image or Latent Size」 |
-| `QG_GoogleTranslateText` | Google Translate | 搬运 | ComfyUI_Custom_Nodes_AlekPet（MIT）「GoogleTranslateTextNode」 |
-| `QG_AnySwitch` | 任意切换 | 搬运 | 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiAnySwitch」 |
-| `QG_DisplayAny` | 展示任意 | 搬运 | 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiDisplayAny」 |
-| `QG_RouteBlocker` | 路由阻断 | 搬运 | 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiRouteBlocker」 |
-| `QG_IfElse` | 是否判断 | 搬运 | ComfyUI-Easy-Use（GPL-3.0）「easy ifElse」 |
 
 <!-- QG-ORIGINS:END -->
 
@@ -455,7 +493,7 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 ## Image Crop + Rotate + Pad（裁剪 + 旋转 + 补边）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_ImageCropRotatePad`）· ComfyUI-AusBoss（MIT）「Image Crop + Rotate + Pad 🆎」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_ImageCropRotatePad`）· 参考 ComfyUI-AusBoss（MIT）「Image Crop + Rotate + Pad 🆎」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -725,7 +763,7 @@ Scale Image to Total Pixels 同语义）。
 ## Run Timer（运行计时器）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_RunTimer`）· ComfyUI-AusBoss（MIT）「Run Timer」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_RunTimer`）· 参考 ComfyUI-AusBoss（MIT）「Run Timer 🆎」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -822,7 +860,7 @@ Scale Image to Total Pixels 同语义）。
 ## Text（文本）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_TextEditOutput`）· ComfyUI_Muye（MIT）「Text Edit Output」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_TextEditOutput`）· 参考 ComfyUI_Muye（MIT）「Text Edit Output」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -830,13 +868,18 @@ Scale Image to Total Pixels 同语义）。
 （提示词、文件名、说明文字都行）。
 
 - **整段输出，不切分** —— 多行文本作为一个元素传出，不会因为换行被拆成多路
+- **可以接上游** —— 框里的字是默认值；把一根字符串接到 `text` 上，这一次就用上游的，
+  框里存的内容不动。所以它也能当兜底
+- **输出的是「只有一项的列表」** —— 普通字符串消费者（文本编码器、文件名、文本合并）
+  会被 ComfyUI 自动拆回来，拿到的就是那个字符串；只有声明了列表输入的节点才会拿到列表。
+  所以接哪儿都行，不用为它挑下游
 - **零依赖** —— 纯 Python 输出节点，不加载模型，不需要任何 pip 包
 
 ### 输入 / 输出
 
 | 方向 | 名称 | 说明 |
 |---|---|---|
-| 输入（必填） | `text` | 手动输入的多行文本 |
+| 输入（必填） | `text` | 手动输入的多行文本；接上游则那一次以上游为准 |
 | 输出 | `text` | 整段文本（单元素 STRING 列表） |
 
 ---
@@ -844,7 +887,7 @@ Scale Image to Total Pixels 同语义）。
 ## 任意切换（动态多输入开关）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_AnySwitch`）· 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiAnySwitch」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_AnySwitch`）· 参考 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiAnySwitch」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -868,7 +911,7 @@ Scale Image to Total Pixels 同语义）。
 ## 展示任意（任意输入预览 + 透传）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_DisplayAny`）· 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiDisplayAny」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_DisplayAny`）· 参考 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiDisplayAny」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -897,7 +940,7 @@ Scale Image to Total Pixels 同语义）。
 ## 是否判断（布尔懒分支）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_IfElse`）· ComfyUI-Easy-Use（GPL-3.0）「easy ifElse」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_IfElse`）· 参考 ComfyUI-Easy-Use（GPL-3.0）「easy ifElse」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -957,7 +1000,7 @@ Scale Image to Total Pixels 同语义）。
 ## 路由阻断（这条线走不走）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_RouteBlocker`）· 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiRouteBlocker」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_RouteBlocker`）· 参考 孤海工具箱 Goohaitools-comfyui（GPL-3.0）「GoohaiRouteBlocker」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -969,11 +1012,11 @@ Scale Image to Total Pixels 同语义）。
   程序化地给这条线按了 Ctrl+M；图里其它分支照跑
 - **可以接上游** —— 「是否阻断」是个布尔输入，接布尔开关、比较节点、或另一个「存在判断」
   都行，让流程自己决定走不走
+- **打开就不花钱** —— 开关打开时，这条线**上游的所有节点都不会被求值**。所以「条件不满足
+  就整段不跑」不用再靠把采样器拖出来手动绕过，掐在这里就行：贵的分支一个字节都不花
 
 和「是否判断」的分工很清楚：那个是**二选一、只走一条**；这个是**走不走、走到哪为止**，
 不用把线路拆成两股，串在任意位置就行。
-
-> 搬运自孤海工具箱（GoohaiTools）的「路由阻断」，GPL-3.0，保留原出处。
 
 ### 输入 / 输出
 
@@ -1358,7 +1401,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 图像水印
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_ImageWatermark`）· ComfyUI_Muye（MIT）「AddImageWatermark」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_ImageWatermark`）· 参考 ComfyUI_Muye（MIT）「AddImageWatermark」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1387,7 +1430,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 文字叠加图像
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_TextOverlayImage`）· ComfyUI_Muye（MIT）「TextOverlayImage」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_TextOverlayImage`）· 参考 ComfyUI_Muye（MIT）「TextOverlayImage」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1415,7 +1458,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 宫格图像拼接
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_ImageGrid`）· ComfyUI_Muye（MIT）「MuyeGridImageConcat」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_ImageGrid`）· 参考 ComfyUI_Muye（MIT）「MuyeGridImageConcat」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1441,7 +1484,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 遮罩上色
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_MaskColorize`）· ComfyUI_Muye（MIT）「MaskColorize」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_MaskColorize`）· 参考 ComfyUI_Muye（MIT）「MaskColorize」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1467,7 +1510,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 遮罩拼接
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_MaskConcat`）· ComfyUI_Muye（MIT）「MaskConcatenate」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_MaskConcat`）· 参考 ComfyUI_Muye（MIT）「MaskConcatenate」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1492,7 +1535,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 遮罩精修
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_MaskRefine`）· ComfyUI-AusBoss（MIT）「Mask Refine 🆎」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_MaskRefine`）· 参考 ComfyUI-AusBoss（MIT）「Mask Refine 🆎」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1621,10 +1664,58 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 
 ---
 
+## 重绘裁剪 / 重绘缝合
+
+<!-- QG-ORIGIN:BEGIN -->
+> **来源**：原创（`QG_CropForInpaint`）· 参考 ComfyUI-AusBoss（MIT）「Crop For Inpaint 🆎」的用法，代码自写
+> **来源**：原创（`QG_StitchInpaint`）· 参考 ComfyUI-AusBoss（MIT）「Stitch Inpaint 🆎」的用法，代码自写
+<!-- QG-ORIGIN:END -->
+
+一对留给「重绘」的节点：`重绘裁剪` 按遮罩把要画的地方裁出来，`重绘缝合` 把画完的结果贴回去。
+
+跟 `遮罩裁剪 → 裁剪恢复` 的分工：
+
+| | 遮罩裁剪 → 裁剪恢复 | 重绘裁剪 → 重绘缝合 |
+|---|---|---|
+| 用途 | 纯几何裁剪，切出来给放大、换脸、单独处理 | 重绘 / 扩图，模型要看得懂周边 |
+| 上下文 | 按最短边倍数扩边 | `上下文倍数` + `额外上下文`，还能按目标面积重采样 |
+| 贴回 | 硬贴，只按羽化混 | 羽化混 + 色调匹配 + 边缘光环修复 + 沿画面自身边缘渐变 |
+| 数据 | 自家一对 `QGSeam` | `AUSBOSS_STITCHER`，和 AusBoss 互通 |
+
+### 重绘裁剪
+
+按遮罩包围盒裁出区域，四周带上下文，缩放到采样器接受的尺寸，同时输出一份**缝合数据**。
+
+- `上下文倍数` —— 1.0 紧贴遮罩，1.2 是默认值
+- `贴回羽化` —— 只羽化贴回那条边，不动采样遮罩；要改重绘范围用 `遮罩扩缩` / `遮罩羽化`
+- `目标面积` / `目标宽高` —— 把裁剪图缩放到目标尺寸，`尺寸对齐` 保证能被采样器接受
+- `向左 / 右 / 上 / 下扩` —— 直接长画幅，这就是它的扩图用法
+- `不越界`（默认开）—— 上下文碰到画面边缘就停，模型只看到真实像素
+
+三个输出：`裁剪图像`、`采样遮罩`、`缝合数据`。
+
+**遮罩是空的就选整张画面**，缝合回来原样不动。核心「加载图像」没画遮罩时给的 64×64 占位算「空」不算「错」，不会把整条 prompt 拦下来。
+
+### 重绘缝合
+
+- `缝合数据` —— 接 `重绘裁剪`；扩图接了补边画布时，也可以接 `裁剪 + 旋转 + 补边`
+- `重绘图像` —— 采样器出来的结果；尺寸被采样器改过也没关系，会先缩放回裁剪窗口
+- `接缝方式` —— `经典贴回`（默认，既有工作流都是它）/ `融入画面`（扩图、斜着转更自然，沿画面自身边缘渐变交给原图）
+- `色调匹配` —— 新区回来偏亮、偏暗或偏暖时往回调，需要羽化才有意义
+- `边缘光环修复` —— 羽化接缝留下一圈暗边或亮边时打开，需要可选的 `pymatting`
+
+缝合没碰到的像素**与原始画面逐位相同**，不经过任何缩放。`混合遮罩` 标出改动范围，可以接色调匹配或合成节点。
+
+### 和 AusBoss 互通
+
+槽类型是 `AUSBOSS_STITCHER`、数据里的 `kind` 是 `ausboss_inpaint_stitcher`，这两个字符串**故意保留原样**：两个插件都装时，任意一边的裁剪都能喂任意一边的缝合，结果逐像素一致（`tools/_check_stitch_inpaint.py` 里 52 项断言守着这条）。改名会让两边互相不认识，老工作流直接断线。
+
+---
+
 ## 文本替换
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_TextReplace`）· ComfyUI_Comfyroll_CustomNodes（MIT）「CR_TextReplace」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_TextReplace`）· 参考 ComfyUI_Comfyroll_CustomNodes（MIT）「CR_TextReplace」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1657,7 +1748,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 文本按分隔符分割
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_TextSplit`）· ComfyUI_Muye（MIT）「TextSplitByDelimiterEnhanced」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_TextSplit`）· 参考 ComfyUI_Muye（MIT）「TextSplitByDelimiterEnhanced」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1684,7 +1775,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 文本合并（两段拼一段）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_TextConcat`）· ComfyUI_Comfyroll_CustomNodes（MIT）「CR_TextConcatenate」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_TextConcat`）· 参考 ComfyUI_Comfyroll_CustomNodes（MIT）「CR_TextConcatenate」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1709,7 +1800,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## Google 翻译（提示词对翻）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_GoogleTranslateText`）· ComfyUI_Custom_Nodes_AlekPet（MIT）「GoogleTranslateTextNode」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_GoogleTranslateText`）· 参考 ComfyUI_Custom_Nodes_AlekPet（MIT）「GoogleTranslateTextNode」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1745,7 +1836,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 尺寸选择器
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_SizeSelector`）· ComfyUI_Muye（MIT）「MuyeSizeSelector」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_SizeSelector`）· 参考 ComfyUI_Muye（MIT）「MuyeSizeSelector」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1817,7 +1908,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 图像缩放（像素或百分比，crop / pad / contain）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_ImageResize`）· rgthree-comfy（MIT）「RgthreeImageResize」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_ImageResize`）· 参考 rgthree-comfy（MIT）「RgthreeImageResize」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 
@@ -1850,7 +1941,7 @@ clamp 回 `[0,1]`，中间不做 8bit 往返，所以渐变不出色阶。小波
 ## 图像或 Latent 尺寸（一个入口读宽高）
 
 <!-- QG-ORIGIN:BEGIN -->
-> **来源**：搬运（`QG_ImageOrLatentSize`）· rgthree-comfy（MIT）「Image or Latent Size」，只改类名 / 分类 / 显示名 / 中文文案
+> **来源**：原创（`QG_ImageOrLatentSize`）· 参考 rgthree-comfy（MIT）「Image or Latent Size」的用法，代码自写
 <!-- QG-ORIGIN:END -->
 
 

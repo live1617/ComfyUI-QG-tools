@@ -13,21 +13,22 @@
 //    size 只算主体，别把 30 加进去。
 
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102915";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026103135";
 import {
   chainCallback,
+  chainHandler,
   keepDomWidgetWidthAuto,
   notifyQgChange,
   zh,
-} from "../shared/index.mjs?v=2026102915";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026102915";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102915";
+} from "../shared/index.mjs?v=2026103135";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026103135";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
-} from "../shared/vue_mode.mjs?v=2026102915";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102915";
+} from "../shared/vue_mode.mjs?v=2026103135";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026103135";
 
 const NODE_CLASS = "QG_BoolToggle";
 const WIDGET_NAME = "qg_bool_toggle_panel";
@@ -526,7 +527,10 @@ function installCanvasHooks(node) {
     drawCard(this, ctx);
   });
 
-  chainCallback(node, "onMouseDown", function (event, pos) {
+  // 🔴 chainHandler 而不是 chainCallback：后者只转发前一个处理器的返回值，
+  // 这里 `return true` 会被丢掉，LiteGraph 于是照样把这一下当成拖节点 ——
+  // 点一下胶囊，开关翻了，节点也跟着被拖走。
+  chainHandler(node, "onMouseDown", function (event, pos) {
     if (!canvasMode(this) || !hitPill(this, pos)) return;
     flip(this);
     return true; // 吃掉这一下，别让它变成拖节点
@@ -552,7 +556,7 @@ function installCanvasHooks(node) {
   });
 
   // 双击卡片改标签。返回 true 把这一下吃掉，否则 LiteGraph 会去改节点标题。
-  chainCallback(node, "onDblClick", function (event, pos) {
+  chainHandler(node, "onDblClick", function (event, pos) {
     if (!canvasMode(this)) return;
     if (!pos || pos[0] < 0 || pos[0] > (this.size?.[0] ?? 0)) return;
     openLabelEditor(this);

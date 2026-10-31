@@ -1,7 +1,18 @@
-"""Image Crop + Rotate + Pad (ported from ComfyUI-AusBoss).
+"""Image Crop + Rotate + Pad.
 
-Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
-display name localized, tooltips and comments rewritten.
+Interface taken from ComfyUI-AusBoss's ``Image Crop + Rotate + Pad 🆎`` (MIT):
+node id, socket names, widget order and the transform spec follow it, so a
+workflow saved against that node opens here and runs the same way.
+
+The processing is not AusBoss's code. This file is a shell - declare the inputs,
+call the engine, pack seven outputs - and every pixel operation lives in
+``_qg_transform_engine.py``, written here and shared with QG_LoadImage's mask
+editor (edit it and both paths need re-checking). No line of the upstream
+implementation is left in this pack, which is why ORIGINS.json files this node
+as original with the interface noted as a reference.
+
+Modified for ComfyUI-QG-tools on 2026-10-24; implementation replaced by the QG
+transform engine on 2026-10-30.
 Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 

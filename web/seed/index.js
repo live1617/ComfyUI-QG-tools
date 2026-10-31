@@ -15,19 +15,19 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026102915";
+import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
 import {
   BRAND,
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026102915";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026102915";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026102915";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026102915";
-import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026102915";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026102915";
-import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026102915";
+} from "../shared/index.mjs?v=2026103135";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026103135";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026103135";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026103135";
+import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026103135";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
+import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026103135";
 
 const NODE_CLASS = "QG_Seed";
 const CSS_ID = "qgtools-seed-css";
@@ -251,12 +251,31 @@ function button(className, text, title) {
 
 // v0.8.4 及更早用的是哨兵值（-1 随机 / -2 递增 / -3 递减），这个模型已经没有
 // 负数的位置了，加载老工作流时把它们翻译成「模式 + 一个具体种子」。
-function migrateLegacy(node, savedValues) {
+// 存档里的「生成后控制」值。两种形态都要认：
+//   数组 —— 按控件顺位，`widgets_values: [42, "randomize"]`
+//   字典 —— 按控件名，`widgets_values: {seed: 42, control_after_generate: "randomize"}`
+// 🔴 只认数组时字典形读出来是空表，`savedMode` 恒为 null，于是「随机」被判成
+// 「老存档没存模式」，一路被改成「固定」—— 用户存了随机种子，重开工作流每次
+// 出一样的图，而且卡片上明明写着「固定」，看不出是被改的。
+function savedControl(config) {
+  const raw = config?.widgets_values;
+  if (Array.isArray(raw)) {
+    return typeof raw[1] === "string" ? raw[1] : null;
+  }
+  if (raw && typeof raw === "object") {
+    // 键名取的是控件名；不同前端建的联动控件用过这几个
+    for (const key of ["control_after_generate", "control", "seed_mode"]) {
+      const mode = raw[key];
+      if (typeof mode === "string") return mode;
+    }
+  }
+  return null;
+}
+
+function migrateLegacy(node, savedMode) {
   const widget = seedWidget(node);
   if (!widget) return;
   const value = Number(widget.value);
-  const savedMode = Array.isArray(savedValues) && typeof savedValues[1] === "string"
-    ? savedValues[1] : null;
   if (Number.isFinite(value) && value < 0) {
     const mode = value === -2 ? "increment" : value === -3 ? "decrement" : "randomize";
     widget.value = rollSeed();
@@ -417,8 +436,13 @@ app.registerExtension({
   name: "QG.Seed",
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData?.name !== NODE_CLASS) return;
-    // seed 是卡片自己管的，别在节点左边留一个输入点（也能防止别人把种子
-    // 从外面接进来又把卡片绕过去）。
+    // seed 的**控件**由卡片接管，所以在定义层就把它藏掉：前端恢复工作流、
+    // 重建 after-generate 控件、Nodes 2.0 挂载时都会从这份 spec 重新生成
+    // widget.options，只在运行时藏（hideWidget）挡不住重建。
+    // 🔴 注意别写成「藏掉输入槽」—— 前端对 INT 是**既建控件又建输入槽**的
+    // （litegraphService 的 addInputWidget 末尾 node.addInput），这行只影响控件；
+    // 槽留着是有意的，允许从外面把种子接进来，卡片会显示「种子来自输入连线」
+    // 并禁用输入框（见 seedLinked）。
     hideInputsInDef(nodeData, ["seed"]);
 
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
@@ -434,11 +458,12 @@ app.registerExtension({
     });
 
     chainCallback(nodeType.prototype, "onConfigure", function (config) {
-      const saved = Array.isArray(config?.widgets_values) ? config.widgets_values : [];
+      // 先取模式再排队：queueMicrotask 里 config 可能已经被后续的恢复流程改过
+      const savedMode = savedControl(config);
       queueMicrotask(() => {
         const state = buildPanel(this);
         if (!state) return;
-        migrateLegacy(this, saved);
+        migrateLegacy(this, savedMode);
         render(state);
       });
     });

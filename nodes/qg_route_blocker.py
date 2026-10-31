@@ -1,64 +1,74 @@
 # -*- coding: utf-8 -*-
-from ._qg_combo_legacy import combo_legacy
-"""QG 路由阻断 —— 一条线路的总开关：原样放行、换成空值，或者静默掐断。
+"""QG 路由阻断 — a switch that sits on a wire and can stop the current behind it.
 
-Ported from GoohaiTools (孤海工具箱) ``GoohaiRouteBlocker``「路由阻断」, GPL-3.0.
+Written for ComfyUI-QG-tools on 2026-10-30, replacing the GoohaiTools port
+that shipped in v0.8.0. The node id, socket names, option values and the three
+outcomes are unchanged, so a saved workflow opens and runs exactly as before.
 
-给「某些时候不该往下走」的流程一个开关位：
+Three outcomes, one switch
+--------------------------
+    any ──► [route blocker] ──► any
 
-    any ──► [路由阻断] ──► any
+- **pass** (switch off): the value moves through; the node is a piece of wire.
+- **empty**: the output becomes None and downstream still runs, leaving the
+  empty value for it to deal with. Right when the rest of the graph should
+  finish anyway, just without this one contribution.
+- **cut**: the output becomes ComfyUI's own ExecutionBlocker, so everything
+  behind this node is skipped silently - the same as muting that one wire by
+  hand, with the other branches left alone.
 
-- **通过**（开关关着）→ 原样透传，和一根导线没区别
-- **阻断 + empty** → 输出 None，下游照常执行、自己去处理空值。
-  适合「关掉这一路附加描述」这种仍然要跑完的场景
-- **阻断 + cut** → 输出 ComfyUI 原生的 ``ExecutionBlocker``，
-  下游节点被静默跳过，等于程序化地按了 Ctrl+M，但只掐这一条线，
-  图里其它分支照跑
+What the rewrite changed
+------------------------
+The port evaluated ``any`` before deciding anything, so a blocked route still
+built its entire upstream: the expensive sampler ran, produced a latent, and
+was thrown away. Blocking is only worth having if the current stops *behind*
+the switch, so ``any`` is lazy now and ``check_lazy_status`` asks for it only
+when the switch is off. With the switch on, nothing upstream of this node is
+queued at all.
 
-和 ``QG_IfElse`` 的分工：那个是「二选一、只走一条」，这个是「走不走、
-走到哪一步为止」，可以串在任意位置，不用把线路拆成两股。
+That is also why ``any`` is read through a missing-value sentinel. With lazy
+inputs ``None`` already means "connected, not evaluated yet", so it cannot
+also mean "nothing is wired here". A socket that was never connected does not
+arrive at all; telling the two apart is what stops an unwired node from
+waiting forever on a value that does not exist.
 
-``any`` 是可选输入：没接线时它就是 None，阻断与否都不报错。
+Wiring notes
+------------
+``any`` is optional, which makes the node usable as a programmable mute: leave
+the input empty, switch it on, cut mode, and the wire behind it goes quiet
+without moving a single link.
 
-Modified for ComfyUI-QG-tools on 2026-10-24: renamed to the QG_ prefix, category and
-display name localized, tooltips and comments rewritten.
-Third-party notice: THIRD-PARTY-NOTICES.md.
+``mode`` keeps its old Chinese values in ``_qg_combo_legacy.LEGACY``. The
+option strings were rewritten to English in v0.8.0, so workflows saved before
+that still hold the Chinese ones and need translating before they run.
+
+Only core modules are used -- no new dependency.
 """
+
+from ._qg_any_type import ANY
+from ._qg_combo_legacy import combo_legacy
 
 try:  # 旧版本 ComfyUI 没有这个模块；缺了就只有 empty 一种模式
     from comfy_execution.graph import ExecutionBlocker
 except Exception:  # pragma: no cover
-    ExecutionBlocker = ()
-
-
-class AnyType(str):
-    """ComfyUI 的「任意类型」占位：与任何类型比较都返回相等，槽类型标 * 即可。"""
-
-    def __ne__(self, value):
-        return False
-
-    def __eq__(self, value):
-        return True
-
-    def __str__(self):
-        return "*"
-
-
-ANY = AnyType("*")
+    ExecutionBlocker = None
 
 MODE_NULL = "empty"
 MODE_CUT = "cut"
+
+# 没接线时参数就是这个对象；接上了但还没求值才是 None。
+_MISSING = object()
 
 
 @combo_legacy("QG_RouteBlocker")
 class QGRouteBlocker:
     CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
-        "A switch for one wire. When the switch is off the value passes through "
-        "untouched. When it is on, empty replaces the value with None and lets "
-        "downstream nodes run anyway, while cut emits ComfyUI's ExecutionBlocker "
-        "so everything behind this node is skipped silently, the same effect as "
-        "muting a branch without rerouting the graph."
+        "A switch for one wire. Off passes the value through untouched. On, "
+        "empty replaces it with None and lets downstream run anyway, while cut "
+        "emits ComfyUI's ExecutionBlocker so everything behind this node is "
+        "skipped silently. The wire is lazy: while the switch is on, nothing "
+        "upstream of this node is evaluated at all."
     )
 
     @classmethod
@@ -70,8 +80,8 @@ class QGRouteBlocker:
                     "label_on": "阻断",
                     "label_off": "通过",
                     "tooltip": "Off passes the value straight through, as if this node were not on the wire; on "
-                               "hands it to the mode below. You can also wire in an upstream boolean and let the "
-                               "graph decide for itself.",
+                               "hands it to the mode below, and stops the upstream from being evaluated at all. "
+                               "You can also wire in an upstream boolean and let the graph decide for itself.",
                 }),
                 "mode": ([MODE_NULL, MODE_CUT], {
                     "default": MODE_NULL,
@@ -82,12 +92,14 @@ class QGRouteBlocker:
                 }),
             },
             "optional": {
-                # optional 不是「可以不填」，是「没接也能跑」：没接线时拿到的就是
-                # None，阻断与否都能正常执行。
+                # optional 不是「可以不填」，是「没接也能跑」：没接线时它根本不出现，
+                # 阻断与否都能正常执行。lazy 才是省算力的那一半 —— 开关打开时
+                # 上游整条链都不会被排进队列。
                 "any": (ANY, {
                     "forceInput": True,
-                    "tooltip": "The value to pass or to cut, of any type. Unwired it is already empty, so "
-                               "emitting an empty value raises nothing.",
+                    "lazy": True,
+                    "tooltip": "The value to pass or to cut, of any type. Not evaluated while the switch is on, "
+                               "so a blocked route costs nothing upstream.",
                 }),
             },
         }
@@ -108,11 +120,21 @@ class QGRouteBlocker:
         # 的话接 IMAGE / 模型之类的端口会被判成类型不符。
         return True
 
-    def execute(self, block=False, mode=MODE_NULL, any=None):
+    @classmethod
+    def check_lazy_status(cls, block=False, mode=MODE_NULL, any=_MISSING):
+        if block:
+            # 开关打开：上游算出来也会被丢掉，一个字节都不该花。
+            return None
+        if any is _MISSING:
+            # 压根没接线 —— 再索要就永远等不到，执行器会反复重调度。
+            return None
+        return ["any"] if any is None else None
+
+    def execute(self, block=False, mode=MODE_NULL, any=_MISSING):
         if not block:
-            return (any,)
+            return (None if any is _MISSING else any,)
         # 仅输出普通 None：下游继续执行，空值交给下游自己处理。
-        if mode == MODE_CUT and isinstance(ExecutionBlocker, type):
+        if mode == MODE_CUT and ExecutionBlocker is not None:
             return (ExecutionBlocker(None),)
         return (None,)
 

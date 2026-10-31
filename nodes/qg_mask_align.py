@@ -151,6 +151,10 @@ class QGMaskAlign:
                     % (int(reference.shape[-1]), int(reference.shape[-2]), width, height)
                 )
             ref_bounds = mask_bounds(reference)
+        # 记下「到底有没有参考」：下面没有参考时会把 ref_bounds 回退成整幅画面，
+        # 那是给对齐用的替身，不能拿来 union —— 否则 union_bbox 一开，涂色块的
+        # 矩形就被并成整张图（tooltip 明写「没有参考时无效」）。
+        has_ref = ref_bounds is not None
         if ref_bounds is None:
             # No usable reference: the frame is the thing to line up inside.
             ref_bounds = (0, 0, width, height)
@@ -171,7 +175,7 @@ class QGMaskAlign:
         if output == "bbox":
             left, top = target_x, target_y
             right, bottom = target_x + own_w - 1, target_y + own_h - 1
-            if union_bbox and ref_bounds is not None:
+            if union_bbox and has_ref:
                 left, top = min(left, ref_x), min(top, ref_y)
                 right = max(right, ref_x + ref_w - 1)
                 bottom = max(bottom, ref_y + ref_h - 1)

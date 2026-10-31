@@ -1,19 +1,29 @@
 # -*- coding: utf-8 -*-
-"""Mask refinement routines shared by QG-tools nodes.
+"""遮罩细化的各步骤 —— QG 自己的实现。
 
-Ported from ComfyUI-AusBoss (nodes/_mask_helpers.py), MIT.
-Original by the ComfyUI-AusBoss author. The algorithms are unchanged:
-separable max-pool grow/shrink, border flood fill for holes, separable
-gaussian feather, the "melt the jaggies but keep the hard edge" smooth pass,
-levels remap, plus the two optional edge refines (opencv-contrib guided
-filter / pymatting closed-form matting).
+运行顺序固定：扩张/收缩 → 补洞 → 平滑 → 羽化 → 边缘细化 → 色阶。
 
-Only the error messages and comments were rewritten for this pack, and the
-optional-dependency hints point at this pack's requirements.txt.
+和这个包里另一份的关系（重要，别搞混）
+--------------------------------------
+``nodes/_qg_mask_helpers.py`` 是**另一套**实现，给遮罩裁剪与重绘裁剪用；它按
+设备走两条路径（CPU 用 van Herk 滑动极值，GPU 用池化），只求快。本文件是
+节点 ``QG_MaskRefine`` 用的那套，独立实现、独立演进。
 
-Modified for ComfyUI-QG-tools on 2026-10-27: rewritten messages, category and
-display name localized, hints point at our own dependency notes.
-Third-party notice: THIRD-PARTY-NOTICES.md.
+两份目前有一处**语义不同**，是有意的：
+
+    收缩（步长为负）时，画布外算背景（0）。
+
+两份原先都用 ``max_pool2d`` 的默认 padding，那是 ``-inf``，取负之后等于
+「画布外是白的」，于是贴边的遮罩无论负到多少都一格不缩 —— 实测：一张整幅
+全 1 的遮罩 ``expand=-2`` 之后仍然是全 1。本文件按「画布外没有像素」处理，
+``_qg_mask_helpers.py`` 那边暂时保持旧语义（六个节点在用它，改动要单独评估）。
+
+四维遮罩
+--------
+官方文档写明 MASK 的合法形状是 ``[H,W]`` 或 ``[B,C,H,W]``。上游只认前两种，
+拿到 ``[B,1,H,W]`` 直接抛「expected a BHW MASK」；这里把单通道的四维压成
+``[B,H,W]``，多通道报一个说得清的错（多通道遮罩没有统一的「这个像素算不算
+选区」的答案，硬摊平等于替用户做主）。
 """
 
 from __future__ import annotations
@@ -24,8 +34,9 @@ import torch
 import torch.nn.functional as functional
 
 from ._qg_execution_helpers import raise_if_interrupted
+from ._qg_mask_helpers import NO_MASK_PAINTED, is_unpainted_mask
 
-try:  # scipy only speeds up hole filling; the torch path below is the fallback
+try:  # scipy 只用来加速连通域标记；没有它就用下面的 torch 路径
     from scipy.ndimage import binary_fill_holes as _scipy_fill_holes
     from scipy.ndimage import label as _scipy_label
 except Exception:
@@ -33,86 +44,162 @@ except Exception:
     _scipy_label = None
 
 
-# Core Load Image hands back a 64x64 zero mask when the picture carries no
-# painted mask at all. Catching that here gives a hint people can act on
-# instead of a mysteriously empty result.
-UNPAINTED_MASK_SIZE = (64, 64)
-NO_MASK_PAINTED = (
-    "No mask painted: right-click your picture, choose Open in MaskEditor, "
-    "paint the area, then click Save."
-)
-
-
-def is_unpainted_mask(mask) -> bool:
-    """True for core Load Image's stand-in: a 64x64 mask of zeros."""
-    return (
-        isinstance(mask, torch.Tensor)
-        and mask.ndim in (2, 3)
-        and tuple(int(side) for side in mask.shape[-2:]) == UNPAINTED_MASK_SIZE
-        and not bool(mask.any())
-    )
+# 「没画遮罩」的判据在 _qg_mask_helpers 里，这里只是再导出一份给本模块的
+# __all__ 用。以前这里有一份自己的副本，并且比那边多了「接受 4 维」——于是
+# 同一张 (B,1,64,64) 的空占位在这里算「没画」、在重绘裁剪里算「尺寸不符」，
+# 两个节点对同一张图给出相反的解释。判据只能有一处。
+# 小于这个的 alpha 当空，大于 1 - 这个当完全不透明。只在给抠图铺 trimap 时
+# 用来分辨「羽化边」和「硬边」。
+_SOFT_EPSILON = 1e-3
 
 
 def _as_bhw(mask: torch.Tensor) -> torch.Tensor:
-    if isinstance(mask, torch.Tensor) and mask.ndim == 2:
+    """把遮罩规整成 BHW float。四维只接受单通道。"""
+    if not isinstance(mask, torch.Tensor):
+        raise ValueError("Mask Refine expected a MASK tensor.")
+    if mask.ndim == 2:
         mask = mask.unsqueeze(0)
-    if not isinstance(mask, torch.Tensor) or mask.ndim != 3:
-        raise ValueError("Mask Refine expected a BHW MASK.")
+    elif mask.ndim == 4:
+        if int(mask.shape[1]) != 1:
+            raise ValueError(
+                "Mask Refine got a 4D mask with %d channels; only a single "
+                "channel can be read as one selection (shape %s)."
+                % (int(mask.shape[1]), list(mask.shape))
+            )
+        mask = mask[:, 0]
+    if mask.ndim != 3:
+        raise ValueError(
+            "Mask Refine expected [H,W] or [B,1,H,W], got shape %s." % (list(mask.shape),)
+        )
     return mask.float().clamp(0.0, 1.0)
 
 
-def grow_shrink_mask(mask: torch.Tensor, pixels: int) -> torch.Tensor:
-    """Dilate (positive) or erode (negative) by whole pixels; soft values survive.
+def _pool_1d(work: torch.Tensor, radius: int, horizontal: bool) -> torch.Tensor:
+    """沿一个方向做 (2*radius+1) 宽的最大池化，画布外填 0。
 
-    One separable pass instead of ``pixels`` iterated 3x3 pools: n 3x3
-    dilations equal a single (2n+1)-square dilation, and a square max filter
-    splits into a horizontal then a vertical 1-D pass. Same result to the bit
-    -- max is order-free and the -inf padding composes identically -- for a
-    fraction of the work: two passes however far the mask moves.
+    手动 pad 而不是交给 ``max_pool2d`` 的 ``padding`` 参数：那个参数填的是
+    ``-inf``（对 float 来说是「最小可能值」，对最大池化无影响），但我们需要的
+    语义是「画布外什么都没有 = 0」。收缩时这个差别就是全部差别：``-x`` 往外填
+    0，最大池化才会取到 0，取负回来恰好是 0，边缘才会真的往里退。
+    """
+    if horizontal:
+        pad, kernel = (radius, radius, 0, 0), (1, 2 * radius + 1)
+    else:
+        pad, kernel = (0, 0, radius, radius), (2 * radius + 1, 1)
+    return functional.max_pool2d(functional.pad(work, pad, value=0.0), kernel_size=kernel, stride=1)
+
+
+def grow_shrink_mask(mask: torch.Tensor, pixels: int) -> torch.Tensor:
+    """按整像素扩张（正）或收缩（负）；软值（非二值）一并保留。
+
+    方形极值滤波可以拆成横、竖两次一维滤波，所以不管移多远都只是两趟，而不是
+    ``2 * pixels`` 趟整图池化。收缩就是同一套滤波作用在取负的遮罩上。
+
+    软值仍然保留：扩张取邻域最大、收缩取邻域最小，软边只是一起被抬高或压低。
     """
     steps = abs(int(pixels))
     if steps == 0:
         return mask
-    size = 2 * steps + 1
-    grown = mask.unsqueeze(1)
-    if pixels > 0:
-        grown = functional.max_pool2d(grown, kernel_size=(1, size), stride=1, padding=(0, steps))
-        grown = functional.max_pool2d(grown, kernel_size=(size, 1), stride=1, padding=(steps, 0))
-    else:
-        grown = -functional.max_pool2d(-grown, kernel_size=(1, size), stride=1, padding=(0, steps))
-        grown = -functional.max_pool2d(-grown, kernel_size=(size, 1), stride=1, padding=(steps, 0))
-    return grown.squeeze(1)
+    work = mask.unsqueeze(1)
+    shrinking = int(pixels) < 0
+    if shrinking:
+        work = -work
+    work = _pool_1d(work, steps, horizontal=True)
+    work = _pool_1d(work, steps, horizontal=False)
+    if shrinking:
+        work = -work
+    return work.squeeze(1)
 
 
-def _torch_fill_holes(solid: torch.Tensor) -> torch.Tensor:
-    """Flood the border-connected background; whatever is left inside is a hole."""
-    background = ~solid
+def _spread(marker: torch.Tensor, allowed: torch.Tensor) -> torch.Tensor:
+    """把 marker 沿 allowed 区域向外扩一格（8 邻域）。"""
+    grown = functional.max_pool2d(
+        marker.float().unsqueeze(1), kernel_size=3, stride=1, padding=1
+    )
+    return (grown.squeeze(1) > 0) & allowed
+
+
+def _flood_from_border(background: torch.Tensor) -> torch.Tensor:
+    """从画布四边出发能走到的背景 —— 也就是「外面」。
+
+    🔴 每步只扩**一格**，不能图快一次扩好几格。这里传播的路径受 ``background``
+    限制，而一次大核的池化只看结果、不看路径：核会直接跨过一圈遮罩墙，把墙里面
+    的洞也算成「外面」。实测半径 64 的核在 128x128 上会把 40x40 方块正中的
+    10x10 洞一口吞掉，补洞就此失效。代价是轮数随直径线性增长，所以调用方优先用
+    scipy（它的 ``binary_fill_holes`` 一次出结果），这条路是没装 scipy 时的兜底。
+    """
     reachable = torch.zeros_like(background)
     reachable[:, 0, :] = background[:, 0, :]
     reachable[:, -1, :] = background[:, -1, :]
     reachable[:, :, 0] = background[:, :, 0]
     reachable[:, :, -1] = background[:, :, -1]
-    while True:
-        grown = (
-            functional.max_pool2d(
-                reachable.float().unsqueeze(1), kernel_size=3, stride=1, padding=1
-            )
-            .squeeze(1)
-            .bool()
-            & background
-        )
+    limit = max(int(background.shape[-2]), int(background.shape[-1]))
+    for _ in range(limit):
+        grown = _spread(reachable, background)
         if torch.equal(grown, reachable):
             break
         reachable = grown
-    return solid | (background & ~reachable)
+    return reachable
+
+
+def _label_blocks(inside: torch.Tensor) -> torch.Tensor:
+    """inside 里的 8 连通域，逐帧从 1 编号，非 inside 处为 0。
+
+    不用 scipy 时的路径：每个像素先拿自己的线性下标当标签，然后反复把邻域最大
+    下标吸进来（并跳到他持有标签的像素），直到一整块区域收敛到同一个下标；最后
+    把下标集合压成紧凑编号。同样每步只扩一格，理由见 ``_flood_from_border``。
+    """
+    count, height, width = inside.shape
+    area = height * width
+    zero = torch.zeros((), dtype=torch.float64, device=inside.device)
+    index = torch.arange(1, area + 1, dtype=torch.float64, device=inside.device).view(1, height, width)
+    labels = torch.where(inside, index, zero)
+    limit = max(height, width)
+    for _ in range(limit):
+        spread = functional.max_pool2d(
+            labels.view(count, 1, height, width), kernel_size=3, stride=1, padding=1
+        ).view(count, height, width)
+        spread = torch.where(inside, spread, zero)
+        # 跳到「最大下标所指向的那个像素自己持有的标签」，一块区域因此很快统一。
+        picked = (spread.long().clamp(min=1) - 1).clamp(max=area - 1)
+        neighbours = labels.reshape(count, -1).gather(1, picked.reshape(count, -1)).view(count, height, width)
+        spread = torch.where(inside, neighbours, zero)
+        if torch.equal(spread, labels):
+            break
+        labels = spread
+    # 压成 1..N 的紧凑编号
+    _unique_labels, compact = torch.unique(labels, return_inverse=True)
+    return compact.view(count, height, width).long()
+
+
+def _component_sizes(labels: torch.Tensor) -> torch.Tensor:
+    """每个编号的像素数，长度 = 最大编号 + 1。"""
+    counts = torch.bincount(labels.reshape(-1))
+    return counts
+
+
+def fill_mask_holes(mask: torch.Tensor, max_hole_size: float = 0.0) -> torch.Tensor:
+    """填掉被遮罩整圈围住的空洞。
+
+    碰到画布边缘的空洞永远不算空洞 —— 它是背景，只是绕了回来。
+
+    给了 ``max_hole_size``（占整幅面积的百分比）就只填到这个大小为止，这样漏刷
+    的缝隙会被补上，而故意没选的人或宠物会留在外面。
+    """
+    solid = mask >= 0.5
+    limit = _hole_limit(max_hole_size, int(mask.shape[-2]), int(mask.shape[-1]))
+    if limit is None:
+        filled = _fill_every_hole(solid)
+    else:
+        filled = _fill_small_holes(solid, limit)
+    return torch.maximum(mask, filled.to(mask.dtype))
 
 
 def _hole_limit(max_hole_size: float, height: int, width: int):
-    """The largest hole to fill, in pixels; None fills every hole.
+    """要填的最大空洞（像素数）；None 表示全填。
 
-    max_hole_size is a percent of the frame's area. 0 means no limit, and so
-    does anything from 100 up, since no hole is bigger than the frame; a value
-    that is not a number leaves the fill unlimited too.
+    ``max_hole_size`` 是占整幅面积的百分比。0 表示不限，100 及以上也不限（没有
+    哪个洞比整幅还大），不是数字的同样不限。
     """
     percent = float(max_hole_size)
     if not math.isfinite(percent) or percent <= 0.0 or percent >= 100.0:
@@ -120,78 +207,68 @@ def _hole_limit(max_hole_size: float, height: int, width: int):
     return percent / 100.0 * height * width
 
 
-def _torch_hole_areas(holes: torch.Tensor) -> torch.Tensor:
-    """Each hole pixel's hole size in pixels, 0 elsewhere, for one HW frame.
+def _hole_mask(solid: torch.Tensor) -> torch.Tensor:
+    """被围住的背景，逐帧。"""
+    background = ~solid
+    outside = _flood_from_border(background)
+    return background & ~outside
 
-    Holes are 8-connected, the way _torch_fill_holes floods them. Every hole
-    pixel starts with its own index; each pass takes the largest index in its
-    3x3 neighbourhood, then the index held by the pixel that index names (both
-    stay inside the same hole), until every hole holds one index.
-    """
-    height, width = holes.shape
-    inside = holes.reshape(-1)
-    zero = torch.zeros((), dtype=torch.float64, device=holes.device)
-    index = torch.arange(1, height * width + 1, dtype=torch.float64, device=holes.device)
-    labels = torch.where(inside, index, zero)
-    while True:
-        spread = functional.max_pool2d(
-            labels.view(1, 1, height, width), kernel_size=3, stride=1, padding=1
-        ).reshape(-1)
-        spread = torch.where(inside, spread, zero)
-        spread = torch.where(inside, spread[(spread.long() - 1).clamp(min=0)], zero)
-        if torch.equal(spread, labels):
-            break
-        labels = spread
-    _, hole_of, sizes = torch.unique(labels, return_inverse=True, return_counts=True)
-    return torch.where(inside, sizes[hole_of], 0).view(height, width)
+
+def _fill_every_hole(solid: torch.Tensor) -> torch.Tensor:
+    if _scipy_fill_holes is not None:
+        return torch.stack(
+            [torch.from_numpy(_scipy_fill_holes(layer.cpu().numpy())) for layer in solid]
+        ).to(solid.device)
+    return solid | _hole_mask(solid)
 
 
 def _fill_small_holes(solid: torch.Tensor, limit: float) -> torch.Tensor:
-    """Fill only the enclosed holes of at most `limit` pixels, frame by frame."""
+    """只填不超过 limit 个像素的封闭空洞，逐帧。"""
     frames = []
     for layer in solid:
         raise_if_interrupted()
-        if _scipy_fill_holes is not None:
+        if _scipy_fill_holes is not None and _scipy_label is not None:
+            # scipy 一次给出全部孔洞（4 连通），比下面逐格泛洪快几个数量级 ——
+            # 1080p 上后者要跑上千轮。
             array = layer.cpu().numpy()
-            labels, _count = _scipy_label(_scipy_fill_holes(array) & ~array)
-            labels = torch.from_numpy(labels).long()
-            small = torch.bincount(labels.reshape(-1)) <= limit
-            small[0] = False  # label 0 is everything that is not a hole
-            frames.append(torch.from_numpy(array) | small[labels])
+            labels = torch.from_numpy(_scipy_label(_scipy_fill_holes(array) & ~array)[0]).long()
         else:
-            layer = layer.cpu()  # the sizes count in float64, which not every device has
-            holes = _torch_fill_holes(layer.unsqueeze(0))[0] & ~layer
-            frames.append(layer | (holes & (_torch_hole_areas(holes) <= limit)))
+            holes = _hole_mask(layer.unsqueeze(0))[0]
+            if not bool(holes.any()):
+                frames.append(layer)
+                continue
+            labels = _label_blocks(holes.unsqueeze(0))[0].cpu()
+        sizes = torch.bincount(labels.reshape(-1))
+        keep = sizes <= limit
+        keep[0] = False  # 0 是「不是洞」
+        # 🔴 keep 和 labels 都在 CPU 上算出来（scipy 从 numpy 来，_label_blocks 也
+        #    显式 .cpu()），但 layer 在可能是 GPU。PyTorch 只允许索引张量「在 CPU
+        #    或与被索引张量同设备」—— 只把 labels 搬过去、把 keep 留在 CPU，就是
+        #    "indices should be either on cpu or on the same device as the indexed
+        #    tensor"。两边一起搬。
+        keep = keep.to(layer.device)
+        frames.append(layer | keep[labels.to(layer.device)])
     return torch.stack(frames).to(solid.device)
 
 
-def fill_mask_holes(mask: torch.Tensor, max_hole_size: float = 0.0) -> torch.Tensor:
-    """Fill the unselected areas the mask closes all the way round.
-
-    An area touching the frame's edge is never a hole. With max_hole_size (a
-    percent of the frame's area) above 0, only holes up to that size are
-    filled, so a subject someone left unselected stays out of the mask.
-    """
-    solid = mask >= 0.5
-    limit = _hole_limit(max_hole_size, mask.shape[-2], mask.shape[-1])
-    if limit is not None:
-        filled = _fill_small_holes(solid, limit)
-    elif _scipy_fill_holes is not None:
-        filled = torch.stack(
-            [torch.from_numpy(_scipy_fill_holes(layer.cpu().numpy())) for layer in solid]
-        ).to(mask.device)
-    else:
-        filled = _torch_fill_holes(solid)
-    return torch.maximum(mask, filled.to(mask.dtype))
+def _gaussian_kernel(sigma: float, device) -> torch.Tensor:
+    radius = max(1, int(math.ceil(float(sigma) * 3.0)))
+    coords = torch.arange(-radius, radius + 1, dtype=torch.float32, device=device)
+    kernel = torch.exp(-(coords**2) / (2.0 * float(sigma) ** 2))
+    return kernel / kernel.sum()
 
 
 def blur_mask(mask: torch.Tensor, sigma: float) -> torch.Tensor:
+    """高斯羽化。两趟一维卷积而不是一次二维，代价从 r² 降到 2r。
+
+    边缘用 replicate：画布外继续延伸最边上那一列，羽化才不会在画面边框处
+    凭空压出一道黑边。
+    """
+    sigma = float(sigma)
     if sigma <= 0.0:
         return mask
-    radius = max(1, int(math.ceil(float(sigma) * 3.0)))
-    coords = torch.arange(-radius, radius + 1, dtype=torch.float32, device=mask.device)
-    kernel = torch.exp(-(coords**2) / (2.0 * float(sigma) ** 2))
-    kernel = kernel / kernel.sum()
+    radius = max(1, int(math.ceil(sigma * 3.0)))
+    kernel = _gaussian_kernel(sigma, mask.device)
     blurred = mask.unsqueeze(1)
     blurred = functional.pad(blurred, (radius, radius, 0, 0), mode="replicate")
     blurred = functional.conv2d(blurred, kernel.view(1, 1, 1, -1))
@@ -201,28 +278,23 @@ def blur_mask(mask: torch.Tensor, sigma: float) -> torch.Tensor:
 
 
 def smooth_mask(mask: torch.Tensor, pixels: int) -> torch.Tensor:
-    """Melt staircase jaggies while keeping a hard edge.
+    """把阶梯状的锯齿化开，但边缘仍然是硬的。
 
-    Binarize at 0.5, gaussian-blur with sigma ~ pixels, re-binarize at 0.5, and
-    apply only the DIFFERENCE that made to the mask it was given. Unlike
-    blur_mask this adds no softness of its own, so it de-jaggies segmentation
-    edges without feathering them.
+    做法是：按 0.5 二值化 → 用 sigma≈pixels 的高斯模糊 → 再按 0.5 二值化，然后
+    只把「这一步带来的变化」加回原遮罩。所以它自己不引入任何软度，能把分割出的
+    锯齿边磨平而不羽化。
 
-    Applying the difference rather than the re-binarized result is what lets a
-    mask that is already soft -- a matte, or anything feathered upstream --
-    keep its soft alpha. On a binary mask the difference is the whole change,
-    so the result is bit-identical to a plain threshold.
+    加变化量而不是直接换成二值结果，是为了让本来就软的遮罩（抠图结果、上游羽化
+    过的）保住它的软边。对二值遮罩，变化量就是全部变化，结果与直接取阈值逐位
+    相同。
     """
-    if int(pixels) <= 0:
+    steps = int(pixels)
+    if steps <= 0:
         return mask
     solid = (mask >= 0.5).to(mask.dtype)
-    melted = (blur_mask(solid, float(int(pixels))) >= 0.5).to(mask.dtype)
+    melted = (blur_mask(solid, float(steps)) >= 0.5).to(mask.dtype)
     return (mask + (melted - solid)).clamp(0.0, 1.0)
 
-
-# Below this an alpha reads as empty, above 1 - this as fully opaque. Only used
-# to tell a feathered edge from a hard one when seeding a trimap.
-_SOFT_EPSILON = 1e-3
 
 EDGE_REFINE_MODES = ("off", "guided filter", "matting")
 
@@ -238,7 +310,7 @@ _MATTING_HINT = (
 
 
 def _optional_import(module_name: str):
-    """Import an optional dependency at call time; tests monkeypatch this."""
+    """按需导入可选依赖；测试会替掉这个函数。"""
     import importlib
 
     return importlib.import_module(module_name)
@@ -251,7 +323,7 @@ def _load_guided_filter():
         raise RuntimeError(_GUIDED_FILTER_HINT) from exc
     ximgproc = getattr(cv2, "ximgproc", None)
     if ximgproc is None or not hasattr(ximgproc, "guidedFilter"):
-        # Plain opencv-python ships without the contrib ximgproc module.
+        # 普通 opencv-python 不带 contrib 的 ximgproc。
         raise RuntimeError(_GUIDED_FILTER_HINT)
     return ximgproc.guidedFilter
 
@@ -268,14 +340,12 @@ def _load_alpha_matting():
 
 
 def _edge_radius(expand: int) -> int:
-    """Working radius at the edge, scaled with how far the mask was moved."""
+    """在边缘处工作的半径，随遮罩移动的距离放大。"""
     return max(4, 2 * abs(int(expand)))
 
 
-def _guide_frames(
-    guide_image: torch.Tensor, count: int, height: int, width: int
-) -> torch.Tensor:
-    """Validate guide_image against the mask batch and return BHWC RGB frames."""
+def _guide_frames(guide_image, count: int, height: int, width: int) -> torch.Tensor:
+    """校验 guide_image 与遮罩批次是否配套，返回 BHWC 的 RGB 帧。"""
     if (
         not isinstance(guide_image, torch.Tensor)
         or guide_image.ndim != 4
@@ -284,26 +354,23 @@ def _guide_frames(
         raise ValueError("Mask Refine expected guide_image as a BHWC RGB IMAGE batch.")
     if tuple(guide_image.shape[1:3]) != (height, width):
         raise ValueError(
-            f"Mask Refine guide_image is {guide_image.shape[2]}x{guide_image.shape[1]} "
-            f"but the mask is {width}x{height}; connect the image the mask belongs to."
+            "Mask Refine guide_image is %dx%d but the mask is %dx%d; connect the "
+            "image the mask belongs to."
+            % (int(guide_image.shape[2]), int(guide_image.shape[1]), width, height)
         )
-    if guide_image.shape[0] not in {1, count}:
+    if int(guide_image.shape[0]) not in {1, count}:
         raise ValueError(
             "Mask Refine needs one guide frame for the whole mask batch or one per mask."
         )
-    # Validated view only - the float()/clamp() copy happens per frame at the
-    # call sites, so a whole-batch duplicate of the guide is never resident
-    # alongside the solve.
     frames = guide_image[..., :3]
-    if frames.shape[0] == 1 and count > 1:
+    if int(frames.shape[0]) == 1 and count > 1:
+        # 视图展开，不复制；每帧在用到时才 float() 一份，整批复制会跟求解同时驻留。
         frames = frames.expand(count, -1, -1, -1)
     return frames
 
 
-def guided_filter_refine(
-    mask: torch.Tensor, guide_image: torch.Tensor, expand: int
-) -> torch.Tensor:
-    """Snap soft mask edges to guide-image edges with an edge-aware filter."""
+def guided_filter_refine(mask: torch.Tensor, guide_image, expand: int) -> torch.Tensor:
+    """用边缘感知滤波把遮罩边贴到导向图的边上。"""
     guided_filter = _load_guided_filter()
     count, height, width = mask.shape
     guides = _guide_frames(guide_image, count, height, width)
@@ -317,22 +384,18 @@ def guided_filter_refine(
     return torch.stack(frames).to(device=mask.device, dtype=mask.dtype).clamp(0.0, 1.0)
 
 
-def matting_refine(
-    mask: torch.Tensor, guide_image: torch.Tensor, expand: int
-) -> torch.Tensor:
-    """Closed-form alpha matting around the mask edge.
+def matting_refine(mask: torch.Tensor, guide_image, expand: int) -> torch.Tensor:
+    """在遮罩边缘附近做闭式 alpha 抠图。
 
-    The binarized mask eroded by the edge radius is definite foreground, the
-    dilation marks where definite background begins, and the band between is
-    solved by pymatting's estimate_alpha_cf against the guide image.
+    二值化后按边缘半径腐蚀得到的区域是确定前景，膨胀得到的边界之外是确定背景，
+    中间那条带交给 pymatting 的 ``estimate_alpha_cf`` 对着导向图求解。
     """
     estimate_alpha_cf = _load_alpha_matting()
     count, height, width = mask.shape
     guides = _guide_frames(guide_image, count, height, width)
     band = _edge_radius(expand)
-    # Morphology once for the whole batch, not per frame: pooling is
-    # per-sample, so the batched call is bit-identical, and rebuilding the
-    # trimap inside the loop was paying the erode/dilate `count` times over.
+    # 形态学整批做一次，不进循环：池化本来就是逐样本的，批处理逐位相同，
+    # 而在循环里重建 trimap 等于把腐蚀/膨胀算了 count 遍。
     alpha_all = mask.detach().float().cpu()
     solid_all = (alpha_all >= 0.5).float()
     eroded_all = grow_shrink_mask(solid_all, -band) >= 0.5
@@ -341,18 +404,16 @@ def matting_refine(
     for index in range(count):
         raise_if_interrupted()
         alpha_in = alpha_all[index]
-        # Definite foreground has to be opaque in the mask we were handed, and
-        # anything carrying any alpha at all is at least possible foreground.
-        # On a binary mask those reduce to exactly the eroded and dilated
-        # shapes; on a feathered one the soft ramp widens the unknown band,
-        # which is what lets the blur control reach the solve instead of being
-        # thresholded straight back out of it.
+        # 确定前景必须在拿到的遮罩里是不透明的；带任何 alpha 的都至少是「可能
+        # 前景」。对二值遮罩，这两条正好退化成腐蚀与膨胀的形状；对羽化过的
+        # 遮罩，软斜坡会把未知带撑宽 —— 这正是让 blur 那个控件能影响到求解、
+        # 而不是被阈值又抹掉的原因。
         sure_fg = eroded_all[index] & (alpha_in >= 1.0 - _SOFT_EPSILON)
         possible = dilated_all[index] | (alpha_in > _SOFT_EPSILON)
         unknown = possible & ~sure_fg
         if not bool(unknown.any()) or not bool(sure_fg.any()) or bool(possible.all()):
-            # Degenerate trimap (empty mask, mask everywhere, or a shape the
-            # band swallows whole): keep this frame's mask as it arrived.
+            # 退化 trimap（空遮罩 / 全幅遮罩 / 被带子整个吞掉的形状）：这一帧原样
+            # 交回去，别硬解一个没意义的方程。
             frames.append(alpha_in)
             continue
         trimap = torch.full((height, width), 0.5, dtype=torch.float64)
@@ -367,14 +428,15 @@ def matting_refine(
 
 
 def remap_mask(mask: torch.Tensor, black_point: float, white_point: float) -> torch.Tensor:
-    """Levels remap: values at or below black_point become 0, values at or
-    above white_point become 1, the range between rescales linearly. Clears
-    gray haze left behind by soft segmentation or feathering."""
+    """色阶重映射：黑场及以下归 0，白场及以上归 1，中间线性重标。
+
+    软分割或羽化留下的灰雾靠它清掉。
+    """
     black = float(black_point)
     white = float(white_point)
     if black <= 0.0 and white >= 1.0:
         return mask
-    span = max(white - black, 1e-6)  # degenerate points act as a threshold
+    span = max(white - black, 1e-6)  # 两点重合时退化成阈值
     return ((mask - black) / span).clamp(0.0, 1.0)
 
 
@@ -390,21 +452,16 @@ def refine_mask(
     guide_image=None,
     max_hole_size: float = 0.0,
 ):
-    """Expand, fill holes, smooth, feather, edge-refine, then remap levels.
-
-    max_hole_size limits fill holes to holes up to that percent of the frame's
-    area; 0 (the default) fills every hole.
-    """
+    """扩张 → 补洞 → 平滑 → 羽化 → 边缘细化 → 色阶，返回 (遮罩, 反相遮罩)。"""
     if edge_refine not in EDGE_REFINE_MODES:
         raise ValueError(
-            f"Mask Refine edge_refine must be one of {EDGE_REFINE_MODES}, "
-            f"not '{edge_refine}'."
+            "Mask Refine edge_refine must be one of %s, not '%s'."
+            % (list(EDGE_REFINE_MODES), edge_refine)
         )
     if edge_refine != "off" and guide_image is None:
         raise ValueError(
-            f"Mask Refine edge_refine '{edge_refine}' needs the guide_image "
-            "input; connect the RGB image the mask belongs to, or set "
-            "edge_refine back to 'off'."
+            "Mask Refine edge_refine '%s' needs the guide_image input; connect the "
+            "RGB image the mask belongs to, or set edge_refine back to 'off'." % edge_refine
         )
     refined = _as_bhw(mask)
     if (
@@ -430,6 +487,7 @@ def refine_mask(
 __all__ = [
     "EDGE_REFINE_MODES",
     "NO_MASK_PAINTED",
+    "UNPAINTED_MASK_SIZE",
     "blur_mask",
     "fill_mask_holes",
     "grow_shrink_mask",

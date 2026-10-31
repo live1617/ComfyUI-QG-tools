@@ -86,10 +86,29 @@ def _resolve_file(value: str, getter) -> str:
     if value in names:
         return value
     vnorm = value.replace("\\", "/").rsplit("/", 1)[-1]
-    for n in names:
-        base = n.replace("\\", "/").rsplit("/", 1)[-1]
-        if base == vnorm or base.rsplit(".", 1)[0] == vnorm:
-            return n
+    # 只在**唯一命中**时回退。以前是「第一个撞上的就返回」：
+    # models/unet/a.safetensors 与 models/unet/sdxl/a.safetensors 并存时，
+    # 会静默加载其中任意一个；老存档存的是去掉扩展名的裸名（a），则
+    # a.ckpt 和 a.safetensors 都可能命中 —— 出图全错却不报错。
+    exact = [n for n in names if n.replace("\\", "/").rsplit("/", 1)[-1] == vnorm]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        raise ValueError(
+            "[QG-tools] 模型加载器：「%s」匹配到多个文件，请在节点里重新选一个：\n  %s"
+            % (value, "\n  ".join(exact[:8]))
+        )
+    bare = [
+        n for n in names
+        if n.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0] == vnorm
+    ]
+    if len(bare) == 1:
+        return bare[0]
+    if len(bare) > 1:
+        raise ValueError(
+            "[QG-tools] 模型加载器：「%s」对应多个文件（%s），请在节点里重新选一个。"
+            % (value, "、".join(bare[:8]))
+        )
     raise ValueError("[QG-tools] 模型加载器：找不到模型文件「%s」" % value)
 
 

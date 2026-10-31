@@ -5,19 +5,50 @@
 // pass-through output, gallery mode, text style settings and clipboard actions.
 
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026102915";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026103135";
 import { api } from "/scripts/api.js";
-import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026102915";
-import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026102915";
-import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026102915";
+import { zhPair } from "../shared/zh.mjs?v=2026103135";
+import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026103135";
+import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026103135";
+import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026103135";
 
 const NODE_TYPE = "QG_DisplayAny";
-const CONNECTION_MENU_LABEL = "QG 展示任意";
+// 拖线到空白处时弹出的候选菜单里，这一项的显示名。原来写死中文，英文界面也显示
+// 「QG 展示任意」；改成调用时求值，两种语言各出一份。
+const connectionMenuLabel = () => zhPair("Display Any", "展示任意");
+// 槽位类型名：[英文, 中文]。同形词（CLIP / VAE / Latent / Any）不进来，回落类型名。
+// 🔴 原来这张表全是中文，英文界面下槽位写着「图像」「遮罩」。
 const LABELS = {
-    IMAGE: "图像", MASK: "遮罩", AUDIO: "音频", VIDEO: "视频", MODEL: "模型",
-    CLIP: "CLIP", VAE: "VAE", STRING: "字符串", TEXT: "文本", CONDITIONING: "条件",
-    LATENT: "Latent", INT: "整数", FLOAT: "浮点", BOOLEAN: "布尔", ANY: "Any",
+    IMAGE: ["image", "图像"], MASK: ["mask", "遮罩"], AUDIO: ["audio", "音频"],
+    VIDEO: ["video", "视频"], MODEL: ["model", "模型"], STRING: ["string", "字符串"],
+    TEXT: ["text", "文本"], CONDITIONING: ["conditioning", "条件"],
+    INT: ["int", "整数"], FLOAT: ["float", "浮点"], BOOLEAN: ["boolean", "布尔"],
 };
+const labelFor = (type) => {
+    if (type === "ANY") return "Any";
+    const pair = LABELS[type];
+    return pair ? zhPair(pair[0], pair[1]) : type;
+};
+
+// 后端只发 notice 代码，句子在这里出 —— 后端不知道界面语言，塞中文进去就会
+// 在英文界面里露出中文（原版就是这么干的）。
+const NOTICE_TEXT = {
+    no_input: () => zhPair("No input connected", "没有接入任何输入"),
+    preview_failed: (notice) => zhPair(
+        `Preview failed; the value still passes through${notice?.detail ? `: ${notice.detail}` : ""}`,
+        `预览失败，值仍然原样透传${notice?.detail ? `：${notice.detail}` : ""}`),
+    video_unsupported: () => zhPair(
+        "This video format cannot be previewed here; the original data still passes through",
+        "该视频格式不支持直接预览，原始数据仍然透传"),
+    text_truncated: (notice) => zhPair(
+        `Showing the first ${notice?.shown ?? ""} of ${notice?.total ?? ""} characters`,
+        `共 ${notice?.total ?? ""} 个字符，这里只显示前 ${notice?.shown ?? ""} 个`),
+};
+function noticeText(notice) {
+    const build = notice?.code && NOTICE_TEXT[notice.code];
+    return build ? build(notice) : "";
+}
+
 // 复制按钮只用图标（不占文字宽度、常显）；复制成功的反馈换成对勾图标。
 const COPY_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
 const CHECK_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 9.5 18 20 6.5"/></svg>';
@@ -210,7 +241,7 @@ function showTextSettings(node) {
     panel.className = "qgtools-display-settings";
     const sizeLabel = document.createElement("label");
     sizeLabel.className = "qgtools-display-size-row";
-    sizeLabel.append("文本字号");
+    sizeLabel.append(zhPair("Text size", "文本字号"));
     const size = document.createElement("input");
     size.type = "number";
     size.min = "10";
@@ -232,7 +263,7 @@ function showTextSettings(node) {
     colorLabel.className = "qgtools-display-color-label";
     const colorPreview = document.createElement("span");
     colorPreview.className = "qgtools-display-color-preview";
-    colorLabel.append("文本颜色", colorPreview);
+    colorLabel.append(zhPair("Text color", "文本颜色"), colorPreview);
     const color = document.createElement("input");
     color.type = "color";
     color.className = "qgtools-display-color-input";
@@ -306,7 +337,7 @@ function installConnectionMenuEntry(canvas) {
         // Pass the actual slot also when callers supply numeric slot zero.
         const menu = original.call(this, { ...options, slotFrom: slot });
         const lastEntry = menu?.root?.lastElementChild;
-        if (lastEntry?.value === NODE_TYPE) lastEntry.textContent = CONNECTION_MENU_LABEL;
+        if (lastEntry?.value === NODE_TYPE) lastEntry.textContent = connectionMenuLabel();
         return menu;
     };
     prototype._qgDisplayAnyConnectionMenu = true;
@@ -314,7 +345,7 @@ function installConnectionMenuEntry(canvas) {
 
 async function blobFromMedia(src) {
     const response = await fetch(src, { credentials: "include" });
-    if (!response.ok) throw new Error(`加载失败: ${response.status}`);
+    if (!response.ok) throw new Error(zhPair(`Failed to load: ${response.status}`, `加载失败：${response.status}`));
     return response.blob();
 }
 
@@ -344,7 +375,7 @@ async function copyMediaToClipboard(state) {
     try {
         if (kind === "video" || kind === "audio") {
             await navigator.clipboard.writeText(src);
-            state.flashContextItem?.(item, kind === "audio" ? "音频地址已复制" : "视频地址已复制");
+            state.flashContextItem?.(item, kind === "audio" ? zhPair("Audio URL copied", "音频地址已复制") : zhPair("Video URL copied", "视频地址已复制"));
             return;
         }
         const blob = await blobFromMedia(src);
@@ -352,13 +383,56 @@ async function copyMediaToClipboard(state) {
             const type = blob.type || "image/png";
             await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
         } else {
-            throw new Error("当前浏览器不支持剪贴板写入");
+            throw new Error(zhPair("This browser does not allow writing to the clipboard", "当前浏览器不支持剪贴板写入"));
         }
-        state.flashContextItem?.(item, "已复制");
+        state.flashContextItem?.(item, zhPair("Copied", "已复制"));
     } catch (error) {
         console.warn("[QG-tools] 复制失败", error);
-        state.flashContextItem?.(item, "复制失败", true);
+        state.flashContextItem?.(item, zhPair("Copy failed", "复制失败"), true);
     }
+}
+
+// MIME 子类型不等于文件扩展名：audio/mpeg 是 mp3（不是 mpeg，更不是 wav），
+// image/svg+xml 里的 "+" 直接拼进文件名是非法的，video/x-matroska 是 mkv。
+const MEDIA_EXT = {
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/wave": "wav",
+    "audio/ogg": "ogg",
+    "audio/flac": "flac",
+    "audio/x-flac": "flac",
+    "audio/aac": "aac",
+    "audio/mp4": "m4a",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/quicktime": "mov",
+    "video/x-matroska": "mkv",
+    "video/x-msvideo": "avi",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/bmp": "bmp",
+    "image/avif": "avif",
+    "image/svg+xml": "svg",
+    "image/tiff": "tiff",
+};
+
+const FALLBACK_EXT = { audio: "wav", video: "mp4", image: "png" };
+
+// 从 blob 的类型 / 文件名里推一个能用的扩展名。
+function extensionForMedia(blob, src, kind) {
+    const type = String(blob?.type || "").toLowerCase().split(";")[0].trim();
+    if (MEDIA_EXT[type]) return MEDIA_EXT[type];
+    // type 认不出来就看源地址里的文件名，最后才按种类给默认值。
+    const fromName = /\.([a-z0-9]{2,5})(?:[?#]|$)/i.exec(String(src || ""));
+    if (fromName) return fromName[1].toLowerCase();
+    const subtype = type.split("/")[1] || "";
+    if (/^[a-z0-9]{2,5}$/.test(subtype) && !subtype.startsWith("x-")) return subtype;
+    return FALLBACK_EXT[kind] || "bin";
 }
 
 async function saveMediaToDisk(state) {
@@ -371,18 +445,16 @@ async function saveMediaToDisk(state) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        let ext = blob.type?.split("/")[1] || "";
-        if (!ext || ext === "mpeg") ext = kind === "audio" ? "wav" : "png";
-        if (kind === "video") ext = ext || "mp4";
+        const ext = extensionForMedia(blob, src, kind);
         a.download = filenameFromSrc(src, `qg_preview_${Date.now()}.${ext}`);
         document.body.append(a);
         a.click();
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-        state.flashContextItem?.(item, "已保存");
+        state.flashContextItem?.(item, zhPair("Saved", "已保存"));
     } catch (error) {
         console.warn("[QG-tools] 保存失败", error);
-        state.flashContextItem?.(item, "保存失败", true);
+        state.flashContextItem?.(item, zhPair("Save failed", "保存失败"), true);
     }
 }
 
@@ -402,7 +474,7 @@ async function copyText(state) {
             field.select();
             const copied = document.execCommand("copy");
             field.remove();
-            if (!copied) throw new Error("复制未成功");
+            if (!copied) throw new Error(zhPair("Copy did not go through", "复制未成功"));
         }
         state.copy.innerHTML = CHECK_ICON_SVG;
         state.copy.classList.add("qgtools-copy-done");
@@ -578,7 +650,18 @@ function renderPreview(node, payload) {
     state.text.classList.remove("qgtools-display-single");
     const hasMedia = ["images", "audio", "video"].some(key => payload?.[key]?.some(reference => reference?.filename));
     const isText = !hasMedia && ["STRING", "TEXT"].includes(payload?.type);
-    let batchTexts = Array.isArray(payload?.texts) && payload.texts.length ? payload.texts : [payload?.text ?? "等待执行…"];
+    const notice = noticeText(payload?.notice);
+    let batchTexts = (Array.isArray(payload?.texts) && payload.texts.length ? payload.texts : [payload?.text ?? ""])
+        .map(value => String(value ?? ""));
+    // ⚠️ 后端只说「出了什么事」，句子在 noticeText 里按语言拼。
+    // 有内容的把那句接在最后一条后面；没内容的（比如空节点）直接用它顶上。
+    if (notice && batchTexts.length) {
+        const last = batchTexts.length - 1;
+        batchTexts[last] = batchTexts[last].trim() ? `${batchTexts[last]}\n\n${notice}` : notice;
+    }
+    if (!batchTexts.some(value => value.trim())) {
+        batchTexts = [zhPair("Waiting for a run…", "等待执行…")];
+    }
     if (payload?.type === "BOOLEAN") {
         batchTexts = batchTexts.map(value => {
             const text = String(value).trim();
@@ -622,7 +705,7 @@ function renderPreview(node, payload) {
             if (tag === "img") {
                 element.loading = "eager";
                 element.style.visibility = "hidden";
-                element.alt = payload.type === "MASK" ? "遮罩预览" : "图像预览";
+                element.alt = payload.type === "MASK" ? zhPair("Mask preview", "遮罩预览") : zhPair("Image preview", "图像预览");
             } else {
                 element.controls = true;
                 element.preload = "metadata";
@@ -713,7 +796,7 @@ function syncPorts(node, visited = new Set()) {
             else if (["STRING", "TEXT"].includes(node.properties?.qg_display_preview?.type)) detected = "STRING";
         }
     }
-    const label = LABELS[detected] || detected;
+    const label = labelFor(detected);
     if (input) {
         input.type = detected === "ANY" ? "*" : detected;
         input.label = label;
@@ -756,8 +839,8 @@ function createPreview(node) {
     copy.type = "button";
     copy.className = "qgtools-display-copy";
     copy.innerHTML = COPY_ICON_SVG;
-    copy.title = "复制";
-    copy.setAttribute("aria-label", "复制");
+    copy.title = zhPair("Copy", "复制");
+    copy.setAttribute("aria-label", zhPair("Copy", "复制"));
     toolbar.append(copy);
     const body = document.createElement("div");
     body.className = "qgtools-display-body";
@@ -769,11 +852,11 @@ function createPreview(node) {
     galleryClose.type = "button";
     galleryClose.className = "qgtools-display-gallery-button qgtools-display-gallery-close";
     galleryClose.textContent = "×";
-    galleryClose.title = "返回缩略图";
+    galleryClose.title = zhPair("Back to thumbnails", "返回缩略图");
     const galleryNext = document.createElement("button");
     galleryNext.type = "button";
     galleryNext.className = "qgtools-display-gallery-button qgtools-display-gallery-index";
-    galleryNext.title = "下一张（← / → 切换）";
+    galleryNext.title = zhPair("Next (← / → to switch)", "下一张（← / → 切换）");
     body.append(media, text, galleryClose, galleryNext);
     root.append(toolbar, body);
     const widget = node.addDOMWidget("qg_display_preview", "qg_display", root, {
@@ -868,11 +951,13 @@ function createPreview(node) {
         event.preventDefault();
         body.scrollTop += event.deltaY;
     }, { capture: true, passive: false });
+    // 滚轮不在这里接：交给 web/canvas_passthrough/ 的全局入口。
+    // 上面那条 body 滚动的 capture 监听会先把「该滚」的情况吃掉
+    // （preventDefault + stopImmediatePropagation），剩下的一律缩画布。
     installNativeNodePointerBridge(root, {
         getWidget: () => widget,
         shouldForwardLeft: (event) => overMedia(event) || (!overInteractive(event) && !overText(event)),
         onTap: openFigure,
-        forwardWheel: true,
     });
     root.addEventListener("contextmenu", (event) => {
         let mediaEl = event.target.closest("img,video,audio");
@@ -984,6 +1069,7 @@ app.registerExtension({
                 images: values.flatMap(value => value.images || []),
                 audio: values.flatMap(value => value.audio || []),
                 video: values.flatMap(value => value.video || []),
+                notice: values.find(value => value.notice)?.notice ?? null,
             } : values?.[0];
             if (payload) {
                 createPreview(this);
@@ -1006,11 +1092,15 @@ app.registerExtension({
         nodeType.prototype.getExtraMenuOptions = function (canvas, options) {
             const result = menu?.apply(this, arguments);
             const st = this._qgDisplay;
-            options.push(null, { content: "展示文本设置…", className: "qgtools-menu-text-settings", callback: () => showTextSettings(this) });
+            options.push(null, { content: zhPair("Text settings…", "展示文本设置…"), className: "qgtools-menu-text-settings", callback: () => showTextSettings(this) });
             if (st?.contextMedia) {
                 const kind = mediaKindOf(st.contextMedia);
-                const copyLabel = kind === "image" ? "复制图像" : kind === "video" ? "复制视频地址" : "复制音频地址";
-                const saveLabel = kind === "image" ? "保存图像" : kind === "video" ? "保存视频" : "保存音频";
+                const copyLabel = kind === "image" ? zhPair("Copy image", "复制图像")
+                    : kind === "video" ? zhPair("Copy video URL", "复制视频地址")
+                    : zhPair("Copy audio URL", "复制音频地址");
+                const saveLabel = kind === "image" ? zhPair("Save image", "保存图像")
+                    : kind === "video" ? zhPair("Save video", "保存视频")
+                    : zhPair("Save audio", "保存音频");
                 options.push(
                     { content: copyLabel, callback: () => copyMediaToClipboard(st) },
                     { content: saveLabel, callback: () => saveMediaToDisk(st) },

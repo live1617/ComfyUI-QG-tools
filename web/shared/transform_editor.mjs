@@ -1,29 +1,30 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { zh, zhOn, zhReady, zhSep } from "./zh.mjs?v=2026102915";
-import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "./widget_visibility.mjs?v=2026102915";
-import { mountTransformTrim } from "./transform_trim.mjs?v=2026102915";
-import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026102915";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026102915";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026102915";
-import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=2026102915";
-import { createMediaPicker } from "./media_picker.mjs?v=2026102915";
-import { normalizeFillColor } from "./fill_color.mjs?v=2026102915";
-import { sizeFor } from "./node_width.mjs?v=2026102915";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026102915";
-import { confirmDiscard } from "./discard_prompt.mjs?v=2026102915";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026102915";
-import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026102915";
-import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026102915";
-import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026102915";
-import { createSettle } from "./settle.mjs?v=2026102915";
+import { zh, zhOn, zhPair, zhReady, zhSep } from "./zh.mjs?v=2026103135";
+import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "./widget_visibility.mjs?v=2026103135";
+import { mountTransformTrim } from "./transform_trim.mjs?v=2026103135";
+import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=2026103135";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=2026103135";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=2026103135";
+import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=2026103135";
+import { createMediaPicker } from "./media_picker.mjs?v=2026103135";
+import { normalizeFillColor } from "./fill_color.mjs?v=2026103135";
+import { sizeFor } from "./node_width.mjs?v=2026103135";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026103135";
+import { confirmDiscard } from "./discard_prompt.mjs?v=2026103135";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026103135";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=2026103135";
+import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=2026103135";
+import { suppressCoreVideoPreview } from "./core_preview.mjs?v=2026103135";
+import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=2026103135";
+import { createSettle } from "./settle.mjs?v=2026103135";
 import {
   INPUT_FOLDER_MODE,
   LOCAL_PATH_MODE,
   normalizeVideoOptions,
   mediaSourceState,
   videoSourceState,
-} from "./video_source_card.mjs?v=2026102915";
+} from "./video_source_card.mjs?v=2026103135";
 import {
   alignChanges,
   aspectMatches,
@@ -78,9 +79,9 @@ import {
   turnedCrop,
   wrapDegrees,
   zoomAround,
-} from "./transform_geometry.mjs?v=2026102915";
-import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026102915";
-import { liftSocket } from "./widget_card.mjs?v=2026102915";
+} from "./transform_geometry.mjs?v=2026103135";
+import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=2026103135";
+import { liftSocket } from "./widget_card.mjs?v=2026103135";
 
 const HIDDEN_WIDGETS = [
   "image", "upload",
@@ -303,6 +304,23 @@ function followSource(state) {
   if (!key || key === state.source) return;
   state.syncSourceCard?.();
   void onSourceChanged(state, false);
+}
+
+// Clip 的帧数与「每 N 帧」决定 trim 视图上的读数。改动可能来自别人写
+// widget、读档或连接变化，不一定会走 widget 的 callback，所以按一个指纹比。
+function syncTrimRate(state) {
+  if (state.disposed || !state.isClip) return;
+  const node = state.node;
+  const rate = clipOutputRate(node, state.metadata?.fps, value(node, "every_nth", 1));
+  const linked = ["fixed_frames", "frame_load_cap", "max_frames", "start_frame",
+    "end_frame", "start_seconds", "end_seconds", "every_nth"];
+  const signature = JSON.stringify([
+    rate,
+    ...linked.map((name) => inputNumber(node, name, value(node, name, 0))),
+  ]);
+  if (signature === state.trimRate) return;
+  state.trimRate = signature;
+  for (const trim of state.trimViews) trim.sync();
 }
 
 function sourceKey(node, kind) {
@@ -645,18 +663,25 @@ export function installTransformNode(node, kind, mountPanel = null) {
     chainCallback(node, "onDrawForeground", function () {
       // Also where a picture saved by the MaskEditor is noticed.
       followSource(state);
-      if (state.isClip && !state.disposed) {
-        const rate = clipOutputRate(node, state.metadata?.fps, value(node, "every_nth", 1));
-        const linked = ["fixed_frames", "frame_load_cap", "max_frames", "start_frame", "end_frame", "start_seconds", "end_seconds", "every_nth"];
-        const signature = JSON.stringify([rate, ...linked.map(name => inputNumber(node, name, value(node, name, 0)))]);
-        if (signature !== state.trimRate) {
-          state.trimRate = signature;
-          for (const trim of state.trimViews) trim.sync();
-        }
-      }
+      syncTrimRate(state);
       if (state.disposed || state.zoomRedraw || Math.abs(panelOversample() - (state.panelOversample ?? 1)) < 0.01) return;
       state.zoomRedraw = requestAnimationFrame(() => { state.zoomRedraw = null; if (!state.disposed) draw(state); });
     });
+    // 🔴 Nodes 2.0（Vue）下 onDrawForeground **完全不回调**，上面那个兜底就再
+    //    也不会跑：在遮罩编辑器里改完存盘，回到节点看到的还是旧图；Clip 的
+    //    帧数改过之后 trim 的读数也不跟。经典模式靠每帧的绘制钩子，Vue 模式
+    //    改用一个很轻的轮询 —— 一秒读一次 widget 的字符串，变了才动。
+    if (vueNodesEnabled()) {
+      state.sourceWatch = setInterval(() => {
+        if (state.disposed) {
+          clearInterval(state.sourceWatch);
+          state.sourceWatch = null;
+          return;
+        }
+        followSource(state);
+        syncTrimRate(state);
+      }, 1000);
+    }
   }
   if (typeof node.addDOMWidget === "function") {
     // All transform nodes share inline handles. Wheel/middle-drag still
@@ -1428,7 +1453,18 @@ function litTokens(state, chain) {
   const request = liveRequest(state);
   if (!request || !hasPicture(state)) return chain;
   const step = aspectMode(state) === "pad" ? "pad" : "crop";
-  const tokens = chain.tokens.map((token) => (token.label === step ? { ...token, label: `${step} to ${request}` } : token));
+  // 🔴 按 `kind` 认步骤，不按 `label` —— label 是给人看的，中文界面下是
+  // 「裁剪」「填充」，拿它跟 "crop" / "pad" 比一个都对不上，这段标注就静默
+  // 消失了（英文界面好好的，中文界面没有，最难查的那种）。
+  const tokens = chain.tokens.map((token) => {
+    if (token.kind !== step) return token;
+    return {
+      ...token,
+      label: step === "pad"
+        ? zhPair(`pad to ${request}`, `填充到 ${request}`)
+        : zhPair(`crop to ${request}`, `裁剪到 ${request}`),
+    };
+  });
   return { ...chain, tokens };
 }
 
@@ -3123,7 +3159,7 @@ function moveRoomFor(state, render) {
   return moveRoom(render.crop, render.source, values(state.node));
 }
 function anyRoom(room) { return Boolean(room && (room.left || room.right || room.up || room.down)); }
-function wheelZoom(state, event) { event.preventDefault(); const point = canvasLocalPoint(state.canvas, event); state.view = zoomAround(state.view, state.view.zoom * Math.exp(-event.deltaY * 0.0015), point); draw(state); }
+function wheelZoom(state, event) { event.preventDefault(); const point = canvasLocalPoint(state.canvas, event); state.view = zoomAround(state.view, state.view.zoom * Math.exp(-event.deltaY * 0.0015), point, state.render); draw(state); }
 
 function updateModalInfo(state) {
   // The marker is written as dataset.qgStatus (= data-qg-status) further down;
@@ -3205,6 +3241,8 @@ export function openTransformEditorForNode(node) {
 
 export function disposeTransformNode(node) {
   const state = node.__qgTransformState; if (!state) return; state.disposed = true; liveStates.delete(state); closeEditor(state); state.panelAbort?.abort(); state.panelResizeObserver?.disconnect(); state.frameController?.abort(); state.settle.cancel(); if (state.frameObjectUrl) URL.revokeObjectURL(state.frameObjectUrl);
+  // Vue 模式下「看有没有换图」靠的是一个一秒的轮询（经典模式用绘制钩子）
+  if (state.sourceWatch) { clearInterval(state.sourceWatch); state.sourceWatch = null; }
   if (node.__qgImgsSuppressed) {
     const descriptor = node.__qgImgsDescriptor;
     if (descriptor) Object.defineProperty(node, "imgs", descriptor); else delete node.imgs;

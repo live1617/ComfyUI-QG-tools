@@ -1,17 +1,15 @@
-// Pure state logic for the LoRA Loader rows: stack normalization, strength
-// scrubbing math, the picker's filter/keyboard model, the strength-bar
-// visualizer, the absorb-the-chain import, moved-file resolution, and the
-// master-toggle memory. DOM wiring lives in js/lora_loader/index.js;
-// everything here runs under node:test.
+// LoRA 栈的纯状态逻辑：行的规整、强度拖拽的数学、选择器的过滤与键盘模型、
+// 强度条的画法、吸收整条加载链、移动过的文件如何找回、主开关的记忆。
+// DOM 接线全在 web/lora_loader/index.js；这个文件零 DOM、零 ComfyUI 依赖，
+// 所以 tools/_check_lora_stack.mjs 能直接跑它。
 
-import { zhCount, zhSep, zhEnd } from "./zh.mjs?v=2026102915";
+import { zhCount, zhPair, zhSep, zhEnd } from "./zh.mjs?v=2026103135";
 
 export const STRENGTH_MIN = -10;
 export const STRENGTH_MAX = 10;
 export const DEFAULT_STEP = 0.05;
 export const FINE_STEP = 0.01;
-// Horizontal pixels of drag per strength step; small enough to feel light,
-// large enough that a shaky click cannot change the value.
+// 拖一个强度步长要横移多少像素：小到不费力，大到手抖点一下不会改值。
 export const SCRUB_PIXELS_PER_STEP = 4;
 export const SCRUB_DEAD_ZONE = 3;
 export const MAX_ROWS = 64;
@@ -28,6 +26,19 @@ export function roundStrength(value) {
   return Math.round(clampStrength(value) * 100) / 100;
 }
 
+// 🔴 存档里的坏强度不能变成 0。`clampStrength` 把非有限值收成 0，那是给
+// 拖拽用的（拖不出 NaN）；但读一个 `"abc"` 或 `null` 的强度如果也落到 0，
+// 这一行的 LoRA 就静默不生效了 —— 面板上看着还在、权重却是 0。后端
+// `_qg_lora_helpers.clean_strength` 对同一个坏值退回默认 1.0，两边得一致。
+function keptStrength(value, fallback) {
+  // 🔴 `Number(null)` 和 `Number("")` 都是 0，不是 NaN —— 少了这一句，存档里
+  // 一个 `strength: null`（或者空串）会被当成「用户就是要 0」，于是这一行的
+  // LoRA 静默不生效，看起来却和坏值退回默认完全不一样。
+  if (value === null || value === undefined || value === "") return roundStrength(fallback);
+  const number = Number(value);
+  return roundStrength(Number.isFinite(number) ? number : fallback);
+}
+
 export function newRow() {
   rowSerial += 1;
   return {
@@ -40,28 +51,59 @@ export function newRow() {
   };
 }
 
+// 一行会不会真的加载：本行没被关掉，它所在的组也没被关掉。
+// 与后端 `_qg_lora_helpers.loaded_rows` 是同一条判定。面板没有分组的编辑
+// 界面，所以 group_off 只在「从别的插件转过来的栈」里出现 —— 但后端认它，
+// 这里也得认，否则前端算出来的东西跟实际跑的对不上。
+export function rowRuns(row) {
+  // 没有行就没有东西会跑。`undefined !== false` 是真，不先拦一下，一行空槽
+  // 也会被算成「会加载」。
+  if (!row) return false;
+  return row.enabled !== false && row.group_off !== true;
+}
+
 export function normalizeRows(parsed) {
   if (!Array.isArray(parsed)) return [];
   return parsed.slice(0, MAX_ROWS).map((entry) => {
-    const row = newRow();
-    if (entry && typeof entry === "object") {
-      row.id = typeof entry.id === "string" && entry.id ? entry.id : row.id;
-      row.name = typeof entry.name === "string" ? entry.name : "";
-      row.strength = roundStrength(entry.strength ?? 1);
-      row.strength_clip = roundStrength(entry.strength_clip ?? row.strength);
-      row.enabled = entry.enabled !== false;
-      row.triggers = typeof entry.triggers === "string" ? entry.triggers : "";
-    }
-    return row;
+    const fresh = newRow();
+    if (!entry || typeof entry !== "object") return fresh;
+    // 🔴 未知字段原样带过。从别的插件转来的栈里带着 group / group_off，
+    // 本面板不编辑分组，但后端按 group_off 决定这一行跑不跑 —— 只保留已知
+    // 字段的话，用户在这里动一下强度，那两个字段就被抹掉了，后端随后会把
+    // 本该关掉的组重新跑起来。存档是别人的数据，不认得的键也该原样写回。
+    return {
+      ...entry,
+      id: typeof entry.id === "string" && entry.id ? entry.id : fresh.id,
+      name: typeof entry.name === "string" ? entry.name : "",
+      strength: keptStrength(entry.strength, 1),
+      strength_clip: keptStrength(entry.strength_clip, keptStrength(entry.strength, 1)),
+      enabled: entry.enabled !== false,
+      triggers: typeof entry.triggers === "string" ? entry.triggers : "",
+    };
   });
 }
 
-export function parseRows(raw) {
+// 读 widget 里那段 JSON。解析失败与「本来就是空栈」不是一回事：前者是
+// 别人的格式或者手改坏了，如果当成空栈处理，用户看到的是一张空面板，
+// 随手加一行就把它覆盖了 —— 而那段原文他再也没见过。
+// 所以另给一个能说清楚的版本，调用方拿它决定要不要在面板上提示。
+export function parseRowsDetailed(raw) {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (!text) return { rows: [], error: null };
+  let parsed;
   try {
-    return normalizeRows(JSON.parse(raw));
-  } catch {
-    return [];
+    parsed = JSON.parse(text);
+  } catch (error) {
+    return { rows: [], error: String(error?.message ?? error) };
   }
+  if (!Array.isArray(parsed)) {
+    return { rows: [], error: "not an array" };
+  }
+  return { rows: normalizeRows(parsed), error: null };
+}
+
+export function parseRows(raw) {
+  return parseRowsDetailed(raw).rows;
 }
 
 export function serializeRows(rows) {
@@ -81,9 +123,8 @@ export function moveRow(rows, index, delta) {
   return reorderRows(rows, index, index + delta);
 }
 
-// Drag-to-reorder model: which visual slot the pointer is over, given the
-// vertical centers of the rows in their current on-screen order. Past the
-// last center means the last slot; an empty stack has no slot.
+// 拖动排序的模型：给出一串行在屏幕上的纵向中心，指针落在哪个槽位。
+// 越过最后一个中心就是最后一个槽位；空栈没有槽位。
 export function hoverRowIndex(centers, y) {
   for (let i = 0; i < centers.length; i += 1) {
     if (y < centers[i]) return i;
@@ -91,9 +132,8 @@ export function hoverRowIndex(centers, y) {
   return centers.length - 1;
 }
 
-// Hover-thumbnail placement: below-right of the cursor, flipped left when the
-// viewport edge is near, never off-screen. `edge` is the thumb's largest side
-// plus its margin.
+// 悬停缩略图的位置：光标右下，靠近视口边缘就翻到左边，绝不出屏。
+// `edge` 是缩略图最长边加上留白。
 export function thumbPosition(x, y, viewportWidth, viewportHeight, edge = 188, offset = 14) {
   let left = x + offset;
   if (left + edge > viewportWidth) left = Math.max(4, x - edge - offset);
@@ -117,7 +157,12 @@ export function formatFileSize(bytes) {
   return `${text} ${unit}`;
 }
 
+// 🔴 下标越界时原样返回，不能写进 next[index]。`next[index] = {...next[index]}`
+// 在越界时不会报错：它把数组拉长，中间是空洞，序列化出来就是若干 `null` 行
+// 加一条只有强度、没有名字的残缺行 —— 一次卡顿就够写坏存档。
+// 面板已经改成按行 id 找行，这里是最后一道门。
 export function setStrength(rows, index, value, linked) {
+  if (!Number.isInteger(index) || index < 0 || index >= rows.length) return rows;
   const next = rows.slice();
   const row = { ...next[index], strength: roundStrength(value) };
   if (linked) row.strength_clip = row.strength;
@@ -125,10 +170,9 @@ export function setStrength(rows, index, value, linked) {
   return next;
 }
 
-// Scrub model: value follows horizontal pointer distance from the grab point.
-// Inside the dead zone nothing changes, so a plain click stays a click. The
-// coarse step is configurable (the gear menu's "Strength step"); Shift always
-// scrubs by the fine step.
+// 拖拽模型：值跟着「指针相对按下点的横向距离」走。死区内不动，所以一次
+// 普通点击还是点击。粗步长可以在齿轮菜单里配（Strength step），Shift 永远
+// 走细步长。
 export function scrubValue(startValue, deltaX, fine = false, coarseStep = DEFAULT_STEP) {
   if (Math.abs(deltaX) <= SCRUB_DEAD_ZONE) return roundStrength(startValue);
   const coarse = Number.isFinite(coarseStep) && coarseStep > 0 ? coarseStep : DEFAULT_STEP;
@@ -148,9 +192,8 @@ export function filterLoras(names, query) {
   return names.filter((name) => name.toLowerCase().includes(needle));
 }
 
-// Picker keyboard model: a highlight index over the filtered list.
-// Arrow keys wrap; Home/End jump; a shrinking filter keeps the highlight
-// valid. Enter resolves to the highlighted name (null when the list is empty).
+// 选择器的键盘模型：在被过滤后的列表上维护一个高亮下标。方向键绕回，
+// Home/End 跳两端，过滤变短时高亮仍有效；Enter 取高亮的名字（列表空时 null）。
 export function moveHighlight(index, delta, length) {
   if (length <= 0) return -1;
   if (index < 0) return delta >= 0 ? 0 : length - 1;
@@ -167,11 +210,10 @@ export function highlightedName(names, index) {
   return index >= 0 && index < names.length ? names[index] : null;
 }
 
-// Row keyboard intent only; DOM focus and commits stay in the node panel.
-// The add button is the last destination, at index rowCount. Edited fields,
-// composition and application shortcuts keep ownership of their keys.
-// onControl: the key was pressed on one of a row's own buttons or boxes, not
-// on the row. Enter and Space then belong to that control, as on any button.
+// 只算行的键盘意图；DOM 焦点和提交留在面板里。加号按钮是最后一个落点，
+// 下标等于行数。正在编辑的字段、输入法组合、带修饰键的快捷键都不归这里。
+// onControl：按键发生在这一行自己的按钮或输入框上，不是行本身 —— 那 Enter
+// 和空格归那个控件，跟任何按钮一样。
 export function loraStackKeyAction(event, { index, rowCount, atAdd = false, editing = false, onControl = false }) {
   if (editing || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey
       || event.isComposing || event.keyCode === 229) return null;
@@ -182,9 +224,8 @@ export function loraStackKeyAction(event, { index, rowCount, atAdd = false, edit
     const direction = event.key === "ArrowUp" ? -1 : 1;
     return { kind: "focus", index: Math.max(0, Math.min(rowCount, current + direction)) };
   }
-  // ComfyUI deletes the selected nodes on these keys from anywhere inside
-  // the graph. The stack keeps them while it holds the keyboard, so reaching
-  // for "remove this row" can never remove the node.
+  // ComfyUI 在图里任何位置按下这两个键都会删掉选中的节点。栈握着键盘时
+  // 把它们吞掉，于是「删掉这一行」这个动作永远不可能删掉节点。
   if (event.key === "Delete" || event.key === "Backspace") return { kind: "block" };
   if (onControl && (event.key === "Enter" || event.key === " ")) return null;
   if (event.key === "Enter") return { kind: "pick" };
@@ -196,9 +237,9 @@ export function loraStackKeyAction(event, { index, rowCount, atAdd = false, edit
   return null;
 }
 
-// A row keeps its triggers as one comma-joined text, and a trigger can hold
-// commas of its own (a whole sentence from Civitai). So a trigger is looked
-// for as the run of parts it becomes in that text, never as a single part.
+// 一行把自己的触发词存成一串逗号分隔的文本，而一个触发词本身可能带逗号
+// （Civitai 上整句就是触发词）。所以要在文本里按「它会拆成的那一段」去找，
+// 绝不能按单个片段找。
 function triggerParts(text) {
   return String(text || "")
     .split(",")
@@ -220,12 +261,27 @@ export function hasTrigger(triggers, word) {
   return findTrigger(triggerParts(triggers), triggerParts(word)) >= 0;
 }
 
+/**
+ * 幂等的「加进去」：已经在里面就原样返回。
+ *
+ * 🔴 信息卡的「添加自定义触发词」必须用这个，不能用 toggleTrigger ——
+ * toggle 的语义是「有则拿掉」，而同一个按钮同时还在往服务端追加一份
+ * 自定义词。两者语义相反就会出现：行里的词被删掉、服务端却多存了一条，
+ * 点两次之后卡片上列出两个一模一样的 chip（实测存出 6 份）。
+ */
+export function appendTrigger(triggers, word) {
+  const parts = triggerParts(triggers);
+  const wanted = triggerParts(word);
+  if (!wanted.length || findTrigger(parts, wanted) >= 0) return parts.join(", ");
+  return parts.concat(wanted).join(", ");
+}
+
 export function toggleTrigger(triggers, word) {
   const parts = triggerParts(triggers);
   const wanted = triggerParts(word);
   let existing = findTrigger(parts, wanted);
   if (existing < 0) parts.push(...wanted);
-  // Off takes out every copy, so a row that holds the trigger twice clears.
+  // 关掉时把每一份都拿掉，所以存了两次的触发词一次点击就清干净。
   for (; existing >= 0; existing = findTrigger(parts, wanted)) parts.splice(existing, wanted.length);
   return parts.join(", ");
 }
@@ -233,13 +289,12 @@ export function toggleTrigger(triggers, word) {
 export function summarizeRows(rows) {
   const on = rows.filter((row) => row.enabled && row.name).length;
   const total = rows.filter((row) => row.name).length;
-  // The "enabled" word is appended as its own text node at the call sites,
-  // so the translator can match it as a static string.
+  // "enabled" 那个词由调用方当独立的文本节点补上，翻译器才能把它当静态串匹配。
   return total === 0 ? "no LoRAs" : `${on} / ${total}`;
 }
 
-// Master toggle model: "on" when every named row is enabled, "off" when none
-// are, "mixed" otherwise. Blank rows don't vote.
+// 主开关模型：有名字的行全都开着是 "on"，全关是 "off"，其余是 "mixed"。
+// 空行不投票。
 export function toggleAllState(rows) {
   const named = rows.filter((row) => row.name);
   if (!named.length) return "off";
@@ -247,15 +302,14 @@ export function toggleAllState(rows) {
   return on === 0 ? "off" : on === named.length ? "on" : "mixed";
 }
 
-// Clicking the master pill: anything not fully-on turns everything on;
-// fully-on turns everything off.
+// 点主开关：只要没全开就全开；已经全开就全关。
 export function toggleAllRows(rows) {
   const enabled = toggleAllState(rows) !== "on";
   return rows.map((row) => (row.name ? { ...row, enabled } : row));
 }
 
-// Longest common folder prefix (whole segments only) across displayed names,
-// so a picker full of "styles/wan22/x.safetensors" reads as just "x".
+// 所有显示名共有的最长文件夹前缀（只按整段算），于是选择器里一整屏的
+// "styles/wan22/x.safetensors" 读起来只剩 "x"。
 export function commonFolderPrefix(names) {
   if (names.length < 2) return "";
   const split = names.map((name) => name.split("/"));
@@ -270,8 +324,8 @@ export function commonFolderPrefix(names) {
   return depth ? first.slice(0, depth).join("/") + "/" : "";
 }
 
-// Folder grouping for the picker's browse view: names bucketed by their
-// top-level folder in first-appearance order; root files group under "".
+// 选择器「按文件夹浏览」用的分组：按顶层文件夹分桶，顺序按首次出现；
+// 根目录下的文件归到 ""。
 export function groupByFolder(names) {
   const groups = [];
   const index = new Map();
@@ -287,10 +341,9 @@ export function groupByFolder(names) {
   return groups;
 }
 
-// Every registered subfolder is selectable, including parents with files
-// only in nested folders. Folder order follows the first appearance of each
-// branch; each folder's files keep the server's original names and order.
-// Only separators are normalized: case can distinguish files on Linux.
+// 每个登记过的子文件夹都可选，包括只在下级有文件的父目录。文件夹顺序按
+// 每条分支首次出现；每个文件夹里的文件保持服务端给的名字与顺序。只归一化
+// 分隔符：大小写在 Linux 上能区分文件。
 function loraPath(name) {
   return name.replaceAll("\\", "/");
 }
@@ -321,11 +374,10 @@ export function loraFolders(names) {
   return folders;
 }
 
-// A single browse/keyboard order for selectable folder headers and files.
-// Search hides unmatched files, but headers still count their whole folder:
-// picking a header always adds that whole folder, not just search results.
-// Folding hides descendants, retaining their preferences in the caller's Set.
-// Callers can pass an empty Set while searching to reveal every match.
+// 浏览与键盘共用一套顺序：可选的文件夹标题和文件混在一条列表里。搜索会
+// 藏掉不匹配的文件，但标题仍按整个文件夹计数：点标题永远是加整个文件夹，
+// 不是只加搜索结果。折叠会藏掉下级，但偏好仍留在调用方的 Set 里；搜索时
+// 传一个空 Set 就能展开全部匹配。
 export function loraPickerEntries(names, query = "", collapsedFolders = new Set()) {
   const tree = { entries: [], folders: new Map() };
   for (const name of names) {
@@ -367,9 +419,9 @@ export function loraPickerEntries(names, query = "", collapsedFolders = new Set(
   return visit(tree);
 }
 
-// Folder add is one append, or no change when the whole selection cannot
-// fit. Existing rows (even duplicates, disabled rows and empty slots) stay
-// untouched. Deduplicate by full path, never basename or moved-file guess.
+// 加一整个文件夹是一次追加，装不下就一点都不改。已有的行（包括重复的、
+// 关掉的和空槽）原样留着。按完整路径去重，绝不按主干名或「可能是移动过的
+// 文件」去猜。
 export function appendFolderRows(rows, names, defaultStrength = 1) {
   const seen = new Set(rows.map((row) => loraPath(row.name)));
   const pending = [];
@@ -388,10 +440,9 @@ export function appendFolderRows(rows, names, defaultStrength = 1) {
   return { rows: [...rows, ...addedRows], added: needed, skipped, needed, room };
 }
 
-// A suggested range is advisory: null/absent bounds never flag.
-// ---------- templates ----------
-// A template is a named snapshot of the row stack: { name, rows } with rows
-// stored id-less (ids are per-node identity, not part of the recipe).
+// ---------- 模板 ----------
+// 模板是行栈的一份具名快照：{ name, rows }，行里不存 id（id 是每个节点自己的
+// 身份，不属于配方）。
 
 export function templateFromRows(name, rows) {
   const label = String(name ?? "").trim();
@@ -406,8 +457,7 @@ export function applyTemplate(template) {
   return normalizeRows(template?.rows);
 }
 
-// Replace a same-named template (case-insensitive) or append; kept sorted so
-// the menu order is stable however the list was built.
+// 同名模板（不分大小写）替换、否则追加；存的时候排好序，菜单顺序就稳定。
 export function upsertTemplate(list, template) {
   if (!template) return Array.isArray(list) ? list : [];
   const base = Array.isArray(list) ? list : [];
@@ -437,6 +487,7 @@ export function parseTemplates(raw) {
   }
 }
 
+// 建议范围只是建议：缺边或非有限的边界不算越界。
 export function strengthOutOfRange(value, range) {
   if (!range) return false;
   const low = Number.isFinite(range.min) ? range.min : null;
@@ -446,13 +497,11 @@ export function strengthOutOfRange(value, range) {
   return false;
 }
 
-// ---------- strength bars ----------
+// ---------- 强度条 ----------
 //
-// Each row's name field gets a center-zero bar behind the text: positive
-// model strength grows right of center, negative grows left. One shared
-// scale across the whole stack, floored at 1.0, so the everyday 0..1 range
-// reads absolutely, and one +2.0 row rescales every bar rather than
-// clipping. Colors stay muted so the filename stays the foreground.
+// 每行的名字框背后画一条以中间为零点的条：正的模型强度往右长，负的往左长。
+// 整个栈共用一个刻度，下限 1.0，于是日常的 0..1 读起来是绝对值，而某一行
+// 到 2.0 会让所有条一起缩放，不会撞边截断。颜色压着，文件名仍是前景。
 
 export const BAR_COLORS = {
   positiveFill: "rgba(0, 180, 170, 0.28)",
@@ -463,13 +512,11 @@ export const BAR_COLORS = {
   base: "#23272c",
 };
 
-// Bars ignore values this close to zero; the center tick alone marks them.
+// 这么接近 0 的值不画条，只留中间的刻度。
 const BAR_EPSILON = 0.005;
 
-// Bars share one scale so magnitudes compare across rows: the largest
-// enabled strength fills its half, never less than 1. A disabled row is
-// dimmed and sits out, so switching one off rescales the others to the
-// strongest row still in play (its own bar clamps at the edge meanwhile).
+// 条的刻度：取最大的启用强度，绝不小于 1。关掉的行变暗并退出，于是关掉一行
+// 会让其余的按「还在场的最大值」重新缩放（它自己的条此刻顶在边上）。
 export function strengthBarScale(rows) {
   let peak = 0;
   for (const row of rows ?? []) {
@@ -480,7 +527,7 @@ export function strengthBarScale(rows) {
   return Math.max(1, peak);
 }
 
-// The bar's extent as percentages of the field width, 50 = zero.
+// 条的范围，按字段宽度的百分比算，50 就是零点。
 export function strengthBarSpan(value, scale) {
   const magnitude = Math.abs(Number(value)) / (Number(scale) || 1);
   const half = 50 * Math.min(1, Number.isFinite(magnitude) ? magnitude : 0);
@@ -491,9 +538,8 @@ export function strengthBarSpan(value, scale) {
 
 const pct = (value) => `${Number(value.toFixed(2))}%`;
 
-// A complete CSS background value: outer-edge cap (2px), center tick (1px),
-// translucent fill, base color. Empty-name rows and bars-off pass through
-// the caller, which clears the inline style instead.
+// 一整个 CSS background 值：外缘的端帽（2px）、中间刻度（1px）、半透明填充、
+// 底色。空名字的行和关掉强度条的情况由调用方处理，它会把内联样式清掉。
 export function strengthBarBackground(value, scale, colors = BAR_COLORS) {
   const tick =
     `linear-gradient(to right, transparent calc(50% - 0.5px), ${colors.tick} ` +
@@ -518,22 +564,25 @@ export function strengthBarBackground(value, scale, colors = BAR_COLORS) {
   return `${cap}, ${tick}, ${bar} ${colors.base}`;
 }
 
-// ---------- display names ----------
+// ---------- 显示名 ----------
 
-// What a row SHOWS for its lora; the serialized stack always keeps the full
-// path. Folder and extension hiding are independent preferences.
+// 一行显示出来的名字；序列化时永远存完整路径。藏文件夹与藏扩展名是两项
+// 独立的偏好。
+//
+// 扩展名表比 `stripExt` 宽一格：那个函数给「按主干名找回移动过的文件」用，
+// 认得越少越好（把 a.pth 和 a.safetensors 都剥成 a 只会多出一次歧义）；这里
+// 只负责显示，核心支持的 .pt2/.bin/.pth 都该藏掉。
 export function shortLoraName(name, { hideFolders = true, hideExtension = true } = {}) {
   let text = String(name ?? "");
   if (hideFolders) text = text.split("/").pop().split("\\").pop();
-  if (hideExtension) text = text.replace(/\.(safetensors|sft|ckpt|pt)$/i, "");
+  if (hideExtension) text = text.replace(/\.(safetensors|sft|ckpt|pt2|pth|bin|pt)$/i, "");
   return text;
 }
 
-// A long name is cut in the middle, not at the end: the end of a LoRA file
-// name is usually what tells its checkpoints apart (_v1_000004000,
-// -000012, _epoch_10), so it gets the larger share of the room. `measure`
-// returns a string's width in the same units as maxWidth (canvas
-// measureText in the browser), which keeps this testable.
+// 长名字从中间截断，不截尾巴：LoRA 文件名的结尾通常才是区分 checkpoint 的
+// 部分（_v1_000004000、-000012、_epoch_10），所以它拿更大的一份。`measure`
+// 返回与 maxWidth 同单位的宽度（浏览器里是 canvas 的 measureText），这样
+// 这段逻辑可测。
 const ELLIPSIS = "\u2026";
 const TAIL_SHARE = 0.6;
 
@@ -544,7 +593,7 @@ export function middleEllipsis(text, maxWidth, measure) {
     const tail = Math.ceil(keep * TAIL_SHARE);
     return value.slice(0, keep - tail) + ELLIPSIS + value.slice(value.length - tail);
   };
-  // Widest cut that fits: kept characters only ever add width.
+  // 放得下的最宽截法：留下的字符只会让宽度变大，所以能二分。
   let low = 0;
   let high = value.length - 1;
   while (low < high) {
@@ -555,10 +604,9 @@ export function middleEllipsis(text, maxWidth, measure) {
   return build(low);
 }
 
-// A path gives up its folder first: the folder is shortened from its end
-// ("krea2/sty\u2026/"), and only when the file name alone does not fit is the
-// file name itself cut in the middle, with the folder dropped. Returns the
-// two parts to show, so the folder can be dimmed.
+// 路径先让出文件夹：文件夹从尾部缩（"krea2/sty…/"），只有文件名单独都放不下
+// 时才把文件名自己从中间截断、并把文件夹整个去掉。返回要显示的两段，好让
+// 文件夹那段可以变暗。
 export function fitLoraLabel(label, maxWidth, measure) {
   const text = String(label ?? "");
   const slash = Math.max(text.lastIndexOf("/"), text.lastIndexOf("\\"));
@@ -570,7 +618,7 @@ export function fitLoraLabel(label, maxWidth, measure) {
     const marker = ELLIPSIS + folder.slice(-1);
     const shortened = (keep) => folder.slice(0, keep) + marker;
     if (measure(shortened(1)) <= room) {
-      // Longest start of the folder that still fits, found by halving.
+      // 放得下的最长文件夹前缀，二分找。
       let low = 1;
       let high = folder.length - 2;
       while (low < high) {
@@ -584,10 +632,9 @@ export function fitLoraLabel(label, maxWidth, measure) {
   return { folder: "", name: middleEllipsis(name, maxWidth, measure) };
 }
 
-// The picker grows to fit its longest name, so long names read whole in a
-// narrow workspace; past the cap the middle ellipsis takes over. Never
-// narrower than it used to open (260, or the name field plus 80 up to 380),
-// never wider than the window.
+// 选择器宽度跟着最长的名字长，窄工作区里长名字也能整读；超过上限交给中间
+// 省略号。绝不小于它原本打开时的宽度（260，或者名字框加 80 直到 380），
+// 也绝不超过窗口。
 export const PICKER_MIN_WIDTH = 260;
 export const PICKER_MAX_WIDTH = 560;
 export function pickerWidth(widestLabel, anchorWidth, viewportWidth, chrome = 48) {
@@ -597,12 +644,11 @@ export function pickerWidth(widestLabel, anchorWidth, viewportWidth, chrome = 48
   return Math.min(wanted, cap);
 }
 
-// ---------- duplicate rows ----------
+// ---------- 重复行 ----------
 
-// Full names (case-insensitive) that appear on more than one row. Every copy
-// gets flagged - symmetric, so the user picks which one to keep. Same file
-// under two different folders is NOT a duplicate here: the stack would load
-// both files, and that is worth showing truthfully.
+// 出现在不止一行上的完整名字（不分大小写）。每一份都标出来 —— 对称，用户
+// 自己挑留哪个。同一个文件在两个不同文件夹下不算重复：栈会两个都加载，
+// 这件事该如实显示。
 export function duplicateLoraKeys(rows) {
   const counts = new Map();
   for (const row of rows ?? []) {
@@ -615,13 +661,12 @@ export function duplicateLoraKeys(rows) {
   );
 }
 
-// ---------- master-toggle memory ----------
+// ---------- 主开关的记忆 ----------
 
-// The master pill cycles: mixed -> all on -> all off -> the remembered mixed
-// state -> all on -> ... The snapshot is captured whenever the cycle leaves
-// a mixed state, and refreshed by every individual toggle (the caller feeds
-// snapshotEnabled back in), so an accidental master click is always one more
-// click from the setup it destroyed.
+// 主开关的循环：mixed -> 全开 -> 全关 -> 记住的那个 mixed -> 全开 -> …
+// 每当循环离开一个 mixed 状态就抓一次快照，而每次单独开关都会刷新它（调用方
+// 把 snapshotEnabled 递回去），所以手滑点一下主开关，永远只差一次点击就能
+// 回到被毁掉的那套设置里。
 
 export function snapshotEnabled(rows) {
   const map = {};
@@ -637,8 +682,8 @@ export function cycleMasterToggle(rows, snapshot) {
   const state = toggleAllState(rows);
   if (state === "mixed") return { rows: set(true), snapshot: snapshotEnabled(rows) };
   if (state === "on") return { rows: set(false), snapshot };
-  // All off: restore the remembered setup when it still lights anything;
-  // otherwise this is a plain binary toggle and everything turns on.
+  // 全关：记住的那套如果还能点亮什么就恢复，否则这就是一次普通的二选一，
+  // 全部打开。
   const restored = rows.map((row) =>
     row.name && snapshot && row.id in snapshot
       ? { ...row, enabled: snapshot[row.id] }
@@ -648,14 +693,13 @@ export function cycleMasterToggle(rows, snapshot) {
   return remembersAnything ? { rows: restored, snapshot } : { rows: set(true), snapshot };
 }
 
-// ---------- absorb the loader chain ----------
+// ---------- 吸收整条加载链 ----------
 //
-// The gear menu's absorb action walks the model chain on BOTH sides of this
-// node, lifts every recognized loader's rows into the stack, and bypasses
-// the originals - so an old workflow's loader chain collapses into one
-// QG-tools node without changing what the graph computes.
+// 齿轮菜单里的吸收动作走这条节点两侧的模型链，把每个认得的加载器的行抬进
+// 栈里，并把原来那些节点 bypass 掉 —— 于是老工作流的加载链收成一个 QG-tools
+// 节点，而图算出来的东西不变。
 
-// LiteGraph node modes: 4 = bypass (pass-through), 2 = mute.
+// LiteGraph 的节点模式：4 = bypass（直通），2 = mute。
 export const BYPASS_MODE = 4;
 export const MUTE_MODE = 2;
 
@@ -677,10 +721,9 @@ function entry(name, strength, strengthClip, enabled = true, triggers = "") {
   };
 }
 
-// The loader rows a recognized node contributes, in its own apply order.
-// Returns null for a node type this import does not understand - the caller
-// stops walking there. nodeLike is a plain shape:
-// { type, widgets: [{ name, value }] }.
+// 一个认得的节点贡献的行，按它自己的应用顺序。这个导入不认识的类型返回
+// null —— 调用方到那里就停止往上走。nodeLike 是个普通形状：
+// { type, widgets: [{ name, value }] }。
 export function loaderLoraEntries(nodeLike) {
   const type = String(nodeLike?.type ?? "");
   if (type === "LoraLoader" || type === "Lora Loader (JPS)") {
@@ -693,8 +736,8 @@ export function loaderLoraEntries(nodeLike) {
   if (type === "LoraLoaderModelOnly") {
     const name = widgetValue(nodeLike, "lora_name");
     if (!name || name === "None") return [];
-    // Model-only means CLIP untouched: clip strength 0 reproduces that
-    // faithfully even when this node has a CLIP connected.
+    // 只管模型意味着 CLIP 没动：CLIP 强度写 0 能如实复现这一点，即使这个
+    // 节点身上接着 CLIP。
     return [entry(name, widgetValue(nodeLike, "strength_model"), 0)];
   }
   if (type === "Lora Loader Stack (rgthree)") {
@@ -723,8 +766,8 @@ export function loaderLoraEntries(nodeLike) {
     return rows;
   }
   if (type === "PixaromaLoraLoader") {
-    // Interop with the Pixaroma loader's serialized panel state: one widget
-    // ("loras_ui") holding { loras: [{ name, on, sm, sc }] }.
+    // 与 Pixaroma 加载器序列化下来的面板状态互通：一个 widget（"loras_ui"）
+    // 装着 { loras: [{ name, on, sm, sc }] }。
     const panelState = widgetValue(nodeLike, "loras_ui");
     const list = panelState && typeof panelState === "object" ? panelState.loras : null;
     if (!Array.isArray(list)) return [];
@@ -753,10 +796,9 @@ const baseName = (path) =>
 const stripExt = (name) =>
   name.replace(/\.(safetensors|sft|ckpt|pt)$/i, "");
 
-// Fit a foreign lora path to this install's list. Exact wins; then a unique
-// case-insensitive full-path match; then a unique basename match ignoring
-// the extension - which is what lets a workflow saved on another machine's
-// folder layout land on the same file here.
+// 把外来的 lora 路径对到本机的列表上。完全一致优先；然后是不分大小写的
+// 完整路径唯一命中；再是不看扩展名的主干名唯一命中 —— 最后这条让「在别的
+// 机器的目录结构下存的」工作流能落到本机的同一个文件上。
 export function resolveLoraName(name, available) {
   const list = Array.isArray(available) ? available : [];
   if (list.includes(name)) return { name, status: "exact" };
@@ -772,8 +814,8 @@ export function resolveLoraName(name, available) {
   return { name, status: "missing" };
 }
 
-// Merge rows for imports. Absorbing a live chain sets deduplicate=false:
-// repeated filenames are separate patch applications and must all survive.
+// 导入时合并行。吸收一条活着的链要 deduplicate=false：重复的文件名是分别
+// 打的补丁，必须全都留下。
 export function mergeImportedRows(existing, imported,
                                   { makeRow = newRow, position = "before", deduplicate = true } = {}) {
   const have = new Set(
@@ -797,19 +839,17 @@ export function mergeImportedRows(existing, imported,
   return { rows, added: added.length, skipped };
 }
 
-// Linked mode shows one strength per row; imported rows that patch model
-// and CLIP differently (a model-only loader, an rgthree dual row) need the
-// separate boxes or the difference would be invisible and lost on the
-// first scrub.
+// 联动模式下一行只显示一个强度；导入进来的行如果模型和 CLIP 打的不一样
+// （只管模型的加载器、rgthree 的双强度行），就必须分开显示，否则这个差别
+// 看不见，第一次拖就被抹平了。
 export function importNeedsSeparateStrengths(entries) {
   return (entries ?? []).some(
     (item) => Number(item.strength) !== Number(item.strength_clip),
   );
 }
 
-// Toast summaries are composed from "{n}" templates (see shared/zh.mjs) so
-// the zh plugin's dictionary can translate each fragment; counts never break
-// whole-string matching because translation happens here, before the toast.
+// Toast 的摘要由 "{n}" 模板拼出来（见 shared/zh.mjs），这样汉化插件的词典
+// 能逐段翻译；计数在翻译之前就填好了，所以不会破坏整串匹配。
 const SUMMARY_SEGMENTS = {
   empty: "No LoRA loaders found in the model chain.",
   imported1: "Imported {n} LoRA",
@@ -852,9 +892,9 @@ function upstreamModelNode(node) {
   return graph.getNodeById?.(link.origin_id) ?? null;
 }
 
-// Loader nodes feeding the model input, nearest-first. Reroutes are walked
-// through; already-bypassed loaders stay in the chain (bypass passes the
-// model through, so the walk continues past them) but contribute no rows.
+// 喂给模型输入的那些加载器节点，最近的先。转接点会穿过去；已经 bypass 的
+// 加载器仍留在链上（bypass 会把模型直通过去，所以还得继续往上走），但不
+// 贡献任何行。
 export function collectUpstreamLoaders(node) {
   const chain = [];
   const seen = new Set([node.id]);
@@ -873,9 +913,8 @@ export function collectUpstreamLoaders(node) {
   return chain;
 }
 
-// The single node this node's model output feeds - and only when it feeds
-// exactly one. A fan-out ends the walk: bypassing a loader on one branch
-// would silently change what every other branch computes.
+// 这个节点的模型输出喂给的那一个节点 —— 且只在正好喂一个的时候。扇出就
+// 停止：bypass 其中一条分支上的加载器会悄悄改掉其它每条分支算出来的东西。
 function downstreamModelNode(node) {
   const graph = node.graph;
   if (!graph) return null;
@@ -889,9 +928,8 @@ function downstreamModelNode(node) {
   return graph.getNodeById?.(link.target_id) ?? null;
 }
 
-// Loader nodes the model output feeds, nearest-first (= their apply order).
-// Same rules as upstream: Reroutes pass through, an unrecognized type or a
-// fan-out ends the walk.
+// 模型输出喂过去的那些加载器，最近的先（＝它们的应用顺序）。规则同上：
+// 转接点穿过去，不认得的类型或扇出就停。
 export function collectDownstreamLoaders(node) {
   const chain = [];
   const seen = new Set([node.id]);
@@ -910,12 +948,21 @@ export function collectDownstreamLoaders(node) {
   return chain;
 }
 
-// Absorption moves patches and bypasses their old owners. Only a serial path
-// can keep every consumer seeing the same patches, including CLIP consumers.
+// 吸收会把补丁搬走、把原来的主人 bypass 掉。只有串行的一条路径才能让每个
+// 消费者看到同样的补丁，包括 CLIP 的消费者。
 export function absorbChainIssue(node, upstream, downstream) {
-  if ([2, 4].includes(node.mode ?? 0)) return "Enable this LoRA Loader before absorbing a chain.";
+  // 这五句直接进 loraToast：toast 是 PrimeVue，挂在 app root 外面，汉化插件的
+  // DOM 翻译器看不到它（zh.mjs 的注释里记着这件事）。所以文案在这里就得备好
+  // 两份，不能指望下游去翻。
+  if ([2, 4].includes(node.mode ?? 0)) {
+    return zhPair("Enable this LoRA Loader before absorbing a chain.",
+                  "先启用这个 LoRA 加载器，再吸收整条链。");
+  }
   if (node.inputs?.some(input => input.name === "loras" && input.link != null)) {
-    return "This stack is supplied by a connected input. Disconnect it before absorbing; nothing was changed.";
+    return zhPair(
+      "This stack is supplied by a connected input. Disconnect it before absorbing; nothing was changed.",
+      "这一摞是由接线输入提供的。先断开它再吸收；什么都没改。",
+    );
   }
   const chain = [...upstream].reverse().concat(node, downstream);
   const active = item => ![2, 4].includes(item.mode ?? 0);
@@ -938,13 +985,19 @@ export function absorbChainIssue(node, upstream, downstream) {
   };
   for (let index = 1; index < chain.length; index++) {
     if (!feedsOnly(chain[index - 1], chain[index], "MODEL")) {
-      return "The model chain branches or changes before reaching this stack. Keep shared loaders separate; nothing was absorbed.";
+      return zhPair(
+        "The model chain branches or changes before reaching this stack. Keep shared loaders separate; nothing was absorbed.",
+        "模型链在到达这一摞之前就分叉或换道了。共享的加载器请各自留着；什么都没吸收。",
+      );
     }
   }
   const sources = [...upstream, ...downstream].filter(active);
   if (sources.some(source => source.outputs?.some(output =>
     !["MODEL", "CLIP"].includes(String(output.type).toUpperCase()) && output.links?.length))) {
-    return "A source loader has another connected output, such as trigger words. Bypassing it would break that connection; nothing was absorbed.";
+    return zhPair(
+      "A source loader has another connected output, such as trigger words. Bypassing it would break that connection; nothing was absorbed.",
+      "有一个来源加载器还接了别的输出（比如触发词）。旁通它会断开那根线；什么都没吸收。",
+    );
   }
   const movesClip = sources.some(source => slotOf(source, "inputs", "CLIP")?.link != null &&
     loaderLoraEntries({type: source.type, widgets: source.widgets})?.some(row => row.enabled && row.strength_clip !== 0));
@@ -952,7 +1005,10 @@ export function absorbChainIssue(node, upstream, downstream) {
     const clipChain = chain.filter(item => slotOf(item, "outputs", "CLIP"));
     if (slotOf(node, "inputs", "CLIP")?.link == null || clipChain.some((item, index) =>
       index > 0 && !feedsOnly(clipChain[index - 1], item, "CLIP"))) {
-      return "CLIP must follow the same serial loader chain as MODEL to preserve its patches. Nothing was absorbed.";
+      return zhPair(
+        "CLIP must follow the same serial loader chain as MODEL to preserve its patches. Nothing was absorbed.",
+        "为了保住 CLIP 的补丁，CLIP 必须和 MODEL 走同一条串行加载链。什么都没吸收。",
+      );
     }
   }
   return null;

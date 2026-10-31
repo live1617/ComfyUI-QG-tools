@@ -1,25 +1,29 @@
 # -*- coding: utf-8 -*-
 """QG Mask Refine — clean up a mask in one fixed-order pass.
 
-Ported from ComfyUI-AusBoss (nodes/node_refine_mask.py), MIT.
-Original by the ComfyUI-AusBoss author. The pass order and every routine are
-unchanged (see _qg_mask_refine_helpers for the algorithms):
+Rewritten on 2026-10-30 from the ComfyUI-AusBoss node of the same name (MIT).
+The pass order and the controls are unchanged:
+``expand -> fill holes -> smooth -> feather -> edge refine -> levels``.
+The algorithms live in ``_qg_mask_refine_helpers`` and are this pack's own
+implementation; its docstring records what differs from the older copy that
+``_qg_mask_helpers`` keeps for the crop and inpaint nodes.
 
-  expand -> fill holes -> smooth -> feather -> edge refine -> levels
+Two things that changed here:
+  * the preview covers the whole batch instead of frame 0 only, so a batch run
+    can actually be checked;
+  * a failed preview is logged rather than printed, and no longer takes the
+    node down with it.
 
-QG changes: renamed to the QG_ prefix, category moved under QG-tools/Mask,
-display name and tooltips rewritten, and the face preview reuses this pack's
-temp-PNG helper instead of upstream's. OUTPUT_NODE is on here (upstream left it
-off): it is what makes the preview land in the history payload and on the node
-face reliably, and every other previewing node in this pack does the same.
+OUTPUT_NODE is on (upstream left it off): it is what makes the preview land in
+the history payload and on the node face reliably, and every other previewing
+node in this pack does the same.
 
-Modified for ComfyUI-QG-tools on 2026-10-27: renamed to the QG_ prefix, category and
-display name localized, tooltips and comments rewritten.
 Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
+import logging
 import os
-import random
+import uuid
 
 import numpy as np
 import folder_paths
@@ -202,26 +206,25 @@ class QGMaskRefine:
         )
         if not preview:
             return (refined, inverted)
-        # The refined mask itself is the preview: upstream showed whatever fed
-        # the mask input, and a segmentation node upstream has no picture to
-        # show, so the panel stayed empty exactly when the result mattered.
+        # 预览画的是修好的遮罩本身：上游展示的是喂进 mask 的那个东西，而分割类
+        # 节点上游根本没有图可看，于是最需要看结果的时候面板恰恰是空的。
         try:
             return {"ui": {"images": self._preview(refined)}, "result": (refined, inverted)}
-        except Exception as exc:  # a failed preview is never fatal
-            detail = str(exc).encode("ascii", "replace").decode("ascii")
-            print("[QG-tools] Mask Refine: preview unavailable (%s)." % detail)
+        except Exception as exc:  # 预览失败不影响出结果
+            logging.warning("[QG-tools] Mask Refine: preview unavailable (%s).", exc)
             return (refined, inverted)
 
     @staticmethod
     def _preview(mask):
+        """把整批帧都写成临时 PNG —— 只看第一帧的话，批量跑完无从核对。"""
         out_dir = folder_paths.get_temp_directory()
-        prefix = "QG_MaskRefine_temp_" + "".join(
-            random.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(5)
-        )
-        filename = prefix + ".png"
-        array = np.clip(255.0 * mask[0].cpu().numpy(), 0, 255).astype(np.uint8)
-        Image.fromarray(array, mode="L").save(os.path.join(out_dir, filename), compress_level=1)
-        return [{"filename": filename, "subfolder": "", "type": "temp"}]
+        results = []
+        for index, frame in enumerate(mask):
+            filename = "QG_MaskRefine_%s_%02d.png" % (uuid.uuid4().hex[:12], index)
+            array = np.clip(255.0 * frame.detach().cpu().numpy(), 0, 255).astype(np.uint8)
+            Image.fromarray(array, mode="L").save(os.path.join(out_dir, filename), compress_level=1)
+            results.append({"filename": filename, "subfolder": "", "type": "temp"})
+        return results
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskRefine": QGMaskRefine}
