@@ -14,13 +14,23 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      - name: Publish Custom Node
-        # 钉住 tag 而不是 @main：这个 action 自 2024-05 的 1.0.1 之后就没再发布新版，
-        # 但 main 分支随时可能被改。发版是一步不可逆的操作（版本号一上传就占住了），
-        # 不该让上游一次无声的 push 改变它的行为。要升级就显式改这一行。
-        uses: Comfy-Org/publish-node-action@1.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          # 在仓库 Settings -> Secrets and variables -> Actions 里
-          # 新建名为 REGISTRY_ACCESS_TOKEN 的 secret，值填 registry.comfy.org 上
-          # 生成的 personal access token（站点是 registry.comfy.org）。
-          personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
+          python-version: "3.10"
+
+      # 不用 Comfy-Org/publish-node-action：它 1.0.1（2024-05 之后没再发版）内部跑的是
+      # `comfy node publish --yes`，而 comfy-cli 1.25 已经不支持 --yes ——
+      # 2026-11-09 发 0.9.12 时就这么炸的（No such option: --yes，exit 2）。
+      # 直接调官方 CLI 两条命令，少一层会跟 CLI 版本脱节的包装：接口是 comfy-cli 自己的
+      # `node publish --token`，比第三方 action 里的私有拼法稳定。
+      - name: Install comfy-cli
+        run: pip install --upgrade comfy-cli
+
+      - name: Publish to registry
+        # REGISTRY_ACCESS_TOKEN 在仓库 Settings -> Secrets and variables -> Actions 里，
+        # 值填 registry.comfy.org 上生成的 personal access token。
+        run: |
+          comfy --skip-prompt --no-enable-telemetry env
+          comfy node publish --token "${{ secrets.REGISTRY_ACCESS_TOKEN }}"
