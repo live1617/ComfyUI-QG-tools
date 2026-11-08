@@ -95,7 +95,7 @@ def _resolve_file(value: str, getter) -> str:
         return exact[0]
     if len(exact) > 1:
         raise ValueError(
-            "[QG-tools] 模型加载器：「%s」匹配到多个文件，请在节点里重新选一个：\n  %s"
+            "[QG-tools] Triple Loader: \"%s\" matches several files; pick one in the node:\n  %s"
             % (value, "\n  ".join(exact[:8]))
         )
     bare = [
@@ -106,10 +106,10 @@ def _resolve_file(value: str, getter) -> str:
         return bare[0]
     if len(bare) > 1:
         raise ValueError(
-            "[QG-tools] 模型加载器：「%s」对应多个文件（%s），请在节点里重新选一个。"
-            % (value, "、".join(bare[:8]))
+            "[QG-tools] Triple Loader: \"%s\" matches several files (%s); pick one in the node."
+            % (value, ", ".join(bare[:8]))
         )
-    raise ValueError("[QG-tools] 模型加载器：找不到模型文件「%s」" % value)
+    raise ValueError("[QG-tools] Triple Loader: model file not found: \"%s\"" % value)
 
 
 class QGTripleLoader:

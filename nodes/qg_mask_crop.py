@@ -34,7 +34,9 @@ from __future__ import annotations
 
 import torch
 
+from ._qg_combo_legacy import combo_legacy
 from ._qg_execution_helpers import raise_if_interrupted, warn_once
+from ._qg_tensor_helpers import as_image_batch, as_mask_batch
 from ._qg_mask_crop_helpers import (
     crop_image,
     crop_mask,
@@ -61,29 +63,17 @@ FILL_MODES = ["edge", "stretch", "black"]
 
 
 def _as_image(image) -> torch.Tensor:
-    if not isinstance(image, torch.Tensor):
-        raise ValueError("[QG-tools] Mask Crop expected an IMAGE tensor.")
-    if image.dim() == 3:
-        image = image.unsqueeze(0)
-    if image.dim() != 4:
-        raise ValueError(
-            "[QG-tools] Mask Crop expected a BHWC IMAGE, got shape %s." % (tuple(image.shape),)
-        )
-    return image.float()
+    """BHWC 归一化（共享判据：2 维 / 3 维单图 / 3 维灰度批 / 4 维）。"""
+    return as_image_batch(image, "Mask Crop: image")[0].float()
 
 
 def _as_mask(mask) -> torch.Tensor:
-    if not isinstance(mask, torch.Tensor):
-        raise ValueError("[QG-tools] Mask Crop expected a MASK tensor.")
-    if mask.dim() == 4:
-        mask = mask.flatten(0, 1)
-    if mask.dim() == 2:
-        mask = mask.unsqueeze(0)
-    if mask.dim() != 3:
-        raise ValueError(
-            "[QG-tools] Mask Crop expected a BHW MASK, got shape %s." % (tuple(mask.shape),)
-        )
-    return mask.float().clamp(0.0, 1.0)
+    """BHW 归一化（共享判据；4 维按通道取 max，不再 flatten(0, 1)）。
+
+    🔴 `flatten(0, 1)` 对 (B, 1, H, W) 刚好等价，但对 (B, C>1, H, W) 会把
+    通道叠进批次、帧数凭空翻倍 —— 共享版取 max，语义与「遮罩只有一个通道」一致。
+    """
+    return as_mask_batch(mask, "Mask Crop: mask").float().clamp(0.0, 1.0)
 
 
 def _seam(seam) -> dict:
@@ -95,6 +85,7 @@ def _seam(seam) -> dict:
     return seam
 
 
+@combo_legacy("QG_MaskCrop")
 class QGMaskCrop:
     CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
@@ -109,6 +100,13 @@ class QGMaskCrop:
         "Crop Restore to paste a processed crop back in place."
     )
     SEARCH_ALIASES = ["mask crop", "crop by mask", "crop to mask", "遮罩裁剪", "裁剪", "qg"]
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, size_mode=None, fill=None):
+        # size_mode（原始尺寸 / 正方形 / 自定义）与 fill（边缘主色 / 拉伸边缘 /
+        # 黑色）的中文标签在 nodes/_qg_combo_legacy.py 的 LEGACY 表里，值本身
+        # 是英文。这里只把选项名报上去跳过「值必须在列表里」。
+        return True
 
     @classmethod
     def INPUT_TYPES(cls):

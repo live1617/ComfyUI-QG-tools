@@ -27,6 +27,8 @@ An alpha channel, if present, is carried through untouched.
 
 import torch
 
+from ._qg_tensor_helpers import as_image_batch
+
 # Rec.709 luma weights -- used both for the saturation mix and for keeping the
 # white-balance gains brightness-neutral.
 LUMA_R, LUMA_G, LUMA_B = 0.2126, 0.7152, 0.0722
@@ -254,18 +256,11 @@ class QGColorCorrect:
         saturation=0.0,
         gamma=1.0,
     ):
-        if not torch.is_tensor(image):
-            raise TypeError("image 需要是 IMAGE 张量")
-
-        x = image
-        squeeze = False
-        if x.dim() == 3:  # 单张 (H, W, C)
-            x = x.unsqueeze(0)
-            squeeze = True
-        if x.dim() != 4:
-            raise ValueError("image 应该是 (B, H, W, C)，收到 %s" % (tuple(x.shape),))
+        # 维度归一化走共享实现：这里原本只认 `dim() == 3`，2 维输入和
+        # (B, H, W) 灰度批次都会掉进「应该是 (B, H, W, C)」的报错里。
+        x, squeeze = as_image_batch(image, "Color Correct: image")
         if x.shape[-1] < 3:
-            raise ValueError("image 至少要 3 个通道，收到 %d" % x.shape[-1])
+            raise ValueError("image needs at least 3 channels, got %d" % x.shape[-1])
 
         out_dtype = x.dtype
         rgb = x[..., :3].to(torch.float32)

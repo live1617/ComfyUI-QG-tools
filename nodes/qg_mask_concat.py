@@ -54,6 +54,7 @@ import torch
 import torch.nn.functional as F
 
 from ._qg_combo_legacy import combo_legacy
+from ._qg_tensor_helpers import as_mask_batch
 
 LEFT_RIGHT = "left-right"
 TOP_BOTTOM = "top-bottom"
@@ -65,19 +66,11 @@ def _as_batch(mask):
 
     The port's version ended in a per-pixel maximum over the batch, which read
     as "normalise to (H, W)" but actually discarded frames.
+
+    判据本身在 `_qg_tensor_helpers.as_mask_batch`（八个节点共用一份）。那里的
+    4 维分支是「按通道取 max」，对 (B, 1, H, W) 与这里的 squeeze(1) 等价。
     """
-    if mask.dim() == 2:
-        return mask.unsqueeze(0)
-    if mask.dim() == 3:
-        return mask
-    if mask.dim() == 4:
-        # (B, 1, H, W) is a batch with a channel dim kept; (B, C, H, W) is a
-        # real multi-channel mask and there the channels do merge.
-        return mask.squeeze(1) if mask.shape[1] == 1 else mask.max(dim=1).values
-    raise ValueError(
-        "[QG-tools] 遮罩拼接：不支持的遮罩维度 %s（要 2 维 (H,W)、3 维 (B,H,W) 或 4 维）"
-        % (tuple(mask.shape),)
-    )
+    return as_mask_batch(mask, "Mask Concat: mask")
 
 
 def _resize(mask, height, width):

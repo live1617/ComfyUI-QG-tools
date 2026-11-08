@@ -15,9 +15,9 @@
 // （来自 Python 的 DESCRIPTION，这里是同一个信息源，不用再维护一份说明）。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
-import { chainCallback } from "../shared/index.mjs?v=2026103135";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026103135";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110820";
+import { chainCallback, zhPair } from "../shared/index.mjs?v=2026110820";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026110820";
 
 const NODE_CLASS = "QG_Math";
 // 卡片下限宽度：表达式那行要能一眼看下十来个字符。
@@ -28,13 +28,19 @@ const VARIABLES = "abcdefghijklmnopqrstuvwxyz".split("");
 // 至少留出这么多个空槽（用户要的是 abc 三个起步）。
 const MIN_SLOTS = 3;
 
-const ROWS = [
+// 🔴 造在函数里而不是顶层常量：`zhPair` 读的是「当前界面语言」，
+// 而模块顶层求值时 app.i18n 可能还没挂上，只能退到 <html lang> 猜 ——
+// 猜错的后果是英文界面里露出中文。挂载时才求值就没有这个窗口。
+const mathRows = () => [
   {
     widget: "expr",
-    label: "表达式",
+    label: zhPair("Expression", "表达式"),
     placeholder: "a * b / 2",
     // 变量怎么接只写在节点说明里（帮助卡第一段），这里不再重复一遍
-    title: "算式，例如 round(a / b * 2, 2)。点标题栏的 ? 看语法和函数表。",
+    title: zhPair(
+      "The expression, e.g. round(a / b * 2, 2). Click ? in the title bar for the syntax and function table.",
+      "算式，例如 round(a / b * 2, 2)。点标题栏的 ? 看语法和函数表。",
+    ),
   },
 ];
 
@@ -232,7 +238,7 @@ function mount(node) {
   if (node.__qgMath) return;
   node.__qgMath = true;
   // 变量控件全藏掉：卡片不画数字框，值仍然在 widgets 里（存档顺序不变）。
-  node.__qgCard = mountWidgetCard(node, { rows: ROWS, minWidth: MIN_WIDTH, hide: VARIABLES });
+  node.__qgCard = mountWidgetCard(node, { rows: mathRows(), minWidth: MIN_WIDTH, hide: VARIABLES });
   // 等这一轮 configure 把连线恢复完再看：读档时 d 可能已经有线，不能删。
   setTimeout(() => syncSlotCount(node), 0);
 }

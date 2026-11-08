@@ -629,7 +629,8 @@
       "files_new": [
         "nodes/qg_image_resize.py"
       ],
-      "notes": "搬运：缩放支持 像素/百分比 × 裁切/补边/包含，复用 comfy.utils.common_upscale；输出 图+宽+高。"
+      "notes": "搬运：缩放支持 像素/百分比 × 裁切/补边/包含，复用 comfy.utils.common_upscale；输出 图+宽+高。",
+      "deleted": "2026-11-08 删除：由 QG_ImageScale 顶替（接口与控件数都不兼容，故换 ID 而不是沿用）"
     },
     {
       "id": "QG_ImageOrLatentSize",
@@ -676,7 +677,8 @@
       "files_new": [
         "nodes/qg_image_watermark.py"
       ],
-      "notes": "修上游两个 bug：① common_upscale 引用了本模块未定义的 bislerp/lanczos，改调 comfy.utils.common_upscale；② squeeze() 把批次压成单帧，改为保持 B 维。另修透明度失效：无水印遮罩时必须 paste(base, wm, wm) 带 alpha 贴，否则 PIL 按 RGB 不透明贴，opacity 与旋转边角都会失效。"
+      "notes": "修上游两个 bug：① common_upscale 引用了本模块未定义的 bislerp/lanczos，改调 comfy.utils.common_upscale；② squeeze() 把批次压成单帧，改为保持 B 维。另修透明度失效：无水印遮罩时必须 paste(base, wm, wm) 带 alpha 贴，否则 PIL 按 RGB 不透明贴，opacity 与旋转边角都会失效。",
+      "deleted": "2026-11-08 删除：功能并入 QG_AddWatermark（文字 / 图像两种水印一个节点全覆盖）"
     },
     {
       "id": "QG_TextOverlayImage",
@@ -691,7 +693,8 @@
       "files_new": [
         "nodes/qg_text_overlay_image.py"
       ],
-      "notes": "修上游三处：① 默认字体取了 font_choices[0][0]（拿到的是首字符）→ 显式取字体名；② 只画第一帧 → 改为逐帧绘制，批次每帧一致；③ IS_CHANGED 恒 True 会让节点每次重跑且破坏缓存 → 删除。新增文字形状 MASK 输出。"
+      "notes": "修上游三处：① 默认字体取了 font_choices[0][0]（拿到的是首字符）→ 显式取字体名；② 只画第一帧 → 改为逐帧绘制，批次每帧一致；③ IS_CHANGED 恒 True 会让节点每次重跑且破坏缓存 → 删除。新增文字形状 MASK 输出。",
+      "deleted": "2026-11-08 删除：功能并入 QG_AddWatermark（含按笔画居中、逐帧绘制）"
     },
     {
       "id": "QG_ImageGrid",
@@ -843,5 +846,6 @@
     "节点 ID 已改为 QG_*，含 AUSBOSS_NODES_* 的旧工作流需要重新放节点。",
     "CSS 类名统一 qgtools- 前缀；canvas_passthrough.mjs 的自家面板判定靠 includes(\"qgtools-\")，日后自设面板元素也要带这个前缀。",
     "workflow_note / workflow_switches 的部分配套功能（节点配色方案、顶部 chrome、toast 汇总）来自未搬过来的全局前端层：少了它们，卡片和开关的样式仍可用，但不参与原插件的全局外观联动。"
-  ]
+  ],
+  "nodes_note": "本文件是历史搬运记录（文件级映射 + 改名 / 改写清单），不是当前节点清单。带 deleted 字段的条目是后来移除的节点，保留只为追溯；当前节点与来源以 ORIGINS.json 为准，pack_version 记的是这批搬运发生时的版本。"
 }

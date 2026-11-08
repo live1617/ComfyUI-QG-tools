@@ -117,7 +117,47 @@ def list_input_videos() -> list[str]:
     return sorted(results, key=str.casefold) or [""]
 
 
+# "photo.png [output]" / "clip.mp4 [temp]" - the annotation core's
+# ``annotated_filepath`` understands and the browser side renders thumbnails
+# for. Matched here only to explain the refusal; see resolve_input_path.
+_ANNOTATED_DIR = re.compile(r"\s+\[(input|output|temp)\]\s*$", re.IGNORECASE)
+
+
+def _outside_input_message(selection: str) -> str:
+    """Name the folder when the value asked for one we refuse to read.
+
+    The plain "outside the input folder" sentence is accurate but useless when
+    the value is a well-formed ``[output]`` annotation: the thumbnail renders,
+    so the file obviously exists and the user is left guessing why it is
+    rejected. Point at the node that does the job instead.
+    """
+    match = _ANNOTATED_DIR.search(str(selection or ""))
+    folder = match.group(1).lower() if match else ""
+    if folder in ("output", "temp"):
+        return (
+            "This file is in ComfyUI's %s folder and this node only reads the "
+            "input folder. To use a picture you already generated, add the "
+            "LoadImageOutput node, or copy the file into input/ first." % folder
+        )
+    return "The selected source is outside ComfyUI's input folder."
+
+
 def resolve_input_path(selection: str) -> Path:
+    """Resolve a combo value to a file, refusing anything outside ``input/``.
+
+    🔴 ``[output]`` / ``[temp]`` are refused **on purpose** - do not "fix" this
+    by widening the check. Both ``folder_paths.get_annotated_filepath`` here and
+    ``parseImageReference`` in the browser understand the annotation, so the
+    thumbnail renders and the load then fails, which reads like a bug. It is
+    not: the combo value arrives from ``/prompt``, which anyone on the network
+    can post to, so honouring the annotation would let a stranger who guesses a
+    filename read any picture in output/. Core keeps a separate
+    ``LoadImageOutput`` node for that job, so refusing costs no feature.
+
+    The video node's *local path* mode is the deliberate exception: it goes
+    through ``local_preview_allowed``, which admits all three roots because a
+    user-supplied path is exactly what that mode is for.
+    """
     if not selection:
         raise ValueError("Select or upload a source file first.")
     if str(selection).replace("\\", "/").startswith("//"):
@@ -130,7 +170,7 @@ def resolve_input_path(selection: str) -> Path:
         try:
             path.relative_to(input_root)
         except ValueError as exc:
-            raise ValueError("The selected source is outside ComfyUI's input folder.") from exc
+            raise ValueError(_outside_input_message(selection)) from exc
     if not path.is_file():
         raise ValueError("The selected source file no longer exists.")
     return path

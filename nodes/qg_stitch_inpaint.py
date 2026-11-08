@@ -160,9 +160,16 @@ class QGStitchInpaint:
         return (image, blend)
 
     @classmethod
-    def VALIDATE_INPUTS(cls, seam=SEAM_CLASSIC, **kwargs):
+    def VALIDATE_INPUTS(cls, seam=SEAM_CLASSIC):
         # Naming seam here takes it out of ComfyUI's own list check, so the
         # empty value an older workflow carries in its place still queues.
+        #
+        # 🔴 这里**不能**再补 **kwargs。execution.validate_inputs 里那段
+        # `if x not in validate_function_inputs and not validate_has_kwargs:`
+        # 的意思是：只要 VALIDATE_INPUTS 收了 **kwargs，本节点**所有**输入的
+        # min / max / 下拉列表校验就整块跳过 —— color_match 的 0..1 会形同虚设。
+        # 具名只收 seam 时，核心只把 seam 传进来（`input_filtered` 按参数名过滤），
+        # 其余输入照旧走它自己的校验，也不会 TypeError。
         if seam in _UNSET_SEAM or seam in SEAM_MODES:
             return True
         return "[QG-tools] Stitch Inpaint: seam must be one of %s, not %r." % (

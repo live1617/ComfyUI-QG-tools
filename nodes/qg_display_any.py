@@ -48,8 +48,23 @@ import torch
 from PIL import Image
 
 import folder_paths
+
+from ._qg_tensor_helpers import as_image_batch
 import nodes
-from comfy_api.latest import Input, Types
+# comfy_api 是 ComfyUI 的 V3 节点 API（0.3.x 之后才有）。这里只借它的
+# Input.Video 做 isinstance 判断、Types 存 MP4 —— 旧版 ComfyUI 既没有这个包、
+# 也不会有 VIDEO 类型，所以降级成「永远判不中」即可，节点本身照常可用。
+# 不加这个兜底的话，整个模块 import 失败 → 节点从菜单里消失（加载器会打印
+# traceback 但插件其余部分不受影响，等于静默少一个节点）。
+try:
+    from comfy_api.latest import Input, Types
+except ImportError:  # pragma: no cover - 只在旧版 ComfyUI 上走到
+    class _NoVideoAPI:
+        class Video:  # 哨兵：isinstance(x, Input.Video) 恒为 False
+            pass
+
+    Input = _NoVideoAPI
+    Types = None
 from comfy.model_management import InterruptProcessingException
 from comfy_execution.graph_utils import is_link
 from server import PromptServer
@@ -205,13 +220,17 @@ def preview_images(value, kind):
         elif value.ndim == 4:
             # 官方文档写明 MASK 也可以是 [B,C,H,W]；逐通道摊平成一叠单通道图，
             # 原版这里直接抛「遮罩应为 [B,H,W] 或 [H,W]」。
+            # 🔴 这里**故意不用** `as_mask_batch`：那个按通道取 max（下游算遮罩
+            # 时通道要合并），而预览要的是「每个通道各显示一张」，合并就少几张。
             images = value.reshape(-1, value.shape[-2], value.shape[-1])
         else:
             raise ValueError("mask must be [H,W], [B,H,W] or [B,C,H,W], got %s" % (list(value.shape),))
     else:
-        images = value.unsqueeze(0) if value.ndim == 3 else value
-        if images.ndim != 4 or images.shape[-1] not in (1, 3, 4):
-            raise ValueError("image must be [B,H,W,C] with C in 1/3/4, got %s" % (list(value.shape),))
+        images, _ = as_image_batch(value, "Preview: image")
+        if images.shape[-1] not in (1, 3, 4):
+            raise ValueError(
+                "image must be [B,H,W,C] with C in 1/3/4, got %s" % (list(value.shape),)
+            )
     results = []
     for image in images:
         pixels = np.clip(255.0 * image.detach().cpu().numpy(), 0, 255).astype(np.uint8)
@@ -365,7 +384,7 @@ class QGDisplayAny:
             raise
         except Exception as error:
             # 预览是附赠的，转码失败不该拦住数据流动。
-            logging.warning("[QG-tools] QG 展示任意 预览失败: %s", error)
+            logging.warning("[QG-tools] Display Any preview failed: %s", error)
             payload["notice"] = {"code": NOTICE_PREVIEW_FAILED, "detail": str(error)}
         # 文本被截断也要说一声，否则用户会以为上游就吐了这么多。
         if payload["notice"] is None and isinstance(Any, str) and len(Any) > TEXT_LIMIT:

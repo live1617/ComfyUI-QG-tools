@@ -68,13 +68,21 @@ def _as_bhw(mask: torch.Tensor) -> torch.Tensor:
 def _max_filter_1d(values: torch.Tensor, width: int, dim: int) -> torch.Tensor:
     """Widest value in every `width`-long window along `dim`, as a pool would.
 
-    Identical to max_pool2d(kernel=width, stride=1, padding=width//2), edges
-    reading as -inf, but each output costs a fixed handful of comparisons
-    instead of `width` of them (van Herk / Gil-Werman): pad the edges with
-    -inf, pad the far end up to a multiple of `width`, cut the axis into
-    blocks of that length, take the running max forwards and backwards
-    inside each block, and window [i, i+width) is then the larger of
-    suffix[i] and prefix[i+width-1] - the two blocks a window can straddle.
+    Same result as max_pool2d(kernel=width, stride=1, padding=width//2) would
+    give **if the outside of the frame counted as 0**, but each output costs a
+    fixed handful of comparisons instead of `width` of them (van Herk /
+    Gil-Werman): pad the edges with 0, pad the far end up to a multiple of
+    `width`, cut the axis into blocks of that length, take the running max
+    forwards and backwards inside each block, and window [i, i+width) is then
+    the larger of suffix[i] and prefix[i+width-1] - the two blocks a window can
+    straddle.
+
+    🔴 Why 0 and not -inf: a mask's outside-of-frame really is unselected (0).
+    With -inf, eroding a selection that touches the frame edge left the edge
+    alone - a 96x96 mask that is entirely selected kept all 9216 pixels at
+    px=-8, when it should have shrunk to an 80x80 block. Grow is unaffected
+    either way (a mask is non-negative, so 0 can never raise a maximum), so
+    this only shows up on shrink - which is exactly where it matters.
 
     Why it matters: the pooling version was the whole cost of a wide feather.
     32 px on a 1824x3243 frame took 3.15 s and 8 px took 1.21 s on a CPU;
@@ -88,13 +96,14 @@ def _max_filter_1d(values: torch.Tensor, width: int, dim: int) -> torch.Tensor:
     length = values.shape[dim]
 
     # torch's pad takes its pairs from the last axis backwards.
+    # 边缘补 0（画布外 = 没选中），理由见 docstring。
     pad = [0] * (2 * values.ndim)
     pad[2 * (values.ndim - 1 - dim)] = radius
     pad[2 * (values.ndim - 1 - dim) + 1] = radius
-    padded = functional.pad(values, pad, value=float("-inf"))
+    padded = functional.pad(values, pad, value=0.0)
 
-    # Leading -inf cannot change a window, but it can change where the blocks
-    # start, so both ends are padded to a whole number of blocks up front.
+    # 这一段必须是 -inf：它只是把轴凑成整块，不属于任何窗口的「画布外」，
+    # 用 0 会在最后一块里混进一个假候选值。
     trailing = (-padded.shape[dim]) % width
     if trailing:
         pad = [0] * (2 * padded.ndim)
@@ -130,13 +139,22 @@ def _grow_shrink_by_blocks(work: torch.Tensor, width: int, growing: bool) -> tor
 
 
 def _grow_shrink_by_pooling(work: torch.Tensor, width: int, growing: bool) -> torch.Tensor:
-    """The same filter as two max pools - what every device used to get."""
+    """The same filter as two max pools - what every device used to get.
+
+    Padding is done by hand so the outside of the frame reads as 0, matching
+    `_max_filter_1d`. `max_pool2d(padding=…)` fills -inf instead, which would
+    make this branch disagree with the block one on erosion at the frame edge.
+    """
     half = width // 2
     if growing:
-        work = functional.max_pool2d(work, (1, width), 1, (0, half))
-        return functional.max_pool2d(work, (width, 1), 1, (half, 0))
-    work = -functional.max_pool2d(-work, (1, width), 1, (0, half))
-    return -functional.max_pool2d(-work, (width, 1), 1, (half, 0))
+        across = functional.max_pool2d(functional.pad(work, (half, half, 0, 0), value=0.0), (1, width), 1)
+        return functional.max_pool2d(functional.pad(across, (0, 0, half, half), value=0.0), (width, 1), 1)
+    # 收缩：两趟都作用在取负后的遮罩上，最后一次性取负回来。
+    # 🔴 别中途把负号还回去再取负 —— 那第二步是在 0/1 上取 max 再取负，会得到 -1。
+    work = -work
+    work = functional.max_pool2d(functional.pad(work, (half, half, 0, 0), value=0.0), (1, width), 1)
+    work = functional.max_pool2d(functional.pad(work, (0, 0, half, half), value=0.0), (width, 1), 1)
+    return -work
 
 
 def grow_shrink_mask(mask: torch.Tensor, pixels: int) -> torch.Tensor:
@@ -145,8 +163,12 @@ def grow_shrink_mask(mask: torch.Tensor, pixels: int) -> torch.Tensor:
     A square max filter splits into a horizontal then a vertical 1-D pass, so
     however far the mask moves this is two passes over the frame, never
     2 * pixels full-image pools. Erosion is the same filter on the negated
-    mask; max and -inf padding are order-free, so soft (non-binary) values
-    keep their exact edges either way.
+    mask; max is order-free, so soft (non-binary) values keep their exact
+    edges either way.
+
+    The outside of the frame counts as 0 (unselected), so shrinking a
+    selection that touches the edge does pull that edge in. See
+    `_max_filter_1d` for why that is 0 and not -inf.
 
     The two halves are executed two different ways, because the faster one
     depends entirely on the device. Pooling re-reads the frame once per step
@@ -156,6 +178,10 @@ def grow_shrink_mask(mask: torch.Tensor, pixels: int) -> torch.Tensor:
     pooling needs only 4 ms). So CPU gets the blocked pass and everything
     else keeps pooling. Both give the identical bits, so this only ever
     changes how long the node takes.
+
+    This is the only implementation in the pack - `_qg_mask_refine_helpers`
+    used to carry a second copy that padded with 0 as well but paid for it
+    with plain pooling (3.5 s at 32 px on a CPU). It now imports this one.
     """
     steps = abs(int(pixels))
     if steps == 0:

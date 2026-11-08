@@ -16,10 +16,9 @@
  */
 
 import { app } from "/scripts/app.js";
-import { chainCallback } from "./shared/index.mjs?v=2026103135";
-import { pinNodeWidth } from "./shared/node_width.mjs?v=2026103135";
-import { installComboZh } from "./shared/combo_zh.mjs?v=2026103135";
-import { applyCategoryNames, installCategoryNames } from "./shared/category_zh.mjs?v=2026103135";
+import { pinNodeWidth } from "./shared/node_width.mjs?v=2026110820";
+import { installComboZh } from "./shared/combo_zh.mjs?v=2026110820";
+import { installCategoryNames } from "./shared/category_zh.mjs?v=2026110820";
 
 app.registerExtension({
     name: "QG.tools.init",
@@ -33,15 +32,14 @@ app.registerExtension({
     // 本插件只负责把尺寸表挂到 globalThis.__QG_SIZE_TABLE__ 供那边读取（见 shared/node_width.mjs）。
     async setup() {
         // 分类名要在节点注册完之后才改得动。先改现有注册表，再包住 registerNodeType
-        // 兜住「本扩展之后才注册」的节点（扩展的 setup 是逐个跑的）。开菜单前再补一次
-        // 兜底：万一是别的途径直接写了 category。
+        // 兜住「本扩展之后才注册」的节点（扩展的 setup 是逐个跑的）。
+        //
+        // 🔴 别在这里补 `getCanvasMenuOptions` 当「开菜单前再补一次」的钩子 ——
+        //    核心会直接点名弃用（Monkey-patching getCanvasMenuOptions is deprecated）。
+        //    以前需要那层，是因为纯前端节点注册完把 category 又写回了英文，
+        //    绕过了 registerNodeType 的包装；现在这类节点改调 `pinCategory()`，
+        //    钉基线和翻译一次做完，这一层就不需要了。
         const changed = installCategoryNames(globalThis.LiteGraph);
-        const proto = globalThis.LiteGraph?.LGraphCanvas?.prototype;
-        if (proto) {
-            chainCallback(proto, "getCanvasMenuOptions", () => {
-                applyCategoryNames(globalThis.LiteGraph);
-            });
-        }
         // 探针/排障标记：改了哪些、这次 setup 改了几条（见 tools/probe_category_zh.cjs）
         globalThis.__QG_CATEGORY_ZH__ = { setup: changed };
 

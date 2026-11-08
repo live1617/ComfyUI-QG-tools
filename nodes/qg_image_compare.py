@@ -66,9 +66,9 @@ def first_frame_to_pil(image: torch.Tensor, keep_alpha: bool = False) -> Image.I
     不透的帧两种情况下都是 RGB。
     """
     if not isinstance(image, torch.Tensor) or image.ndim != 4:
-        raise ValueError("QG 图像对比：输入必须是 BHWC 图像批次。")
+        raise ValueError("QG Image Compare: the input must be a BHWC image batch.")
     if int(image.shape[0]) < 1:
-        raise ValueError("QG 图像对比：收到空的图像批次。")
+        raise ValueError("QG Image Compare: got an empty image batch.")
     frame = image[0].detach().cpu().float().clamp(0.0, 1.0).mul(255.0).round().to(torch.uint8)
     array = frame.numpy()
     if array.shape[-1] == 1:
@@ -183,7 +183,7 @@ def _register_save_route() -> None:
         except CompareSaveError as error:
             return _error_answer(web, error)
         except Exception as error:
-            return _crashed(web, error, "save_failed", "[QG-tools] 图像对比：混合图没能保存。")
+            return _crashed(web, error, "save_failed", "[QG-tools] Image Compare: the blended image could not be saved.")
         return web.json_response(result)
 
     @instance.routes.post(ALIGN_ROUTE)
@@ -205,7 +205,7 @@ def _register_save_route() -> None:
             return _error_answer(web, error)
         except Exception as error:
             return _crashed(
-                web, error, "align_failed_unexpected", "[QG-tools] 图像对比：对齐没能做出来。"
+                web, error, "align_failed_unexpected", "[QG-tools] Image Compare: the alignment could not be produced."
             )
         answer = {
             "aligned": result["aligned"],

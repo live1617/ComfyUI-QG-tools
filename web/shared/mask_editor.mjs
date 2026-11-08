@@ -17,7 +17,7 @@
 // 2048 长边足够；不压的话 4000 × 3000 的图每笔都要在 1200 万像素上做模糊。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026103135";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026110820";
 import {
   brushAdjusts,
   brushCore,
@@ -32,10 +32,10 @@ import {
   steppedSoft,
   startAdjust,
   moveAdjust,
-} from "./brush.mjs?v=2026103135";
-import { defaultBrushSize } from "./compare_erase.mjs?v=2026103135";
-import { encodeRgbaPng } from "./png_encode.mjs?v=2026103135";
-import { zh, zhPair } from "./zh.mjs?v=2026103135";
+} from "./brush.mjs?v=2026110820";
+import { defaultBrushSize } from "./compare_erase.mjs?v=2026110820";
+import { encodeRgbaPng } from "./png_encode.mjs?v=2026110820";
+import { zh, zhPair } from "./zh.mjs?v=2026110820";
 
 const CSS_ID = "qgtools-mask-editor-css";
 
@@ -339,6 +339,11 @@ export function openMaskEditor({
     fit: null, frame: 0, saving: false, dirty: false,
     name: String(name || ""),
   };
+  // 探针出口：`ed` 是闭包里的变量，外部拿不到 —— 于是「笔画超过 240 笔时到底
+  // 留了几笔、基线烘没烘上」这类问题只能靠肉眼截图猜。挂成弹窗 DOM 上的属性
+  // 而不是 window 全局：编辑器一关它就随元素一起消失，不会在别的节点上留个
+  // 指向已销毁状态的引用。只读用途，产品代码不读它。
+  modal.__qgState = ed;
 
   // ---- 遮罩 ----------------------------------------------------------------
 

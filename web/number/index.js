@@ -22,15 +22,15 @@
 //    FLOAT（2026-10-23 实测：`*` / `FLOAT` / `INT,FLOAT` 都通，只有 `INT` 失败）。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
-import { roundHalfAway } from "../shared/scrub_input.mjs?v=2026103135";
-import { chainCallback, notifyQgChange } from "../shared/index.mjs?v=2026103135";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026103135";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110820";
+import { roundHalfAway } from "../shared/scrub_input.mjs?v=2026110820";
+import { chainCallback, notifyQgChange, zhPair } from "../shared/index.mjs?v=2026110820";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026110820";
 import {
     closeSettingsMenu,
     gearIconSvg,
     openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026103135";
+} from "../shared/settings_menu.mjs?v=2026110820";
 
 const NODE_CLASS = "QG_Number";
 // kind 的两个取值，必须和 nodes/qg_number.py 的 KINDS 逐字一致。
@@ -146,7 +146,7 @@ function makeGearCorner(node) {
   const gear = document.createElement("button");
   gear.type = "button";
   gear.className = "qgtools-card-gear";
-  gear.title = "数值设置";
+  gear.title = zhPair("Number settings", "数值设置");
   gear.innerHTML = gearIconSvg(14);
   // 告诉共享菜单「这枚按钮是开关」：它点下去时不要先把菜单关掉，否则我们的
   // toggleKindMenu 会以为菜单本来是关的、再开一次 —— 表现是点第二次关不掉。
@@ -175,16 +175,33 @@ function gearAnchor(node) {
 // `persist: false` 很关键：kind 是每个节点自己的状态，不是「这类节点的默认值」，
 // 存进 localStorage 会让新建的节点跟着上次那个节点的模式走。
 const MENU_SCOPE = "number";
-const MENU_SCHEMA = [
+// 🔴 造在函数里而不是顶层常量：`zhPair` 读的是「当前界面语言」，模块顶层求值时
+// app.i18n 可能还没挂上，只能退到 <html lang> 猜 —— 猜错就是英文界面露中文。
+// `options` 里的中文值是**数据**（kind widget 的取值，后端 COMBO 就用这两个字），
+// 绝不能翻，只翻 label / hint / optionHints 这些纯显示的。
+const menuSchema = () => [
   {
     key: "kind",
-    label: "类型",
-    hint: "输出的数是整数还是小数",
+    label: zhPair("Type", "类型"),
+    hint: zhPair("Whether this node outputs a whole number or a decimal", "输出的数是整数还是小数"),
     type: "choice",
     options: [KIND_INT, KIND_FLOAT],
+    // 按钮文字自己给：取值 `integer`/`float` 保持不动（提交的就是它），只把**显示**
+    // 做成双语，否则汉化插件会把 float 翻成「浮点」、integer 留着，一半一半。
+    // 英文界面故意保持小写取值原样，跟后端下拉的写法一致。
+    optionLabels: {
+      [KIND_INT]: zhPair("integer", "整数"),
+      [KIND_FLOAT]: zhPair("float", "浮点"),
+    },
     optionHints: {
-      [KIND_INT]: "输出整数，步进 1，框里不显示小数",
-      [KIND_FLOAT]: "输出小数，步进 0.1（按住 Shift 是 0.01），两位小数",
+      [KIND_INT]: zhPair(
+        "Whole numbers, step 1, no decimals in the box",
+        "输出整数，步进 1，框里不显示小数",
+      ),
+      [KIND_FLOAT]: zhPair(
+        "Decimals, step 0.1 (hold Shift for 0.01), two decimal places",
+        "输出小数，步进 0.1（按住 Shift 是 0.01），两位小数",
+      ),
     },
     persist: false,
   },
@@ -203,9 +220,9 @@ function toggleKindMenu(node) {
   menuNode = node;
   openSettingsMenu({
     scope: MENU_SCOPE,
-    schema: MENU_SCHEMA,
+    schema: menuSchema(),
     anchor: gearAnchor(node),
-    title: "数值设置",
+    title: zhPair("Number settings", "数值设置"),
     initial: { kind: kindOf(node) },
     onChange: (values, key) => {
       // key 为 null 是「Reset」按的，persist:false 的项保持不动
@@ -233,7 +250,7 @@ function mount(node) {
 
   // `value` 由卡片那一行接管；`kind` 直接藏起来，交给右上角齿轮的菜单。
   mountWidgetCard(node, {
-    rows: [{ widget: "value", label: "值", trimZeros: true }],
+    rows: [{ widget: "value", label: zhPair("Value", "值"), trimZeros: true }],
     minWidth: MIN_WIDTH,
     hide: ["kind"],
     corner: makeGearCorner,

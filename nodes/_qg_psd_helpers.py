@@ -36,14 +36,14 @@ _BLEND_RANGE = b"\x00\x00\xff\xff\x00\x00\xff\xff"
 def _plane(array, height: int, width: int, source: str) -> np.ndarray:
     plane = np.ascontiguousarray(array, dtype=np.uint8)
     if plane.shape != (height, width):
-        raise ValueError(f"{source} 必须是 {width}x{height}，收到 {plane.shape[1]}x{plane.shape[0]}。")
+        raise ValueError(f"{source} must be {width}x{height}, got {plane.shape[1]}x{plane.shape[0]}.")
     return plane
 
 
 def _rgb(array, source: str) -> np.ndarray:
     rgb = np.ascontiguousarray(array, dtype=np.uint8)
     if rgb.ndim != 3 or rgb.shape[2] != 3:
-        raise ValueError(f"{source} 必须是 HxWx3 的图。")
+        raise ValueError(f"{source} must be an HxWx3 image.")
     return rgb
 
 
@@ -83,32 +83,32 @@ def write_psd(path, layers, composite, alpha=None) -> Path:
     和各家编辑软件一致。``alpha`` 挨着 ``composite`` 时是扁平图自己的透明
     通道。所有图的尺寸必须一样。
     """
-    flat = _rgb(composite, "扁平图")
+    flat = _rgb(composite, "the flattened image")
     height, width = flat.shape[:2]
     if not (0 < height <= PSD_MAX_SIDE and 0 < width <= PSD_MAX_SIDE):
-        raise ValueError(f"PSD 里图最长边不能超过 {PSD_MAX_SIDE} 像素。")
+        raise ValueError(f"The longest side of an image in a PSD cannot exceed {PSD_MAX_SIDE} pixels.")
     layers = list(layers)
     if not 0 < len(layers) <= PSD_MAX_LAYERS:
-        raise ValueError(f"这里写的 PSD 支持 1 到 {PSD_MAX_LAYERS} 个图层。")
+        raise ValueError(f"This PSD writer supports 1 to {PSD_MAX_LAYERS} layers.")
 
     records = []
     planes = []
     opaque = np.full((height, width), 255, dtype=np.uint8)
     for index, layer in enumerate(layers):
-        source = f"第 {index + 1} 层"
+        source = f"layer {index + 1}"
         rgb = _rgb(layer.get("rgb"), source)
         if rgb.shape[:2] != (height, width):
-            raise ValueError(f"{source} 必须是 {width}x{height}，和扁平图一样大。")
+            raise ValueError(f"{source} must be {width}x{height}, the same size as the flattened image.")
         mask = layer.get("mask")
         solid = layer.get("alpha")
         records.append(_record(layer.get("name", ""), height, width, mask is not None))
-        planes.append(opaque if solid is None else _plane(solid, height, width, f"{source}的透明通道"))
+        planes.append(opaque if solid is None else _plane(solid, height, width, f"{source} alpha channel"))
         planes.extend(rgb[:, :, channel] for channel in range(3))
         if mask is not None:
-            planes.append(_plane(mask, height, width, f"{source}的蒙版"))
+            planes.append(_plane(mask, height, width, f"{source} mask"))
 
     if alpha is not None:
-        solid = _plane(alpha, height, width, "扁平图的透明通道")
+        solid = _plane(alpha, height, width, "the flattened image alpha channel")
         # Photoshop 把带透明通道的扁平图压在白底上存，读的时候再靠 alpha 把白底去掉。
         weight = solid[:, :, None].astype(np.float32) / 255.0
         flat = np.round(flat * weight + 255.0 * (1.0 - weight)).astype(np.uint8)
@@ -121,7 +121,7 @@ def write_psd(path, layers, composite, alpha=None) -> Path:
     padding = layer_info % 2  # 图层清单要收在偶数位上
     layer_info += padding
     if layer_info > PSD_MAX_BYTES:
-        raise ValueError("这些图层太大，塞不进一个 PSD 文件。")
+        raise ValueError("These layers are too large to fit in a single PSD file.")
 
     target = Path(path)
     # 🔴 不能直接 open(target, "wb")：那会先把同名旧文件截成 0 字节，然后才

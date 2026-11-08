@@ -5,12 +5,12 @@
 // pass-through output, gallery mode, text style settings and clipboard actions.
 
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026110820";
 import { api } from "/scripts/api.js";
-import { zhPair } from "../shared/zh.mjs?v=2026103135";
-import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026103135";
-import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026103135";
-import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026103135";
+import { zhPair } from "../shared/zh.mjs?v=2026110820";
+import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026110820";
+import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026110820";
+import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026110820";
 
 const NODE_TYPE = "QG_DisplayAny";
 // 拖线到空白处时弹出的候选菜单里，这一项的显示名。原来写死中文，英文界面也显示

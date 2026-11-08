@@ -75,20 +75,7 @@ export function suppressCoreVideoPreview(node) {
   );
 }
 
-export function suppressCoreImagePreview(node) {
-  // Nodes 2.0 draws its own copy of the node's output images under the
-  // widgets unless the node sets this flag (classic never reads it). That
-  // copy is also the only thing that fills node.imgs there, so a node that
-  // stands it down reads its result from app.nodeOutputs instead
-  // (js/input_preview).
-  if (node) node.hideOutputImages = true;
-  // The image preview arrives through addCustomWidget, not addDOMWidget: it
-  // is painted straight onto the graph canvas and owns no element.
-  suppressWidget(
-    node,
-    "__qgCoreImagePreviewSuppressed",
-    "addCustomWidget",
-    CORE_IMAGE_PREVIEW_WIDGET,
-    () => null,
-  );
-}
+// 这里原本还有一个 `suppressCoreImagePreview(node)`：它是最早的写法，后来挪进
+// `widget_visibility.mjs` 并加了 `followImage` 回调参数（要让预览跟着上游换图）。
+// 两份同名函数并存过一阵，本文件这份**没有任何 import 指向它**，纯属死代码 ——
+// 11-01 删掉，只留注释免得以后有人照着旧位置再写一份。

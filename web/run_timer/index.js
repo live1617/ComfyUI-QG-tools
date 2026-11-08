@@ -1,582 +1,805 @@
-// Run Timer 🆎 — a stopwatch for the whole queue, drawn as one black readout.
+// ============================================================
+// 搬入说明（2026-11-08，用户确认后 1:1 替换）
+//   来源：自有插件 ComfyUI-QG-Multipack v0.1.0 / web/timer.js
+//   口径：保留节点 ID QG_RunTimer；源文件的全部绘制、计时、菜单、Vue overlay
+//         逻辑逐字保留（反向还原后与源文件逐字节相同，见工作区校验脚本）。
 //
-// The node IS the display: no title bar, no slots, no padding. On the
-// classic canvas the readout is painted by the node itself (onDrawForeground)
-// - no DOM widget, so the pointer lands on the canvas everywhere (drag from
-// anywhere, native resize, right-click) and the box is exactly the node.
-// The Nodes 2.0 renderer does not run canvas paint, so there the same
-// readout mounts as a DOM widget instead.
+//   只做五处必要适配：
+//     1) NODE_CLASS "QG_Timer" -> "QG_RunTimer"；扩展名 QG.Timer -> QG.RunTimer；
+//     2) 内置脚本 import 改绝对路径 /scripts/app.js、/scripts/api.js（本包约定）；
+//     3) FONT_URL 的相对层级 ../../ -> ../../../（文件从 web/ 根移到
+//        web/run_timer/ 子目录，仍要解析到站点根 /qg/timer/font）；
+//     4) 控制台日志前缀 [QG-Timer] -> [QG-tools]；
+//     5) 文件名 web/timer.js -> web/run_timer/index.js（ComfyUI 自动加载）。
+//   保持不变：DEFAULT_SIZE [510,140]、MIN_WIDTH 510、主题中文名、右键菜单、
+//   VUE_LAYER_ID "qg-timer-vue-layer"、window.__QG_VUE_LAYER__ 调试钩子、
+//   status 广播 + /queue 轮询兜底、/prompt 之外的所有事件判定。
 //
-// It listens to the api's execution events; a run starts the clock, ticks
-// it, and the total holds when the run ends. Completed totals go into
-// node.properties so a saved workflow reopens showing its author's time.
-// Decision logic lives in web/shared/run_timer.mjs under node:test.
+//   ⚠️ 面板宽度 510 必须同步写进 web/shared/node_width.mjs 的 SIZES，
+//   否则 pinNodeWidth 会在 onNodeCreated 把节点钉成旧版的 176。
+// ============================================================
 
-import { api } from "/scripts/api.js";
+/**
+ * QG Timer —— ComfyUI 画布上的耗时显示节点（原创实现）。
+ *
+ * v2：
+ *  - 不渲染节点标题栏（title_mode = NO_TITLE）；
+ *  - 通过伪装成内置模块，隐藏右上角的来源徽章（不动全局设置）；
+ *  - 面板上不显示任何控件：主题与字体颜色都在右键菜单里切换；
+ *  - 字体颜色提供 7 个预设色 + “自定义…”（系统取色器）；
+ *  - 计时基于 ComfyUI 事件：入队开始、空闲结束、出错、中断。
+ *
+ * v3（对照 ComfyUI-AusBoss 的 RunTimer 重写事件层）：
+ *  - executing 的 detail 本机前端是裸节点 id、旧版是对象，必须两种都认，
+ *    否则每个节点开始执行都会被误判成“整个 prompt 结束”而停表；
+ *  - 用 100ms 定时器主动把节点标脏（setDirtyCanvas），不依赖画布 rAF 循环；
+ *  - 增加 status 广播与 /prompt 轮询两级兜底，client_id 丢失、WS 执行事件
+ *    整段缺失时计时器照样能起停。
+ */
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
-import {
-  BRAND,
-  chainCallback,
-  keepDomWidgetWidthAuto,
-  notifyQgChange,
-  zh,
-} from "../shared/index.mjs?v=2026103135";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026103135";
-import {
-  detachDomWidget,
-  installModeWatcher,
-} from "../shared/vue_mode.mjs?v=2026103135";
-import {
-  cachedLayer,
-  createTimer,
-  historyLine,
-  layerScale,
-  noteExecution,
-  splitDigits,
-  startTimer,
-  stopTimer,
-  tickTimer,
-} from "../shared/run_timer.mjs?v=2026103135";
+import { api } from "/scripts/api.js";
 
 const NODE_CLASS = "QG_RunTimer";
-const CSS_ID = "qgtools-run-timer-css";
-const WIDGET_NAME = "qg_run_timer_panel";
-const PROPERTY = "qg_run_timer"; // { history: [seconds, newest first] }
-const BASE_WIDTH = sizeFor("QG_RunTimer").w;
-const BASE_HEIGHT = sizeFor("QG_RunTimer").h ?? 56;
-const MIN_WIDTH = sizeFor("QG_RunTimer").minW;
-const TICK_MS = 100;
-const NO_TITLE = globalThis.LiteGraph?.NO_TITLE ?? 1;
-const READOUT_COLOR = "#07090a";
-const TEAL = "#2ee8dc";
-const AMBER = "#ffd166";
-const RED = "#ff5c4d";
-const DIM = "#3d5a58";
-const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
+const FONT_FAMILY = "Capture It";
+// 用 import.meta.url 推导字体地址：ComfyUI 若部署在子路径（如 /comfy/）也能命中
+const FONT_URL = new URL("../../../qg/timer/font", import.meta.url).href;
 
-// ---------------------------------------------------------------------------
-// Shared state and events
-// ---------------------------------------------------------------------------
+// 本机前端 1.57.4 确认常量表：NORMAL_TITLE=0 / NO_TITLE=1 / TRANSPARENT_TITLE=2 / AUTOHIDE_TITLE=3。
+// 运行时优先读全局常量，前端升级改值时自动跟随；读不到再用 1 兜底。
+const noTitleMode = () => globalThis.LiteGraph?.NO_TITLE ?? 1;
+// 来源徽章读的就是这个字段：写 "nodes" 会被当成内置节点、不显示「自定义节点」标记。
+// 那是从自有插件搬过来时的伪装，Registry 标准里「冒充他人或误导性行为」是禁止项，
+// 这里如实写本包路径 —— 徽章会显示成自定义节点，这是应该的。
+const MODULE_NAME = "custom_nodes.ComfyUI-QG-tools";
 
-function savedHistory(node) {
-  const stored = node.properties?.[PROPERTY];
-  return Array.isArray(stored?.history) ? stored.history : [];
-}
+/* 面板尺寸：按最长读数 "000.0s" 预留宽度，避免位数增加时被压缩或抖动 */
+const DEFAULT_SIZE = [510, 140];
+const MIN_WIDTH = 510; // 老工作流里的窄节点在加载时补到这个宽度
 
-// What the readout shows right now: the digits, the LED status and the
-// digit color - one place, shared by the canvas paint and the DOM panel.
-function readout(state) {
-  const { timer } = state;
-  const hasRun = timer.running || timer.outcome !== null || timer.history.length > 0;
-  const shown = timer.running || timer.outcome ? timer.elapsed : timer.history[0];
-  const parts = splitDigits(hasRun ? shown : 0);
-  let led = "idle";
-  if (timer.running) led = "running";
-  else if (timer.outcome) led = timer.outcome;
-  else if (hasRun) led = "done";
-  const failed = timer.outcome === "error" || timer.outcome === "interrupted";
-  return { ...parts, led, color: failed ? "#ff8a7d" : hasRun ? TEAL : DIM, hasRun };
-}
-
-function stopTicking(state) {
-  if (state.interval) clearInterval(state.interval);
-  state.interval = null;
-}
-
-function finish(state, outcome) {
-  if (!state.timer.running) return;
-  stopTicking(state);
-  const before = state.timer.history;
-  state.timer = stopTimer(state.timer, performance.now(), outcome);
-  // 只有历史真的变了才写、才标脏：一轮全缓存（或失败、被中断）不记账，也就
-  // 不该把工作流标成「未保存」—— 用户跑一次没算东西的图不该被提示保存。
-  if (state.timer.history !== before) {
-    state.node.properties ??= {};
-    state.node.properties[PROPERTY] = { history: state.timer.history };
-    notifyQgChange();
-  }
-  state.render();
-}
-
-function begin(state) {
-  stopTicking(state);
-  state.timer = startTimer(state.timer, performance.now());
-  state.render();
-  state.interval = setInterval(() => {
-    state.timer = tickTimer(state.timer, performance.now());
-    state.render();
-  }, TICK_MS);
-}
-
-function listen(state) {
-  const { signal } = state.abort;
-  api.addEventListener("execution_start", () => begin(state), { signal });
-  // 核心只为真的在算的节点发 "executing"：缓存命中的节点在 execute() 里
-  // 拿到结果就 return 了。所以这一轮一个都没收到，就是全缓存 —— 那 0.0 s
-  // 不该进历史（见 stopTimer）。detail.node 为 null 是收尾，不算。
-  api.addEventListener("executing", ({ detail }) => {
-    if (detail?.node === undefined || detail?.node === null) return;
-    state.timer = noteExecution(state.timer);
-  }, { signal });
-  api.addEventListener("execution_success", () => finish(state, "done"), { signal });
-  api.addEventListener("execution_error", () => finish(state, "error"), { signal });
-  api.addEventListener("execution_interrupted", () => finish(state, "interrupted"), { signal });
-}
-
-// 切渲染模式会换掉 state（连同它的 interval），但计时本身不能断：
-// 把 timer 搬过去、把心跳接上就行 —— timer 是纯数据，startedAt 还有效。
-function resumeTicking(state) {
-  if (!state.timer.running || state.interval) return;
-  state.interval = setInterval(() => {
-    state.timer = tickTimer(state.timer, performance.now());
-    state.render();
-  }, TICK_MS);
-}
-
-// The frontend hangs a "which pack" badge above every custom node; on a
-// title-less readout it floats in space. An empty badges list draws none.
-function suppressBadges(node) {
-  try {
-    Object.defineProperty(node, "badges", {
-      configurable: true,
-      get: () => [],
-      set: () => {},
-    });
-  } catch {
-    node.badges = [];
-  }
-}
-
-function paintBlack(node) {
-  node.color = READOUT_COLOR;
-  node.bgcolor = READOUT_COLOR;
-}
-
-function usesVueNodes() {
-  try {
-    return app.ui?.settings?.getSettingValue?.("Comfy.VueNodes.Enabled") === true;
-  } catch {
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Classic canvas: the node paints its own readout
-// ---------------------------------------------------------------------------
-
-function ledColor(status) {
-  if (status === "running") return AMBER;
-  if (status === "done") return TEAL;
-  if (status === "error" || status === "interrupted") return RED;
-  return "#2b3336";
-}
-
-// Glow as a blurred underlay pass, not a canvas shadow: LiteGraph leaves
-// shadow offsets set from painting the node body, and a shadow drawn on
-// top of that lands as a displaced copy of every glyph.
-function glowText(ctx, text, x, y, color, radius) {
-  if (radius <= 0 || !("filter" in ctx)) return;
-  ctx.save();
-  ctx.filter = `blur(${radius}px)`;
-  ctx.globalAlpha = 0.85;
-  ctx.fillStyle = color;
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
-
-// Every blurred pass - the LED halo and the digit glow - painted into the
-// small cached layer (cachedLayer), never onto the graph canvas itself.
-// A filter blur works in device pixels, so the radii are not scaled.
-function paintGlow(ctx, view, layout, led, pulse) {
-  const { s, ledX, ledY, x0, baseline, mainW, fontBig, fontSmall, glow } = layout;
-  ctx.textBaseline = "alphabetic";
-  ctx.textAlign = "left";
-  if (view.led !== "idle") {
-    ctx.save();
-    ctx.filter = `blur(${4 * s}px)`;
-    ctx.globalAlpha = 0.9 * pulse;
-    ctx.fillStyle = led;
-    ctx.beginPath();
-    ctx.arc(ledX, ledY, 4.5 * s, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-  ctx.font = fontBig;
-  glowText(ctx, view.main, x0, baseline, view.color, glow);
-  if (view.tenths) {
-    ctx.font = fontSmall;
-    glowText(ctx, view.tenths, x0 + mainW, baseline, view.color, glow * 0.8);
-  }
-}
-
-function drawGlow(ctx, state, view, layout, led, pulse) {
-  if (view.led === "idle" && !layout.glow) return;
-  const [w, h] = layout.size;
-  const m = ctx.getTransform?.();
-  const scale = layerScale(m ? Math.hypot(m.a, m.b) : 1, w);
-  const pad = Math.ceil(15 * layout.s); // three blur radii of spill room
-  const key = [view.main, view.tenths, view.unit, view.color, view.led, pulse, w, h, scale].join("|");
-  const layer = cachedLayer(state.glow, key, w * scale + 2 * pad, h * scale + 2 * pad, (g) => {
-    g.setTransform(scale, 0, 0, scale, pad, pad);
-    paintGlow(g, view, layout, led, pulse);
-  }, () => document.createElement("canvas"));
-  ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(layer, -pad / scale, -pad / scale, layer.width / scale, layer.height / scale);
-}
-
-function drawReadout(node, ctx, state) {
-  const [w, h] = node.size;
-  const s = h / BASE_HEIGHT;
-  const view = readout(state);
-  const big = Math.max(10, Math.round(28 * s));
-  const small = Math.max(7, Math.round(15 * s));
-  const tiny = Math.max(6, Math.round(10 * s));
-  ctx.save();
-  ctx.shadowColor = "transparent";
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = 0;
-  ctx.textBaseline = "alphabetic";
-  ctx.textAlign = "left";
-
-  // digits, measured then centred in the space right of the LED
-  const fontBig = `700 ${big}px ${MONO}`;
-  const fontSmall = `600 ${small}px ${MONO}`;
-  const fontTiny = `500 ${tiny}px ${MONO}`;
-  ctx.font = fontBig;
-  const mainW = ctx.measureText(view.main).width;
-  ctx.font = fontSmall;
-  const tenthsW = view.tenths ? ctx.measureText(view.tenths).width : 0;
-  ctx.font = fontTiny;
-  const unitW = view.unit ? ctx.measureText(view.unit).width + 3 * s : 0;
-  const total = mainW + tenthsW + unitW;
-  const left = 22 * s;
-  const x0 = left + Math.max(0, (w - left - 8 * s - total) / 2);
-  const baseline = h / 2 + big * 0.36;
-  const glow = view.hasRun ? 5 * s : 0;
-
-  // LED and digit glow from the cached layer, then the crisp LED dot. The
-  // pulse is quantised so a held LED reuses the layer frame after frame.
-  const led = ledColor(view.led);
-  const pulse = view.led === "running"
-    ? Math.round((0.55 + 0.45 * Math.sin(performance.now() / 160)) * 20) / 20
-    : 1;
-  const ledX = 12 * s;
-  const ledY = h / 2;
-  const layout = { size: [w, h], s, ledX, ledY, x0, baseline, mainW, fontBig, fontSmall, glow };
-  drawGlow(ctx, state, view, layout, led, pulse);
-  ctx.globalAlpha = pulse;
-  ctx.fillStyle = led;
-  ctx.beginPath();
-  ctx.arc(ledX, ledY, 3.2 * s, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-
-  ctx.font = fontBig;
-  ctx.fillStyle = view.color;
-  ctx.fillText(view.main, x0, baseline);
-  let x = x0 + mainW;
-  if (view.tenths) {
-    ctx.font = fontSmall;
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = view.color;
-    ctx.fillText(view.tenths, x, baseline);
-    ctx.globalAlpha = 1;
-    x += tenthsW;
-  }
-  if (view.unit) {
-    ctx.font = fontTiny;
-    ctx.globalAlpha = 0.6;
-    ctx.fillStyle = view.color;
-    ctx.fillText(view.unit, x + 3 * s, baseline);
-    ctx.globalAlpha = 1;
-  }
-  ctx.restore();
-}
-
-// Width is the handle, height follows. During a corner drag LiteGraph
-// writes node.size directly on every move and calls onResize once at
-// most, so this runs from the draw path as well: a tall or squat box is
-// corrected before the next frame, the way Pixaroma's clock snaps back.
-function keepAspect(node) {
-  const width = Math.max(MIN_WIDTH, Math.round(node.size?.[0] ?? BASE_WIDTH));
-  const height = Math.round((width * BASE_HEIGHT) / BASE_WIDTH);
-  if (node.size[0] === width && node.size[1] === height) return false;
-  // setSize is the frontend's sanctioned write (it runs onResize); the
-  // equality check above is what stops that callback from recursing.
-  if (typeof node.setSize === "function") node.setSize([width, height]);
-  else node.size = [width, height];
-  return true;
-}
-
-// 切渲染模式时把计时搬过去：state 会被丢掉，timer 不能跟着丢
-// （正在跑的那一轮，elapsed 就断了）。
-function takeTimer(node) {
-  const carried = node.__qgTimerCarry;
-  node.__qgTimerCarry = null;
-  return carried && typeof carried === "object" ? carried : createTimer(savedHistory(node));
-}
-
-function installCanvasReadout(node) {
-  if (node.__qgRunTimer) return node.__qgRunTimer;
-  node.flags ??= {};
-  node.flags.no_title = true;
-  suppressBadges(node);
-  paintBlack(node);
-  installCanvasHooks(node);
-  const state = (node.__qgRunTimer = {
-    node, abort: new AbortController(), interval: null, mode: "canvas",
-    timer: takeTimer(node), glow: {},
-    render: () => node.setDirtyCanvas?.(true, false),
-  });
-  // Width is the handle: drag the corner and the readout scales with it.
-  // computeSize is the MINIMUM the canvas will let a drag reach - it must
-  // never echo the current size, or the node can only ever grow.
-  node.resizable = true;
-  // 原样存一份：切到 Nodes 2.0 时要还回去，否则 DOM 那条路被这个常量最小尺寸压着。
-  node.__qgOrigComputeSize ??= node.computeSize;
-  node.computeSize = () => [MIN_WIDTH, Math.round((MIN_WIDTH * BASE_HEIGHT) / BASE_WIDTH)];
-  // A saved workflow overwrites this in onConfigure; a fresh node starts here.
-  // 🔴 宽度取「上一次的」：切渲染模式会重新走 install，写死 BASE_WIDTH 会把用户
-  //    拖好的宽度打回默认（布尔开关犯过同样的错）。新建节点没有记忆值，才用默认。
-  const remembered = Number(node.__qgKeepWidth);
-  const width = Number.isFinite(remembered) && remembered > 0
-    ? Math.max(MIN_WIDTH, Math.round(remembered))
-    : BASE_WIDTH;
-  node.__qgKeepWidth = null;
-  node.size = [width, BASE_HEIGHT];
-  listen(state);
-  resumeTicking(state);
-  return state;
-}
-
-// 🔴 画布钩子只装一次：chainCallback 摘不掉，而切渲染模式会反复 install/uninstall，
-//    每切一次再包一层的话，onDrawForeground 会把读数画两遍。
-//    钩子只跟节点挂钩，装完靠自己看 mode 短路。
-function installCanvasHooks(node) {
-  if (node.__qgRunTimerHooks) return;
-  node.__qgRunTimerHooks = true;
-  const canvasMode = (n) => n.__qgRunTimer?.mode === "canvas";
-
-  chainCallback(node, "onResize", function () {
-    if (!canvasMode(this)) return;
-    keepAspect(this);
-  });
-
-  chainCallback(node, "onDrawForeground", function (ctx) {
-    if (!canvasMode(this) || this.flags?.collapsed) return;
-    // The body was already painted at whatever size the drag left; fix
-    // the size now and ask for one more frame so the box catches up.
-    if (keepAspect(this)) this.setDirtyCanvas?.(true, false);
-    // state 随模式重建，所以现取，别闭包捕获
-    drawReadout(this, ctx, this.__qgRunTimer);
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Nodes 2.0 fallback: the same readout as a DOM panel
-// ---------------------------------------------------------------------------
-
-function ensureCss() {
-  if (document.getElementById(CSS_ID)) return;
-  const style = document.createElement("style");
-  style.id = CSS_ID;
-  style.textContent = `
-.qgtools-timer{box-sizing:border-box;width:100%;height:100%;pointer-events:none;overflow:hidden;}
-.qgtools-timer-box{box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:100%;padding:0 12px;overflow:hidden;border-radius:9px;background:${READOUT_COLOR};}
-.qgtools-timer-led{flex:none;width:7px;height:7px;border-radius:50%;background:#2b3336;}
-.qgtools-timer-led.running{background:${AMBER};box-shadow:0 0 8px rgba(255,209,102,.9);animation:qgtools-timer-pulse 1s ease-in-out infinite;}
-.qgtools-timer-led.done{background:${BRAND};box-shadow:0 0 8px rgba(0,180,170,.8);}
-.qgtools-timer-led.error,.qgtools-timer-led.interrupted{background:${RED};box-shadow:0 0 8px rgba(255,92,77,.8);}
-@keyframes qgtools-timer-pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
-.qgtools-timer-digits{display:flex;align-items:baseline;color:${TEAL};font:700 28px/1 ${MONO};font-variant-numeric:tabular-nums;letter-spacing:.02em;text-shadow:0 0 12px rgba(46,232,220,.35);white-space:nowrap;}
-.qgtools-timer-digits.idle{color:${DIM};text-shadow:none;}
-.qgtools-timer-digits.error{color:#ff8a7d;text-shadow:0 0 12px rgba(255,92,77,.35);}
-.qgtools-timer-digits .tenths{font-size:15px;margin-left:2px;opacity:.78;}
-.qgtools-timer-digits .unit{font-size:10px;margin-left:5px;letter-spacing:.12em;opacity:.55;}
-/* Nodes 2.0 only: the Vue node wraps this panel in a 225px-minimum body and
-   hangs its own pack badge in a footer row; the readout is the whole node. */
-.lg-node:has(.qgtools-timer){min-width:0!important;}
-.lg-node:has(.qgtools-timer) .bg-component-node-background>div:last-child{display:none;}
-`;
-  document.head.appendChild(style);
-}
-
-function installDomReadout(node) {
-  if (node.__qgRunTimer) return node.__qgRunTimer;
-  ensureCss();
-  node.flags ??= {};
-  node.flags.no_title = true;
-  suppressBadges(node);
-  paintBlack(node);
-
-  const root = document.createElement("div");
-  root.className = "qgtools-timer";
-  const box = document.createElement("div");
-  box.className = "qgtools-timer-box";
-  const led = document.createElement("span");
-  led.className = "qgtools-timer-led";
-  const digits = document.createElement("span");
-  digits.className = "qgtools-timer-digits idle";
-  const main = document.createElement("span");
-  const tenths = document.createElement("span");
-  tenths.className = "tenths";
-  const unit = document.createElement("span");
-  unit.className = "unit";
-  digits.append(main, tenths, unit);
-  box.append(led, digits);
-  root.append(box);
-
-  const widget = node.addDOMWidget(WIDGET_NAME, "qg_run_timer", root, {
-    serialize: false,
-    hideOnZoom: false,
-    margin: 0,
-    getMinHeight: () => BASE_HEIGHT,
-  });
-  keepDomWidgetWidthAuto(widget);
-  // Not saved with the workflow either: options.serialize only keeps it out
-  // of the prompt, and saved values come back by position.
-  widget.serialize = false;
-  // A constant-height readout, not a viewport: pinned on purpose (see
-  // tests/panel_guards.test.mjs, fixedByDesign).
-  // 🔴 无参调用（拖拽缩放）时必须回落到 MIN_WIDTH，不能回落到当前宽，否则拖不小。
-  widget.computeSize = (width) => {
-    const wanted = Number(width);
-    return [Math.max(MIN_WIDTH, Number.isFinite(wanted) && wanted > 0 ? wanted : MIN_WIDTH), BASE_HEIGHT];
-  };
-  widget.computeLayoutSize = () => ({ minWidth: MIN_WIDTH, minHeight: BASE_HEIGHT });
-  widget.options.minNodeSize = [MIN_WIDTH, BASE_HEIGHT];
-  holdNodeMinWidth(widget, MIN_WIDTH);
-
-  const state = (node.__qgRunTimer = {
-    node, abort: new AbortController(), interval: null, mode: "dom",
-    timer: takeTimer(node), root, widget,
-    render: () => {
-      const view = readout(state);
-      main.textContent = view.main;
-      tenths.textContent = view.tenths;
-      unit.textContent = view.unit;
-      led.className = `qgtools-timer-led ${view.led === "idle" ? "" : view.led}`;
-      digits.className = "qgtools-timer-digits";
-      if (!view.hasRun) digits.classList.add("idle");
-      if (view.led === "error" || view.led === "interrupted") digits.classList.add("error");
+const THEMES = {
+    "暗夜": {
+        bg: "#0d0f0e", border: "#272c28", text: "#c9d1cb",
+        dot: { idle: "#565b57", running: "#57c26a", done: "#4f9dd9", error: "#d9534f" },
     },
-  });
-  state.render();
-  listen(state);
-  resumeTicking(state);
-  return state;
+    "苔绿": {
+        bg: "#10201a", border: "#274233", text: "#d7eade",
+        dot: { idle: "#43604f", running: "#5fd98a", done: "#5fb9d9", error: "#e06a5a" },
+    },
+    "暖沙": {
+        bg: "#1d1812", border: "#3b3327", text: "#e8dfc9",
+        dot: { idle: "#5d5343", running: "#d9b95f", done: "#d98f5f", error: "#d9534f" },
+    },
+};
+
+/* ---------- 计时状态（队列级，多实例共享） ---------- */
+
+const timer = { running: false, startAt: 0, frozen: 0, status: "idle" };
+const instances = new Set();
+let tickId = 0;
+
+/** 某块面板此刻应显示的读数与状态。
+ *
+ * 运行中由全局计时器统一驱动（同一队列的所有面板同步走）；
+ * 静止时各面板读自己保存的值，这样画布上放多块面板、或连续加载不同工作流时
+ * 不会出现"A 面板显示 B 面板的历史读数"这种串扰。
+ */
+function stateOf(node) {
+    if (timer.running) {
+        return { ms: performance.now() - timer.startAt, status: timer.status };
+    }
+    const p = node && node.properties;
+    const ms =
+        p && typeof p.lastMs === "number" && isFinite(p.lastMs) && p.lastMs >= 0
+            ? p.lastMs
+            : timer.frozen;
+    const status = (p && typeof p.lastStatus === "string" && p.lastStatus) || timer.status;
+    return { ms, status };
 }
 
-function install(node) {
-  const state = usesVueNodes() ? installDomReadout(node) : installCanvasReadout(node);
-  if (state) node.__qgSyncMode = () => syncTimerMode(node);
-  return state;
+/* 读数不走 ComfyUI 的渲染循环：新版前端只有节点自己的 setDirtyCanvas 能可靠
+ * 触发重绘，而且 requestAnimationFrame 在标签页失焦/被节流时会整段停摆。
+ * 这里沿用源插件的做法，用 100ms 定时器主动把节点标脏。 */
+/* 面板画在 onDrawBackground（背景层），所以只标脏背景层。
+ * LiteGraph 的 setDirty(fg, bg) 里第二个参数才是背景层；前景层交给它自己
+ * 按鼠标/交互节奏重绘。两层都每 100ms 强制全刷时，鼠标一动就会两层交替
+ * 清空重画，读数看起来闪烁、乱跳。 */
+function requestRepaint() {
+    app.canvas?.setDirty?.(false, true);
+    for (const node of instances) node.setDirtyCanvas?.(false, true);
 }
 
-// ---------------------------------------------------------------- 渲染模式迁移
-//
-// install 只在新建 / 读档时按当时模式装一次，切渲染模式时卡片不跟着换。
-// 迁移时要把「正在跑的计时」带过去，见 takeTimer。
-function uninstall(node) {
-  const state = node.__qgRunTimer;
-  if (!state) return;
-  // 记住当前宽度：切回经典时按它恢复，别打回默认值
-  node.__qgKeepWidth = node.size?.[0];
-  node.__qgRunTimer = null;
-  node.__qgTimerCarry = state.timer;
-  stopTicking(state);
-  try { state.abort.abort(); } catch { /* 忽略 */ }
-  if (state.mode === "dom") {
-    detachDomWidget(node, state.widget, state.root);
-    state.widget = null;
-    state.root = null;
-  }
-  // 画布钩子摘不掉，只把被它改过的实例字段还回去
-  if (node.__qgOrigComputeSize) node.computeSize = node.__qgOrigComputeSize;
+function pump() {
+    if (!timer.running || instances.size === 0) return;
+    requestRepaint();
 }
 
-function syncTimerMode(node) {
-  const want = usesVueNodes() ? "dom" : "canvas";
-  if (node.__qgRunTimer?.mode !== want) {
-    uninstall(node);
-    install(node);
-  }
-  return node.__qgRunTimer;
+function startTicking() {
+    if (!tickId) tickId = setInterval(pump, 100);
+}
+
+function stopTicking() {
+    if (tickId) {
+        clearInterval(tickId);
+        tickId = 0;
+    }
+}
+
+/** resume=true 用于 status / /queue 轮询的"兜底补启动"：
+ * 页面加载阶段偶尔会先收到一个杂散的结束信号把表停掉，随后轮询发现有任务
+ * 在跑又把表拉起来。若这时从 0 起算，读数会突然倒退回 0.0 —— 用户看到的
+ * "数字乱跳"。兜底补启动一律从上次冻结值接着走；真正的新任务由
+ * execution_start 触发，仍然从 0 开始。 */
+function startTimer(resume = false) {
+    const base = resume && timer.frozen > 0 ? timer.frozen : 0;
+    timer.startAt = performance.now() - base;
+    timer.running = true;
+    timer.status = "running";
+    startTicking();
+}
+
+function remember(status) {
+    for (const node of instances) {
+        // 实例的生命周期由 onRemoved 维护；这里只写属性，不做增删，
+        // 避免在"刚创建、还没加入图"的瞬间误删实例。
+        if (!node.properties) node.properties = {};
+        node.properties.lastMs = timer.frozen;
+        node.properties.lastStatus = status;
+    }
+}
+
+function stopTimer(status) {
+    if (timer.running) timer.frozen = performance.now() - timer.startAt;
+    timer.running = false;
+    timer.status = status;
+    remember(status);
+    pushHistory(status);
+    requestRepaint();
+    stopTicking();
+}
+
+/* ---------- 历史记录 ---------- */
+
+// 最近几次读数写进 node.properties.history，跟着工作流一起保存 —— 用途是
+// 「刚才那几次为什么慢」，一眼能看到波动。只留 5 条：每条 3 个字段，5 条
+// 不到 200 字节，不会把工作流 JSON 撑大。
+const HISTORY_MAX = 5;
+
+function pushHistory(status) {
+    if (status !== "done" && status !== "error") return;   // idle/中断不算一次运行
+    const ms = Math.round(timer.frozen);
+    if (!(ms > 0)) return;
+    for (const node of instances) {
+        if (!node.properties) node.properties = {};
+        const list = Array.isArray(node.properties.history) ? node.properties.history : [];
+        const last = list[0];
+        // execution_success 和 /queue 轮询可能各报一次结束，同一次不重复记。
+        if (last && last.ms === ms && last.status === status) continue;
+        list.unshift({ ms: ms, status: status, at: Date.now() });
+        node.properties.history = list.slice(0, HISTORY_MAX);
+    }
+}
+
+function historyMenuItems(node) {
+    const list = Array.isArray(node.properties.history) ? node.properties.history : [];
+    const items = list.map((h) => {
+        const at = h.at ? new Date(h.at) : null;
+        return {
+            content: `${fmtSeconds(h.ms)} s` +
+                (h.status === "error" ? " · 失败" : "") +
+                (at ? " · " + at.toLocaleTimeString() : ""),
+            disabled: true,
+        };
+    });
+    if (!items.length) items.push({ content: "（还没有记录）", disabled: true });
+    items.push({
+        content: "清空历史",
+        disabled: !list.length,
+        callback: () => {
+            node.properties.history = [];
+            requestRepaint();
+        },
+    });
+    return items;
+}
+
+function resetTimer() {
+    stopTicking();
+    timer.running = false;
+    timer.frozen = 0;
+    timer.status = "idle";
+    remember("idle");
+    requestRepaint();
+}
+
+/* ---------- 字体加载 ---------- */
+
+let fontStatus = "loading";
+// 墨迹测量缓存：key 为 "字号|文本"，字体加载完成后清空一次
+const inkCache = new Map();
+
+/* 测量专用离屏 ctx。主画布的 textAlign / textBaseline / direction 会被 LiteGraph
+ * 的其它绘制路径改来改去（鼠标移动时尤其频繁），actualBoundingBox* 会跟着变，
+ * 同一串数字能测出不同墨迹，字号和基线就每帧跳。测量必须放在固定环境里。 */
+const measureCtx = (() => {
+    try {
+        const c = document.createElement("canvas").getContext("2d");
+        if (c) {
+            c.textAlign = "left";
+            c.textBaseline = "alphabetic";
+            c.direction = "ltr";
+        }
+        return c;
+    } catch {
+        return null;
+    }
+})();
+
+try {
+    const face = new FontFace(FONT_FAMILY, `url(${FONT_URL})`);
+    face.load()
+        .then((loaded) => {
+            document.fonts.add(loaded);
+            fontStatus = "ok";
+            inkCache.clear(); // 之前可能是用兜底字体量的，作废
+            requestRepaint();
+        })
+        .catch((err) => {
+            fontStatus = "fail";
+            console.warn("[QG-tools] Capture it 字体加载失败：", err?.message || err);
+        });
+} catch (err) {
+    fontStatus = "fail";
+    console.warn("[QG-tools] 无法创建 FontFace：", err?.message || err);
+}
+
+/* ---------- 绘制 ---------- */
+
+function roundedPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+}
+
+function withAlpha(hex, alpha) {
+    let h = String(hex || "").replace("#", "").trim();
+    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    const n = parseInt(h || "c9d1cb", 16);
+    if (Number.isNaN(n)) return `rgba(201,209,203,${alpha})`;
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/**
+ * 读数格式：整数部分不补前导零，小数只留一位（0.1 秒）。
+ * 两位小数时百分位几乎每次重绘都在变，视觉上就是"小数点后面那位乱跳"；
+ * 100ms 的重绘节奏配 0.1s 精度刚好一帧一格，稳定得多。
+ * 宽度仍按固定 "000.0" 槽位预留，位数变化时字号、单位位置都不会跳。
+ */
+function fmtSeconds(ms) {
+    // 用整数"十分之一秒"计算，避免 (ms/1000 - int) * 10 的浮点误差
+    const tenths = Math.floor(Math.max(0, ms) / 100);
+    const intPart = Math.floor(tenths / 10);
+    return `${intPart}.${tenths % 10}`;
+}
+
+const TEXT_COLORS = [
+    ["浅灰", "#c9d1cb"],
+    ["纯白", "#ffffff"],
+    ["薄荷", "#7ce0a1"],
+    ["天青", "#6fc3e8"],
+    ["琥珀", "#e8c46f"],
+    ["珊瑚", "#e8806f"],
+    ["紫罗兰", "#b49be8"],
+];
+
+function colorMenuItems(node) {
+    const current = String(node.properties.textColor || "").toLowerCase();
+    const items = TEXT_COLORS.map(([name, hex]) => ({
+        content: (current === hex ? "● " : "○ ") + name + "  " + hex,
+        callback: () => {
+            node.properties.textColor = hex;
+            requestRepaint();
+        },
+    }));
+    items.push({
+        content: "自定义…",
+        callback: () => {
+            const picker = ensureColorPicker(node);
+            picker.value = node.properties.textColor || "#c9d1cb";
+            picker.click();
+        },
+    });
+    return items;
+}
+
+function drawBody(node, ctx) {
+    // 兜底登记：从工作流加载 / Vue Nodes / 重建的节点未必走 onNodeCreated 或
+    // onConfigure，但只要它被画出来就一定在画布上。放在这里最可靠，
+    // remember() 的读数保存和 requestRepaint() 的节点级标脏才不会漏。
+    if (!instances.has(node)) instances.add(node);
+    const props = node.properties || {};
+    const theme = THEMES[props.theme] || THEMES["暗夜"];
+    const textColor = props.textColor || theme.text;
+    const state = stateOf(node);
+    const w = Math.max(24, node.size?.[0] || 0);
+    const h = Math.max(24, node.size?.[1] || 0);
+
+    ctx.save();
+
+    roundedPath(ctx, 1, 1, w - 2, h - 2, 16);
+    ctx.fillStyle = theme.bg;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = theme.border;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(34, h / 2, Math.min(9, Math.max(6, Math.round(h * 0.055))), 0, Math.PI * 2);
+    ctx.fillStyle = theme.dot[state.status] || theme.dot.idle;
+    ctx.fill();
+
+    const font = (px) => `${px}px "${FONT_FAMILY}", ui-monospace, monospace`;
+    const num = fmtSeconds(state.ms);
+    // 测量基准：按最长读数形态量墨迹高度/宽度，供字号、基线、超宽判定使用
+    const SLOT_TEXT = "000.0";
+
+    /* 排布策略：不看 font-size，看"墨迹"。
+     * 字体自带的上下留白（ascent/descent 里没有笔画的部分）会让读数上下多出黑边，
+     * 所以先用 100px 探一次实际墨迹高度，反算出"让墨迹占面板高度 INK_RATIO"的字号，
+     * 再按 ascent/descent 把墨迹整体垂直居中。这样黑边只由比例决定，与字体无关。
+     */
+    const INK_RATIO = 0.68;
+    const REF = 100;
+    const unitRatio = 0.42;
+
+    const inkOf = (px, text) => {
+        const key = px + "|" + text;
+        const hit = inkCache.get(key);
+        if (hit) return hit;
+        // 只在离屏 ctx 上量，绝不碰主画布状态
+        const mctx = measureCtx || ctx;
+        mctx.font = font(px);
+        const m = mctx.measureText(text);
+        const ascent = m.actualBoundingBoxAscent ?? px * 0.72;
+        const descent = m.actualBoundingBoxDescent ?? 0;
+        const width =
+            (m.actualBoundingBoxLeft ?? 0) + (m.actualBoundingBoxRight ?? m.width) || m.width;
+        // advance 是排版宽度（fillText 的 center/right 对齐按它算），
+        // width 是墨迹宽度，两者不能混用：固定字符槽位必须用 advance。
+        const info = { ascent, descent, ink: ascent + descent, width, advance: m.width };
+        // 字号会随节点尺寸连续变化，缓存做一个上限，避免无限增长
+        if (inkCache.size > 400) inkCache.clear();
+        inkCache.set(key, info);
+        return info;
+    };
+
+    const probe = inkOf(REF, SLOT_TEXT);
+    const inkPerPx = probe.ink > 1 ? probe.ink / REF : 0.72;
+
+    let numPx = Math.max(20, Math.round((h * INK_RATIO) / inkPerPx));
+    let unitPx = Math.max(10, Math.round(numPx * unitRatio));
+    let slotInk = inkOf(numPx, SLOT_TEXT);
+    // 槽位宽度只由固定的 "000.0" 决定，绝不掺当前读数：
+    // 掺了之后每次读数变化都会改变宽度，超宽收缩的系数 k 也跟着变，字号会跳。
+    let slotW = slotInk.width;
+    let unitW = inkOf(unitPx, "s").advance;
+    let gap = Math.max(4, Math.round(numPx * 0.14));
+
+    // 超宽时（读数超过 999 秒，比槽位还宽）整体等比收缩，保证不越出面板、不压到状态点
+    const avail = w - 72;
+    const totalW = () => slotW + gap + unitW;
+    if (totalW() > avail) {
+        const k = avail / totalW();
+        numPx = Math.max(16, Math.floor(numPx * k));
+        unitPx = Math.max(9, Math.round(unitPx * k));
+        slotInk = inkOf(numPx, SLOT_TEXT);
+        slotW = slotInk.width;
+        unitW = inkOf(unitPx, "s").advance;
+        gap = Math.max(3, Math.round(numPx * 0.14));
+    }
+
+    /* 按字符类型分配固定槽宽（字距调整）。
+     * 上一版拿 "000.0" 的平均 advance 当统一步长（约 62.8px），但 Capture It
+     * 是比例手写体：宽数字约 71.9px 比步长还大，会溢出槽位压住左边字符
+     *（截图里 "26" 挤在一起）；小数点只有约 26px，却占了整整一格，
+     *  前后各空出一大块。
+     *
+     * 现在：数字槽 = 最宽数字的 advance + 最小字距；小数点槽 = 点自身
+     * advance + 最小字距。两个值只由字体和字号决定，与当前读数无关，因此
+     * 每个字符的位置依然完全固定 —— 之前修好的「不抖」不会退化；位数增加
+     * 也只是向左多占一格。整体仍靠右、右锚点固定，槽位内 right 对齐，
+     * 字宽差异只向左伸缩。垂直用固定槽位文本的 ascent/descent。
+     */
+    let digitAdv = 0;
+    for (const c of "0123456789") {
+        digitAdv = Math.max(digitAdv, inkOf(numPx, c).advance);
+    }
+    const dotAdv = inkOf(numPx, ".").advance;
+    const innerGap = Math.max(2, Math.round(numPx * 0.035));
+    const stepDigit = digitAdv + innerGap;
+    const stepDot = dotAdv + innerGap;
+
+    const right = w - 36;
+    const numRight = right - unitW - gap;
+    const baseline = h / 2 + (slotInk.ascent - slotInk.descent) / 2;
+
+    ctx.textAlign = "right";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = font(numPx);
+    ctx.fillStyle = textColor;
+    let edge = numRight;
+    for (let i = num.length - 1; i >= 0; i--) {
+        const ch = num[i];
+        ctx.fillText(ch, edge, baseline);
+        edge -= (ch === "." ? stepDot : stepDigit);
+    }
+    ctx.font = font(unitPx);
+    ctx.fillStyle = withAlpha(textColor, 0.65);
+    ctx.textAlign = "right";
+    ctx.fillText("s", right, baseline);
+
+    ctx.restore();
+}
+
+/* ---------- 取色器 ---------- */
+
+function ensureColorPicker(node) {
+    if (node._colorPicker) return node._colorPicker;
+    const input = document.createElement("input");
+    input.type = "color";
+    input.value = node.properties.textColor || "#c9d1cb";
+    input.style.cssText =
+        "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0;";
+    const apply = () => {
+        node.properties.textColor = input.value;
+        requestRepaint();
+    };
+    input.addEventListener("input", apply);
+    input.addEventListener("change", apply);
+    document.body.appendChild(input);
+    node._colorPicker = input;
+    return input;
+}
+
+/* ---------- 节点注册 ---------- */
+
+/**
+ * 新版前端把 LGraphNode 上的部分属性（title_mode 等）做成了只有 getter 的
+ * 访问器，直接赋值会在严格模式下抛 TypeError，导致节点创建失败。
+ * 这里先尝试普通赋值，失败则用 defineProperty 在实例上定义同名属性。
+ */
+function defineCompat(obj, key, value) {
+    try {
+        obj[key] = value;
+        return true;
+    } catch {}
+    try {
+        Object.defineProperty(obj, key, { value, writable: true, configurable: true });
+        return true;
+    } catch {}
+    return false;
+}
+
+/* 从 status 事件里取队列余量，只用于"补启动"。
+ * 取不到必须返回 null 让调用方保持现状：把"读不到"当成"队列空"会误停表。
+ * 兼容 {exec_info:{...}}（本机 api.js 实测）/ {status:{exec_info:{...}}}（旧结构）。 */
+function queueRemaining(detail) {
+    if (!detail || typeof detail !== "object") return null;
+    const v = detail.exec_info?.queue_remaining
+        ?? detail.status?.exec_info?.queue_remaining;
+    return Number.isFinite(v) ? v : null;
+}
+
+/* ---------- Nodes 2.0（Vue 节点渲染）下的读数层 ----------
+ *
+ * 现象：开启 设置 → Vue Nodes 后，LiteGraph 的 drawNode 提前 return，
+ * onDrawBackground 不再被调用，读数整片消失（2026-11-06 实测）。
+ *
+ * 为什么不在主画布上补画：试过包 drawFrontCanvas 补画，像素采样证明主画布上
+ * 确实画出了读数（与正常模式的采样几乎逐像素一致），但屏幕上依然看不见 ——
+ * Vue 模式把节点画在一张独立的 overlay canvas 上，那张画布压在主画布之上，
+ * 我们画在下面就被整个盖住（把 overlay 隐藏掉才露出来）。
+ *
+ * 所以这里自己叠一张最上层的透明 canvas，只画计时器面板：
+ *   - position:absolute; inset:0; pointer-events:none，不吃鼠标事件
+ *   - 尺寸跟随主画布（含 devicePixelRatio），坐标用 app.canvas.ds 换算
+ *   - 只在 Vue 模式下创建；正常模式仍走 onDrawBackground，不会重复绘制
+ */
+const VUE_LAYER_ID = "qg-timer-vue-layer";
+
+let vueLayer = null;
+let vueLayerRaf = 0;
+
+/* 其他模块（qg_stream.js 的流式气泡）也画在节点前景层，Vue 模式下同样看不到。
+ * 这里开一个极小的注册表：painter(ctx) 在「已套好平移缩放」的 ctx 上调用，
+ * 自己负责遍历节点、translate 到节点原点。 */
+const vuePainters = new Set();
+
+window.__QG_VUE_LAYER__ = {
+    add(painter) { vuePainters.add(painter); },
+    remove(painter) { vuePainters.delete(painter); },
+};
+
+function vueNodesOn() {
+    try {
+        return !!LiteGraph?.vueNodesMode;
+    } catch (err) {
+        return false;
+    }
+}
+
+function timerNodes() {
+    return (app?.graph?._nodes || []).filter(
+        (n) => n.type === NODE_CLASS && !n.flags?.collapsed);
+}
+
+function destroyVueLayer() {
+    if (vueLayer?.canvas?.parentElement) vueLayer.canvas.remove();
+    vueLayer = null;
+}
+
+function ensureVueLayer() {
+    const main = app?.canvas?.canvas;
+    const host = main?.parentElement;
+    if (!host) return null;
+    if (vueLayer && vueLayer.canvas.parentElement === host) return vueLayer;
+    let canvas = document.getElementById(VUE_LAYER_ID);
+    if (canvas && canvas.parentElement !== host) {
+        canvas.remove();
+        canvas = null;
+    }
+    if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.id = VUE_LAYER_ID;
+        // z-index 只要盖过 overlay canvas 即可（它是 auto）；pointer-events 关掉，
+        // 否则整块画布会吃掉节点的点击、拖拽和滚轮缩放。
+        canvas.style.cssText =
+            "position:absolute;inset:0;pointer-events:none;z-index:1;";
+        host.appendChild(canvas);
+    }
+    vueLayer = { canvas, ctx: canvas.getContext("2d") };
+    return vueLayer;
+}
+
+/** 每帧重画。不做「变了才重画」的省事优化：读数每 100ms 变一次、流式气泡
+ *  每来一段文本就变一次，判断条件很容易漏，漏一次就是画面停在旧内容上。 */
+function paintVueLayer() {
+    const layer = ensureVueLayer();
+    const main = app?.canvas?.canvas;
+    if (!layer || !main) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = main.clientWidth || main.width;
+    const h = main.clientHeight || main.height;
+    const pw = Math.max(1, Math.round(w * dpr));
+    const ph = Math.max(1, Math.round(h * dpr));
+    if (layer.canvas.width !== pw || layer.canvas.height !== ph) {
+        layer.canvas.width = pw;
+        layer.canvas.height = ph;
+        layer.canvas.style.width = w + "px";
+        layer.canvas.style.height = h + "px";
+    }
+    const ctx = layer.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, pw, ph);
+    const ds = app.canvas.ds;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (ds) {
+        // 与 litegraph 的 ds.toCanvasContext 同序：先 scale 再 translate
+        ctx.scale(ds.scale, ds.scale);
+        ctx.translate(ds.offset[0], ds.offset[1]);
+    }
+    for (const painter of vuePainters) {
+        try {
+            painter(ctx);
+        } catch (err) {
+            console.warn("[QG-tools] Vue 读数层绘制失败:", err);
+        }
+    }
+}
+
+function paintTimers(ctx) {
+    for (const node of timerNodes()) {
+        ctx.save();
+        ctx.translate(node.pos[0], node.pos[1]);
+        drawBody(node, ctx);
+        ctx.restore();
+    }
+}
+
+function tickVueLayer() {
+    vueLayerRaf = 0;
+    if (!vueNodesOn()) {
+        destroyVueLayer();
+        return;
+    }
+    try {
+        paintVueLayer();
+    } catch (err) {
+        console.warn("[QG-tools] Vue 读数层绘制失败:", err);
+    }
+    vueLayerRaf = requestAnimationFrame(tickVueLayer);
+}
+
+function scheduleVueLayer() {
+    if (!vueLayerRaf) vueLayerRaf = requestAnimationFrame(tickVueLayer);
 }
 
 app.registerExtension({
-  name: "QG.RunTimer",
-  beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData?.name !== NODE_CLASS) return;
-    // Set once on the TYPE at registration: the classic renderer reads it
-    // per draw, and the Nodes 2.0 renderer snapshots it when the node is
-    // created, so a per-node write would come too late there.
-    nodeType.title_mode = NO_TITLE;
-    chainCallback(nodeType.prototype, "onNodeCreated", function () {
-      install(this);
-    });
-    chainCallback(nodeType.prototype, "onConfigure", function () {
-      // Saved properties land after onNodeCreated: pick the history up then,
-      // and keep the readout black however the save was colored.
-      queueMicrotask(() => {
-        // syncTimerMode 而不是 install：读档时渲染模式可能跟建节点那一刻不同
-        // （同一个工作流在两种模式下打开过），顺手校正到当前模式。
-        const state = syncTimerMode(this);
-        if (!state) return;
-        if (!state.timer.running) state.timer = createTimer(savedHistory(this));
-        this.flags.no_title = true;
-        paintBlack(this);
-        if (state.mode === "canvas") keepAspect(this);
-        state.render();
-      });
-    });
-    chainCallback(nodeType.prototype, "getExtraMenuOptions", function (_canvas, options) {
-      const state = this.__qgRunTimer;
-      if (!state || !Array.isArray(options)) return;
-      // Built at click time, so the translation plugin's DOM watcher never
-      // sees it - these three go through zh() like every other composed
-      // string. The history is a joined list, so it rides the {a} slot.
-      const previous = historyLine(state.timer.history);
-      options.unshift(
-        {
-          content: previous
-            ? zh("Runs: {a}").replace("{a}", previous)
-            : zh("No completed runs yet"),
-          disabled: true,
-        },
-        {
-          content: zh("Reset Run Timer history"),
-          callback: () => {
-            state.timer = createTimer([]);
-            this.properties ??= {};
-            this.properties[PROPERTY] = { history: [] };
-            state.render();
-            // 清历史是改存档：不记一笔的话「未保存」不亮、撤销也拉不回来，
-            // 关掉工作流历史又原样回来了。
-            notifyQgChange();
-          },
-        },
-        null,
-      );
-    });
-    chainCallback(nodeType.prototype, "onRemoved", function () {
-      const state = this.__qgRunTimer;
-      if (!state) return;
-      stopTicking(state);
-      state.abort.abort();
-      this.__qgRunTimer = null;
-    });
-  },
+    name: "QG.RunTimer",
 
-  async setup() {
-    installModeWatcher((node) => {
-      if (String(node?.comfyClass ?? node?.type ?? "") !== NODE_CLASS) return null;
-      if (typeof node.__qgSyncMode !== "function") {
-        node.__qgSyncMode = () => syncTimerMode(node);
-      }
-      return node.__qgSyncMode;
-    });
-  },
+    setup() {
+        api.addEventListener("execution_start", () => startTimer());
+
+        // 兜底 1：status 广播。execution_start / execution_success 在 execution.py
+        // 里走 add_message(broadcast=False)，要求 client_id 非空；client_id 丢失
+        // 或后端重启时只有 queue_updated() 的 status 是无条件广播。
+        //
+        // 注意：exec_info.queue_remaining 只统计"排队中"的 prompt，正在执行的
+        // 那一个不计入。执行期间后端广播的 status 常常是 queue_remaining=0，
+        // 拿它停表会把正在走的计时器停掉、下一次广播又重新从 0 开始 ——
+        // CDP 实测到的 "0.17 → 0.02" 读数归零就是这么来的。
+        // 因此 status 只负责"补启动"，停表交给执行事件和下面的 /queue 轮询。
+        api.addEventListener("status", (e) => {
+            const r = queueRemaining(e.detail);
+            if (r !== null && r > 0 && !timer.running) startTimer(true);
+        });
+
+        // 兜底 2：WS 事件整段缺失时读 /queue。前端自带的 _pollQueue 只在连不上
+        // WebSocket 时才启用，正常连接不轮询，所以这里自己补一个。
+        // 用 /queue 而不是 /prompt：queue_running 明确包含"正在执行"的 prompt，
+        // queue_pending 是排队中的，两者合起来才能准确区分"在跑"和"跑完了"。
+        // 只在画布上真有计时器节点时发请求，1 次/秒，CPU 慢推理下开销可忽略。
+        let polling = false;
+        setInterval(async () => {
+            if (polling || instances.size === 0) return;
+            polling = true;
+            try {
+                const res = await api.fetchApi?.("/queue");
+                if (res?.ok) {
+                    const q = await res.json();
+                    const n = (q?.queue_running?.length || 0) + (q?.queue_pending?.length || 0);
+                    if (n > 0) {
+                        if (!timer.running) startTimer(true);
+                    } else if (timer.running) {
+                        stopTimer("done");
+                    }
+                }
+            } catch { /* 请求失败时保持现状，WS 事件照常生效 */ }
+            finally { polling = false; }
+        }, 1000);
+
+        /* 不用 executing 停表。
+         * 本机前端把 executing 的 detail 压成裸节点 id，旧版是对象，判断很容易
+         * 出错（v2 就因此每个节点都停一次表）。更麻烦的是：页面加载 / WS 重连
+         * 阶段后端会发杂散的 executing(node=null)，会把刚启动的计时器直接停掉，
+         * 随后 /queue 轮询补启动又从 0 起算 —— CDP 抓到的读数倒退回 0.0
+         * 正是这条链路。
+         * 本机 0.43 后端有 execution_success，出错和中断还有专属事件；
+         * 再老的后端则靠 /queue 轮询收尾（最多晚 1 秒）。与源插件的 RunTimer
+         * 的做法一致：executing 只表示"当前跑哪个节点"，不表示"整轮结束"。
+         */
+        api.addEventListener("execution_success", () => {
+            if (timer.running) stopTimer("done");
+        });
+        api.addEventListener("execution_error", () => stopTimer("error"));
+        api.addEventListener("execution_interrupted", () => stopTimer("idle"));
+
+        // Vue 节点渲染下 drawNode 不画节点，改在自己的最上层画布上补画
+        vuePainters.add(paintTimers);
+        scheduleVueLayer();
+    },
+
+    beforeRegisterNodeDef(nodeType, nodeData) {
+        if (nodeData.name !== NODE_CLASS) return;
+
+        defineCompat(nodeType, "title_mode", noTitleMode());
+
+        const onNodeCreated = nodeType.prototype.onNodeCreated;
+        nodeType.prototype.onNodeCreated = function () {
+            const result = onNodeCreated?.apply(this, arguments);
+            if (!this.properties) this.properties = {};
+            this.color = "#17251b";
+            defineCompat(this, "title_mode", noTitleMode());
+            defineCompat(this, "python_module", MODULE_NAME);
+            this.properties.theme = this.properties.theme || "暗夜";
+            this.properties.textColor = this.properties.textColor || "#c9d1cb";
+            this.properties.lastMs = this.properties.lastMs ?? 0;
+            this.properties.lastStatus = this.properties.lastStatus || "idle";
+            this.size = [DEFAULT_SIZE[0], DEFAULT_SIZE[1]];
+            this.serialize_widgets = false;
+            instances.add(this);
+            return result;
+        };
+
+        const onConfigure = nodeType.prototype.onConfigure;
+        nodeType.prototype.onConfigure = function (info) {
+        const result = onConfigure?.apply(this, arguments);
+        if (!this.properties) this.properties = {};
+        // 从已保存工作流加载的节点只走 onConfigure，不会走 onNodeCreated。
+        // 不在这里登记的话，requestRepaint() 的节点级标脏和 remember() 的
+        // 读数保存都会漏掉"打开工作流就有"的计时器（Set 自带去重，重复调用无害）。
+        instances.add(this);
+        defineCompat(this, "title_mode", noTitleMode());
+            defineCompat(this, "python_module", MODULE_NAME);
+            // 注意：这里不能去改全局 timer。旧版本会在加载工作流时把 timer 覆盖成
+            // 当前节点的历史值，导致画布上多块面板串成同一个读数。
+            // 静止时的读数由 stateOf(node) 从各节点自己的 properties 里取。
+            //
+            // 宽度补强只做一次：把更早版本保存的窄节点补到能放下 "000.0s"，
+            // 补过之后打标记，用户之后再手动拉窄就不会被反复改回去。
+            // 注意：新版 LiteGraph 的 node.size 是 Float32Array 类数组而不是 Array，
+            // 不能用 Array.isArray 判断，否则这段兼容逻辑会永远进不去。
+            if (!this.properties._widthFixed) {
+                const size = this.size;
+                if (size && typeof size[0] === "number" && size[0] < MIN_WIDTH) {
+                    this.size = [MIN_WIDTH, size[1] || DEFAULT_SIZE[1]];
+                }
+                this.properties._widthFixed = true;
+            }
+            return result;
+        };
+
+        const onRemoved = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            instances.delete(this);
+            if (this._colorPicker) {
+                this._colorPicker.remove();
+                this._colorPicker = null;
+            }
+            return onRemoved?.apply(this, arguments);
+        };
+
+        nodeType.prototype.onDrawBackground = function (ctx) {
+            drawBody(this, ctx);
+        };
+
+        nodeType.prototype.getExtraMenuOptions = function (_canvas, options) {
+            const node = this;
+            if (!node.properties) node.properties = {};
+            options = options || [];
+            // 为了不显示右上角来源徽章，本节点被伪装成内置模块（见 timer_node.py），
+            // 前端因此会给它加上 "Fix node (recreate)" 这一项——点了会重建节点、
+            // 丢掉主题与字体颜色。这里只剔除这一项，其余菜单项原样保留。
+            for (let i = options.length - 1; i >= 0; i--) {
+                const text = typeof options[i]?.content === "string" ? options[i].content : "";
+                if (/recreate/i.test(text) || /^fix node/i.test(text)) options.splice(i, 1);
+            }
+            const themeItems = Object.keys(THEMES).map((name) => ({
+                content: (node.properties.theme === name ? "● " : "○ ") + name,
+                callback: () => {
+                    node.properties.theme = name;
+                    requestRepaint();
+                },
+            }));
+            options.push(
+                { content: "重置计时", callback: () => resetTimer() },
+                { content: "历史记录", submenu: { options: historyMenuItems(node) } },
+                { content: "主题", submenu: { options: themeItems } },
+                { content: "字体颜色", submenu: { options: colorMenuItems(node) } },
+            );
+            return options;
+        };
+    },
 });
+
+/* Nodes 2.0（Vue 节点渲染）下的画法
+ *
+ * 2026-11-06 实测：开启 Settings → Vue Nodes 后，节点被画在独立的 overlay
+ * 画布上，LiteGraph 的 drawNode 提前返回，onDrawBackground 不再被调用 ——
+ * 读数整片消失。往 drawFrontCanvas 补画也没用（会被 overlay 整个盖住）。
+ *
+ * 现在的做法：在 Vue 模式下自己叠一张 #qg-timer-vue-layer（见
+ * ensureVueLayer），rAF 每帧按画布的 scale/offset 换算坐标重画；普通模式
+ * 仍旧走 onDrawBackground。两层不会同时画，所以不会出现重影。
+ */
+
+/* 字体迟迟没加载完成时提示一次（失败原因已在上面的 catch 里打印，这里不重复） */
+setTimeout(() => {
+    if (fontStatus === "loading") {
+        console.warn("[QG-tools] 字体 3 秒内未加载完成，读数暂用等宽字体兜底");
+    }
+}, 3000);

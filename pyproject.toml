@@ -1,8 +1,12 @@
 [project]
 name = "comfyui-qg-tools"
-description = "A ComfyUI custom node pack by QG: 41 nodes under QG-tools - LoRA Loader (searchable rows, drag strengths, trigger words, templates), a 3-in-1 Checkpoint/UNET + CLIP + VAE loader, Empty Latent Resolution (ratio + megapixels), canvas Image Crop + Rotate + Pad with video timeline, Load Image with a canvas mask editor, Image Compare (slide / A / B / erase), Image Export (JPEG / PNG / WEBP with quality), Canvas Label and Markdown Note (free text, never executed), Workflow Note card, Workflow Switches, Run Timer, Resize, Size, Number Slider (own range), Seed history, Text, Markdown Reader, Translate, Any Switch, Display Any, If/Else, Watermark, Text Overlay, Grid, Mask Colorize, Mask Concat, Mask Refine, Text Concat, Text Replace, Text Split, Size Selector, Math (one expression over variables a-z), Free Memory. All answer to English search aliases."
-version = "0.9.11"
-license = { file = "LICENSE" }
+description = "A ComfyUI custom node pack by QG: 55 nodes under QG-tools. Loaders (LoRA with searchable rows, drag strengths, trigger words and templates; a 3-in-1 Checkpoint/UNET + CLIP + VAE loader). Canvas editing (Image Crop + Rotate + Pad with a video timeline, Load Image with a mask editor, Image Compare in slide/A/B/erase modes, an outpainting board). Image and mask utilities (scale, normalize to model resolution buckets, watermark, blend, detect, analysis, concat, grid, crop for inpaint). Text tools (prompt line, split, replace, concat, Markdown reader, Google translate). Workflow helpers (note card, set/get point, switches, run timer, seed history, number slider, math). All answer to English search aliases."
+version = "0.9.12"
+# PEP 639 写法：license 给 SPDX 标识符、license-files 单独列要随包分发的许可文件。
+# 以前是 `license = { file = "LICENSE" }`（PEP 621 的表形式），新版 setuptools 构建时会
+# 报「license as a TOML table is deprecated」，且 Registry 拿不到 SPDX 标识符。
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []

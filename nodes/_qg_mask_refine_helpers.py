@@ -34,7 +34,7 @@ import torch
 import torch.nn.functional as functional
 
 from ._qg_execution_helpers import raise_if_interrupted
-from ._qg_mask_helpers import NO_MASK_PAINTED, is_unpainted_mask
+from ._qg_mask_helpers import NO_MASK_PAINTED, grow_shrink_mask, is_unpainted_mask
 
 try:  # scipy 只用来加速连通域标记；没有它就用下面的 torch 路径
     from scipy.ndimage import binary_fill_holes as _scipy_fill_holes
@@ -72,43 +72,6 @@ def _as_bhw(mask: torch.Tensor) -> torch.Tensor:
             "Mask Refine expected [H,W] or [B,1,H,W], got shape %s." % (list(mask.shape),)
         )
     return mask.float().clamp(0.0, 1.0)
-
-
-def _pool_1d(work: torch.Tensor, radius: int, horizontal: bool) -> torch.Tensor:
-    """沿一个方向做 (2*radius+1) 宽的最大池化，画布外填 0。
-
-    手动 pad 而不是交给 ``max_pool2d`` 的 ``padding`` 参数：那个参数填的是
-    ``-inf``（对 float 来说是「最小可能值」，对最大池化无影响），但我们需要的
-    语义是「画布外什么都没有 = 0」。收缩时这个差别就是全部差别：``-x`` 往外填
-    0，最大池化才会取到 0，取负回来恰好是 0，边缘才会真的往里退。
-    """
-    if horizontal:
-        pad, kernel = (radius, radius, 0, 0), (1, 2 * radius + 1)
-    else:
-        pad, kernel = (0, 0, radius, radius), (2 * radius + 1, 1)
-    return functional.max_pool2d(functional.pad(work, pad, value=0.0), kernel_size=kernel, stride=1)
-
-
-def grow_shrink_mask(mask: torch.Tensor, pixels: int) -> torch.Tensor:
-    """按整像素扩张（正）或收缩（负）；软值（非二值）一并保留。
-
-    方形极值滤波可以拆成横、竖两次一维滤波，所以不管移多远都只是两趟，而不是
-    ``2 * pixels`` 趟整图池化。收缩就是同一套滤波作用在取负的遮罩上。
-
-    软值仍然保留：扩张取邻域最大、收缩取邻域最小，软边只是一起被抬高或压低。
-    """
-    steps = abs(int(pixels))
-    if steps == 0:
-        return mask
-    work = mask.unsqueeze(1)
-    shrinking = int(pixels) < 0
-    if shrinking:
-        work = -work
-    work = _pool_1d(work, steps, horizontal=True)
-    work = _pool_1d(work, steps, horizontal=False)
-    if shrinking:
-        work = -work
-    return work.squeeze(1)
 
 
 def _spread(marker: torch.Tensor, allowed: torch.Tensor) -> torch.Tensor:

@@ -13,22 +13,22 @@
 //    size 只算主体，别把 30 加进去。
 
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026110820";
 import {
   chainCallback,
   chainHandler,
   keepDomWidgetWidthAuto,
   notifyQgChange,
   zh,
-} from "../shared/index.mjs?v=2026103135";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026103135";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
+} from "../shared/index.mjs?v=2026110820";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=2026110820";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110820";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
-} from "../shared/vue_mode.mjs?v=2026103135";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026103135";
+} from "../shared/vue_mode.mjs?v=2026110820";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026110820";
 
 const NODE_CLASS = "QG_BoolToggle";
 const WIDGET_NAME = "qg_bool_toggle_panel";

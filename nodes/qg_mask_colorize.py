@@ -19,8 +19,8 @@ What this rewrite changed
 * **``color_rgb`` was a bare wildcard.** Without ``forceInput`` the frontend
   draws a text box for it on the canvas - a box that cannot produce a colour
   and that nobody would fill in. ``QG_Exists``, ``QG_RouteBlocker``,
-  ``QG_TextOverlayImage``, ``QG_ImageOrLatentSize`` and ``QG_FreeMemory`` all
-  carried the same flag missing; this was the last one.
+  ``QG_TextOverlayImage`` (since removed), ``QG_ImageOrLatentSize`` and
+  ``QG_FreeMemory`` all carried the same flag missing; this was the last one.
 * **Fewer mask frames than image frames used to crash.** The port sliced
   ``mask[:image.shape[0]]`` when the counts disagreed, which does nothing when
   the mask is the shorter one - and the next multiply then failed on a shape
@@ -44,12 +44,21 @@ scale, near-black on the 0-255 one - and no rule can resolve it. The rule stays
 "all three at or below 1 means 0-1, otherwise 0-255", which is what the port
 did, and it is now written down in the tooltip instead of being implicit.
 
+Modified 2026-11-01: ``color_rgb`` stays a wired-only input, and three optional
+integer inputs (``r`` / ``g`` / ``b``) were added so a custom colour can be
+typed straight onto the node instead of requiring an upstream triple. ``-1``
+means "take this channel from the built-in colour", so setting only ``r`` keeps
+the picked colour's green and blue. Precedence is unchanged at the top: a wired
+``color_rgb`` still beats everything.
+
 Only numpy / torch are used -- no new dependency.
 """
 
 import torch
 
+from ._qg_color_helpers import CHANNEL_UNSET, as_rgb_triple, channel_inputs, mix_channels
 from ._qg_combo_legacy import combo_legacy
+from ._qg_tensor_helpers import as_image_batch, as_mask_batch, match_size
 
 COLOR_MAP = {
     "black": (0, 0, 0),
@@ -64,38 +73,9 @@ COLOR_MAP = {
 # 中文值 —— 给红色是因为它一定看得出来，不会像黑/白那样被当成正常画面。
 FALLBACK = (255, 0, 0)
 
-
-def _clamp_byte(value: float) -> int:
-    return int(min(255.0, max(0.0, value)))
-
-
-def as_triple(value):
-    """A wired RGB triple to 0-255 ints, or None if it is not one.
-
-    ``[1, 0, 0]`` is genuinely ambiguous - pure red as a 0-1 triple, near-black
-    as a 0-255 one. The rule (all three at or below 1 means 0-1) is the port's
-    and stays, but it lives here in one place instead of inside the branch.
-    """
-    if value is None:
-        return None
-    if isinstance(value, torch.Tensor):
-        try:
-            value = value.detach().reshape(-1).tolist()
-        except Exception:
-            return None
-    try:
-        items = list(value)
-    except TypeError:
-        return None
-    if len(items) != 3:
-        return None
-    try:
-        numbers = [float(item) for item in items]
-    except (TypeError, ValueError):
-        return None
-    if max(numbers) <= 1.0:
-        return tuple(_clamp_byte(number * 255.0) for number in numbers)
-    return tuple(_clamp_byte(number) for number in numbers)
+# 三元组解析（原 `as_triple`）、通道合并（原 `mix_channels`）、三个通道输入
+# （原本文件里手写的 r/g/b）现在都在 `_qg_color_helpers` 里 —— 文字叠加节点
+# 曾经把这套抄了第二遍，两份的取整还不一样（一份截断一份四舍五入）。
 
 
 def _fill_batch(mask, count):
@@ -115,11 +95,12 @@ class QGMaskColorize:
     CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
         "Paints a flat colour into the masked area of an image. Pick one of six "
-        "built-in colours or wire an RGB triple, which wins over the picker; a "
-        "triple whose three numbers are all at or below 1 is read as 0-1, "
-        "anything else as 0-255. The mask is cut hard at 0.5, so a soft edge "
-        "does not produce a tint. One mask paints every frame of the batch; "
-        "fewer mask frames than image frames repeat to fill. Handy for "
+        "built-in colours, type a custom one into the R/G/B boxes (leave a box at "
+        "-1 to keep that channel from the picker), or wire an RGB triple, which "
+        "wins over both; a triple whose three numbers are all at or below 1 is "
+        "read as 0-1, anything else as 0-255. The mask is cut hard at 0.5, so a "
+        "soft edge does not produce a tint. One mask paints every frame of the "
+        "batch; fewer mask frames than image frames repeat to fill. Handy for "
         "eyeballing a mask, or for burning a solid area into a region meant "
         "for inpainting."
     )
@@ -160,9 +141,16 @@ class QGMaskColorize:
                         # 通配输入的通病，本包里出现过六次。
                         "forceInput": True,
                         "tooltip": "Optional custom color, as [R, G, B]. All three at or below 1 means "
-                                   "a 0-1 triple; anything else is read as 0-255.",
+                                   "a 0-1 triple; anything else is read as 0-255. Wins over both the "
+                                   "picker and the three boxes below.",
                     },
                 ),
+                # 三个通道分开填：能只改一路，也能不连线就自定义颜色。
+                # 默认 -1 = 这一路沿用「内置颜色」，所以老存档（没有这三个值）
+                # 行为完全不变，还是按 color_name 上色。
+                # 🔴 位置必须在 color_rgb **之后**，否则老工作流的
+                # widgets_values 会跟控件错位、link 会指到错的槽。
+                **channel_inputs(),
             },
         }
 
@@ -173,31 +161,24 @@ class QGMaskColorize:
     )
     FUNCTION = "execute"
 
-    def execute(self, image, mask, color_name, color_rgb=None):
-        if image.dim() == 3:
-            image = image.unsqueeze(0)
-
-        if mask.dim() == 4:
-            mask = mask.max(dim=1).values
-        elif mask.dim() == 2:
-            mask = mask.unsqueeze(0)
+    def execute(self, image, mask, color_name, color_rgb=None,
+                r=CHANNEL_UNSET, g=CHANNEL_UNSET, b=CHANNEL_UNSET):
+        # 维度归一化与尺寸检查都走 `_qg_tensor_helpers`：同样的判断散在八个
+        # 节点里各写了一遍，而且写的不是同一件事（见那个文件的说明）。
+        image, _ = as_image_batch(image, "Mask Colorize: base image")
+        mask = as_mask_batch(mask, "Mask Colorize: mask")
 
         # 尺寸必须在广播之前挡住：否则报的是「张量尺寸 64 与 32 无法广播」，
         # 用户看不出是遮罩和图像没对齐，也不知道该去改哪一头。
-        if tuple(mask.shape[1:]) != tuple(image.shape[1:3]):
-            raise ValueError(
-                "[QG-tools] 遮罩上色：遮罩是 %d×%d，图像是 %d×%d，两者必须一样大。"
-                "先让遮罩和图像同源（同一个 LoadImage / 同一个 latent 尺寸），"
-                "或用缩放 / 裁剪节点把它们对齐。"
-                % (mask.shape[2], mask.shape[1], image.shape[2], image.shape[1])
-            )
+        match_size(mask, image, "Mask Colorize: mask")
 
         mask = _fill_batch(mask, image.shape[0])
         mask = (mask > 0.5).to(device=image.device, dtype=image.dtype).unsqueeze(-1)
 
-        triple = as_triple(color_rgb)
+        triple = as_rgb_triple(color_rgb)
         if triple is None:
-            triple = COLOR_MAP.get(color_name, FALLBACK)
+            # 没接三元组才轮到「内置颜色 + 三个通道」：-1 的通道取预置分量。
+            triple = mix_channels(COLOR_MAP.get(color_name, FALLBACK), r, g, b)
         # 直接把 (3,) 广播进混合，省掉一张整幅的纯色图。
         color = torch.tensor(triple, dtype=image.dtype, device=image.device) / 255.0
         out = image * (1.0 - mask) + color * mask

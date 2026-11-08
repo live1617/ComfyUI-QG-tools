@@ -42,6 +42,110 @@ def _channels_from_numbers(numbers: list[float]) -> tuple[int, int, int]:
     return tuple(max(0, min(255, math.floor(number + 0.5))) for number in numbers)
 
 
+# 「这一路不填」的哨兵。INT 控件没有空值，用 -1 当空：取值域是 0-255，
+# -1 不可能是用户真想涂的颜色，所以不会歧义。
+CHANNEL_UNSET = -1
+
+
+def _clamp_byte(value: float) -> int:
+    return int(min(255.0, max(0.0, value)))
+
+
+def mix_channels(preset, r=CHANNEL_UNSET, g=CHANNEL_UNSET, b=CHANNEL_UNSET):
+    """Merge typed r/g/b over a preset triple, channel by channel.
+
+    ``-1`` (the widget default) means "keep this channel from the preset", so a
+    user who only wants to nudge red can type ``r=200`` and leave g/b alone.
+    Anything unreadable is treated as unset rather than raising - these are
+    optional widgets and an old workflow may hand us junk.
+    """
+    merged = []
+    for fallback, value in zip(preset, (r, g, b)):
+        if value is None or isinstance(value, bool):
+            merged.append(fallback)
+            continue
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            merged.append(fallback)
+            continue
+        merged.append(fallback if number < 0 else _clamp_byte(float(number)))
+    return tuple(merged)
+
+
+def channel_inputs(hint="the built-in color above"):
+    """The three optional INT inputs, defined once for every node that takes them.
+
+    Returned as a dict so a node can splat it into ``optional`` after its
+    ``color_rgb`` — 🔴 order matters: these must come *after* every older input,
+    otherwise an old workflow's ``widgets_values`` lines up against the wrong
+    control and its links point at the wrong slot.
+    """
+    return {
+        "r": (
+            "INT",
+            {
+                "default": CHANNEL_UNSET,
+                "min": CHANNEL_UNSET,
+                "max": 255,
+                "tooltip": "Red, 0-255. -1 takes red from %s. "
+                           "Setting any of R/G/B overrides the picker for that channel." % hint,
+            },
+        ),
+        "g": (
+            "INT",
+            {
+                "default": CHANNEL_UNSET,
+                "min": CHANNEL_UNSET,
+                "max": 255,
+                "tooltip": "Green, 0-255. -1 takes green from %s." % hint,
+            },
+        ),
+        "b": (
+            "INT",
+            {
+                "default": CHANNEL_UNSET,
+                "min": CHANNEL_UNSET,
+                "max": 255,
+                "tooltip": "Blue, 0-255. -1 takes blue from %s." % hint,
+            },
+        ),
+    }
+
+
+def as_rgb_triple(value: object) -> tuple[int, int, int] | None:
+    """A wired ``[R, G, B]`` to 0-255 bytes, or ``None`` when it is not a triple.
+
+    ``[1, 0, 0]`` is genuinely ambiguous - pure red on the 0-1 scale, near-black
+    on the 0-255 one - and no rule can resolve it. The rule (all three at or
+    below 1 means 0-1) is the same one ``parse_fill_color`` uses, so a wired
+    colour and a typed one land on the same bytes; it also rounds the same way
+    (``floor(x + 0.5)``) as the JS editor preview, which is what keeps the
+    canvas chip and the painted result from differing by one.
+
+    Returning ``None`` rather than raising is deliberate: this feeds optional
+    wildcard inputs, and an old workflow can hand us anything at all.
+    """
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        try:
+            value = value.detach().reshape(-1).tolist()
+        except Exception:
+            return None
+    try:
+        items = list(value)
+    except TypeError:
+        return None
+    if len(items) != 3:
+        return None
+    try:
+        numbers = [float(item) for item in items]
+    except (TypeError, ValueError):
+        return None
+    return _channels_from_numbers(numbers)
+
+
 def parse_fill_color(value: object, source: str = "Transform fill_color") -> tuple[int, int, int]:
     """Parse a fill color leniently; never raises, falls back to mid-gray.
 
@@ -365,10 +469,14 @@ def match_colors(
 
 
 __all__ = [
+    "CHANNEL_UNSET",
     "COLOR_MATCH_METHODS",
     "FALLBACK_RGB",
+    "as_rgb_triple",
+    "channel_inputs",
     "lab_to_rgb",
     "match_colors",
+    "mix_channels",
     "parse_fill_color",
     "rgb_to_lab",
 ]

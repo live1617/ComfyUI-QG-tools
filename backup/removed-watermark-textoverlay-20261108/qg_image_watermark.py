@@ -56,13 +56,13 @@ from PIL import Image, ImageOps
 
 import comfy.utils
 from ._qg_combo_legacy import combo_legacy
+from ._qg_tensor_helpers import as_image_batch
 
 
 MAX_RESOLUTION = 16384
 
-# A tensor whose last axis is at most this wide is treated as (H, W, C);
-# anything wider is a grayscale batch (B, H, W). Same rule as QG_ImageGrid.
-MAX_CHANNELS = 4
+# 「(H, W, C) 还是 (B, H, W)」的判据现在只有一处：_qg_tensor_helpers.MAX_CHANNELS。
+# 这个文件里原本还留着一份自己的 `_as_batch`，已经并入 `as_image_batch`。
 
 # What comfy.utils.common_upscale accepts. Used when the core list cannot be
 # read, so that a core rename does not make the whole node vanish at
@@ -107,23 +107,13 @@ def _pil_to_tensor(image: Image.Image) -> torch.Tensor:
 
 
 def _as_batch(image: torch.Tensor, label: str) -> torch.Tensor:
-    """Normalise to (B, H, W, C).
+    """Normalise to (B, H, W, C) — thin wrapper over the shared helper.
 
-    A 3-D tensor is either one frame (H, W, C) or a grayscale batch (B, H, W).
-    Reading the last axis tells them apart; guessing wrong turns a batch into
-    one very tall image (the ImageGrid defect).
+    This function used to own the whole rule. It now lives in
+    ``_qg_tensor_helpers.as_image_batch`` because eight nodes needed it and
+    they had each written a slightly different version of it.
     """
-    if image.dim() == 4:
-        return image
-    if image.dim() == 3:
-        if image.shape[-1] <= MAX_CHANNELS:
-            return image.unsqueeze(0)
-        return image.unsqueeze(-1)
-    if image.dim() == 2:
-        return image.unsqueeze(0).unsqueeze(-1)
-    raise ValueError(
-        f"{label}的维度是 {image.dim()}，只接受 (批次, 高, 宽, 通道) 的图像张量。"
-    )
+    return as_image_batch(image, label)[0]
 
 
 @combo_legacy("QG_ImageWatermark")

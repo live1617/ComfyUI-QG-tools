@@ -11,20 +11,20 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110820";
 import {
   BRAND,
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026103135";
-import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026103135";
-import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026103135";
-import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026103135";
-import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026103135";
-import { zhPair } from "../shared/zh.mjs?v=2026103135";
-import { savedLinks } from "../shared/compare_erase.mjs?v=2026103135";
-import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026103135";
+} from "../shared/index.mjs?v=2026110820";
+import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=2026110820";
+import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=2026110820";
+import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=2026110820";
+import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=2026110820";
+import { zhPair } from "../shared/zh.mjs?v=2026110820";
+import { savedLinks } from "../shared/compare_erase.mjs?v=2026110820";
+import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=2026110820";
 import {
   compareBadges,
   compareClip,
@@ -34,7 +34,7 @@ import {
   findCompareImages,
   normalizeCompareMode,
   slideFraction,
-} from "../shared/compare.mjs?v=2026103135";
+} from "../shared/compare.mjs?v=2026110820";
 
 const NODE_NAME = "QG_ImageCompare";
 const PANEL_WIDGET = "qgtools_compare_panel";
@@ -120,6 +120,20 @@ function setEmpty(state, text) {
   state.stage.classList.add("is-empty");
   state.status.textContent = text;
   state.caption.textContent = "";
+}
+
+// 面板交不出图时的统一收场：视觉回到空态，并且把「有没有图」这件事一起归零。
+//
+// 🔴 只改文案不清状态会留下上一对：擦除面板仍握着那两张图，保存 / 复制 / 对齐
+// 三个按钮还是可用的，点下去存出来的是上一对的混合图；而 showStoredResult 第一行
+// 是 `if (state.refs) return`，refs 不清就永远不来补图，面板一直空到手动重跑。
+// 原先三条路各写各的（onImageError 全清、decode 失败半清、onExecuted 只改文案），
+// 现在统一走这里。
+function dropPictures(state, text) {
+  state.refs = null;
+  state.ready = false;
+  state.eraser.setPictures(null);
+  setEmpty(state, text);
 }
 
 function setReady(state) {
@@ -255,8 +269,7 @@ function loadPreviews(state, refs) {
     if (failed || !(state.imageA.naturalWidth > 0 && state.imageB.naturalWidth > 0)) {
       // 载不进来要说一句。以前挂着 load 事件，失败走 onImageError；换成
       // decode() 之后失败会被 catch 吞掉，面板就永远停在「正在载入预览…」。
-      state.eraser.setPictures(null);
-      setEmpty(state, zhPair("A compare preview could not load", "对比预览没能载入"));
+      dropPictures(state, zhPair("A compare preview could not load", "对比预览没能载入"));
       return;
     }
     state.ready = true;
@@ -351,7 +364,7 @@ function buildPanel(node) {
   const state = (node.__qgCompare = {
     node, root, stage, imageA, imageB, seam, status, caption, identity, identityLeft, identityRight,
     modeSwitch, eraser,
-    widget, abort, refs: null, fraction: 1, loaded: 0, showingB: false,
+    widget, abort, refs: null, fraction: 1, showingB: false,
   });
   applyClip(state);
   updateModeButtons(state);
@@ -378,12 +391,9 @@ function buildPanel(node) {
   }, { signal });
 
   const onImageError = () => {
-    // 顺手把 refs 清掉：showStoredResult 的第一行是 `if (state.refs) return`，
+    // 清 refs 还有第二个作用：showStoredResult 的第一行是 `if (state.refs) return`，
     // 不清的话「结果已经回到存储里」也补不上图，面板一直空到用户手动重跑。
-    state.refs = null;
-    state.ready = false;
-    eraser.setPictures(null);
-    setEmpty(state, zhPair("A compare preview could not load", "对比预览没能载入"));
+    dropPictures(state, zhPair("A compare preview could not load", "对比预览没能载入"));
   };
   imageA.addEventListener("error", onImageError, { signal });
   imageB.addEventListener("error", onImageError, { signal });
@@ -460,7 +470,7 @@ app.registerExtension({
       const state = buildPanel(this);
       const refs = findCompareImages(message);
       if (refs) loadPreviews(state, refs);
-      else setEmpty(state, zhPair("Execution finished without compare previews", "运行结束，但没有拿到对比预览"));
+      else dropPictures(state, zhPair("Execution finished without compare previews", "运行结束，但没有拿到对比预览"));
       app.canvas?.setDirty?.(true, true);
     });
     // filename 输入上接没接线，决定名字是打的还是显示运行给的。

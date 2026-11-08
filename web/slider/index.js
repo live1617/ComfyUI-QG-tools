@@ -33,22 +33,22 @@
 // 滑条顶在右端、输出却是 80，看着就像坏了。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
-import { roundHalfAway } from "../shared/scrub_input.mjs?v=2026103135";
-import { BRAND, chainCallback, chainHandler, notifyQgChange, zhPair } from "../shared/index.mjs?v=2026103135";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026103135";
-import { hideWidget } from "../shared/widget_visibility.mjs?v=2026103135";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110820";
+import { roundHalfAway } from "../shared/scrub_input.mjs?v=2026110820";
+import { BRAND, chainCallback, chainHandler, notifyQgChange, zhPair } from "../shared/index.mjs?v=2026110820";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026110820";
+import { hideWidget } from "../shared/widget_visibility.mjs?v=2026110820";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
   vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026103135";
+} from "../shared/vue_mode.mjs?v=2026110820";
 import {
   closeSettingsMenu,
   gearIconSvg,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026103135";
+} from "../shared/settings_menu.mjs?v=2026110820";
 
 const NODE_CLASS = "QG_Slider";
 // kind 的取值，必须和 nodes/qg_slider.py 的 KINDS 逐字一致。
@@ -288,7 +288,7 @@ function makeGearCorner(node) {
   const gear = document.createElement("button");
   gear.type = "button";
   gear.className = "qgtools-card-gear";
-  gear.title = "滑条设置";
+  gear.title = zhPair("Slider settings", "滑条设置");
   gear.innerHTML = gearIconSvg(14);
   // 告诉共享菜单「这枚按钮是开关」：见 shared/settings_menu.mjs 的关闭监听
   gear.dataset.qgtoolsMenuToggle = "";
@@ -323,23 +323,36 @@ function gearAnchor(node) {
 // `persist: false`：类型和步长是每个节点自己的状态，不是「这类节点的默认值」，
 // 存进 localStorage 会让新建的节点跟着上次那个节点的设置走。
 const MENU_SCOPE = "slider";
-const MENU_SCHEMA = [
+// 🔴 造在函数里而不是顶层常量：`zhPair` 读的是「当前界面语言」，模块顶层求值时
+// app.i18n 可能还没挂上，只能退到 <html lang> 猜 —— 猜错就是英文界面露中文。
+const slideMenuSchema = () => [
   {
     key: "kind",
-    label: "类型",
-    hint: "输出的数是整数还是小数",
+    label: zhPair("Type", "类型"),
+    hint: zhPair("Whether this node outputs a whole number or a decimal", "输出的数是整数还是小数"),
     type: "choice",
     options: [KIND_INT, KIND_FLOAT],
+    // 同 QG_Number：取值不动，只把按钮显示做成双语（见 settings_menu.mjs 的注释）
+    optionLabels: {
+      [KIND_INT]: zhPair("integer", "整数"),
+      [KIND_FLOAT]: zhPair("float", "浮点"),
+    },
     optionHints: {
-      [KIND_INT]: "输出整数，滑条一格走 1，小数会被四舍五入掉",
-      [KIND_FLOAT]: "输出小数，滑条一格走「步长」，读数按步长给几位小数",
+      [KIND_INT]: zhPair(
+        "Whole numbers, one notch per 1, decimals get rounded away",
+        "输出整数，滑条一格走 1，小数会被四舍五入掉",
+      ),
+      [KIND_FLOAT]: zhPair(
+        "Decimals, one notch per step, the readout follows the step's decimals",
+        "输出小数，滑条一格走「步长」，读数按步长给几位小数",
+      ),
     },
     persist: false,
   },
   {
     key: "min_value",
-    label: "最小",
-    hint: "滑条左端；比最大值大时会自动对调",
+    label: zhPair("Min", "最小"),
+    hint: zhPair("Left end of the slider; swaps with the maximum if it is larger", "滑条左端；比最大值大时会自动对调"),
     type: "number",
     min: -1e12,
     max: 1e12,
@@ -353,8 +366,8 @@ const MENU_SCHEMA = [
   },
   {
     key: "max_value",
-    label: "最大",
-    hint: "滑条右端；比最小值小时会自动对调",
+    label: zhPair("Max", "最大"),
+    hint: zhPair("Right end of the slider; swaps with the minimum if it is smaller", "滑条右端；比最小值小时会自动对调"),
     type: "number",
     min: -1e12,
     max: 1e12,
@@ -367,8 +380,11 @@ const MENU_SCHEMA = [
   },
   {
     key: "step",
-    label: "步长",
-    hint: "浮点模式下每格多少（整数模式固定 1，不受这里影响）",
+    label: zhPair("Step", "步长"),
+    hint: zhPair(
+      "How much one notch moves in decimal mode (whole-number mode is fixed at 1)",
+      "浮点模式下每格多少（整数模式固定 1，不受这里影响）",
+    ),
     type: "number",
     min: 0.000001,
     max: 1000,
@@ -391,9 +407,9 @@ function toggleSliderMenu(node) {
   menuNode = node;
   openSettingsMenu({
     scope: MENU_SCOPE,
-    schema: MENU_SCHEMA,
+    schema: slideMenuSchema(),
     anchor: gearAnchor(node),
-    title: "滑条设置",
+    title: zhPair("Slider settings", "滑条设置"),
     initial: {
       kind: kindOf(node),
       min_value: numOf(node, "min_value", 0),
@@ -1009,8 +1025,14 @@ function installDom(node) {
           // 点数字就地改（跟经典模式同一个编辑框）。
           onEdit: (readout) => openValueEditor(node, () => readout.getBoundingClientRect()),
         },
-        title: "拖动调整数值；范围和步长在右边的齿轮里改",
-        editTitle: "点击直接输入数值（回车确认，Esc 取消）",
+        title: zhPair(
+          "Drag to change the value; range and step live in the gear on the right",
+          "拖动调整数值；范围和步长在右边的齿轮里改",
+        ),
+        editTitle: zhPair(
+          "Click to type a value (Enter to confirm, Esc to cancel)",
+          "点击直接输入数值（回车确认，Esc 取消）",
+        ),
       },
     ],
     minWidth: MIN_WIDTH,

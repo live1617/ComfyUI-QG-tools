@@ -142,7 +142,7 @@ class QGMath:
             result = evaluate(expr, scope)
         except MathError as exc:
             # 带上表达式原文：红框里能直接看出是哪一版算错了。
-            raise ValueError("数学运算「%s」算不了：%s" % (expr, exc))
+            raise ValueError("Math cannot evaluate \"%s\": %s" % (expr, exc))
 
         # 文本结果只走 text 槽：三个数字输出一律给 0 / 0 / False，
         # 免得下游拿一个「算不上数的字符串」当尺寸用。

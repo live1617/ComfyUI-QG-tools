@@ -8,10 +8,10 @@
 //                        title: "LoRA Loader settings",
 //                        onChange: (values, key) => rerender(values) });
 
-import { makeScrubInput } from "./scrub_input.mjs?v=2026103135";
-import { BRAND } from "./index.mjs?v=2026103135";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026103135";
-import { zh } from "./zh.mjs?v=2026103135";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026110820";
+import { BRAND } from "./index.mjs?v=2026110820";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=2026110820";
+import { zh } from "./zh.mjs?v=2026110820";
 import {
   isOverrideActive,
   isOverrideEntry,
@@ -19,7 +19,7 @@ import {
   overrideEnableValue,
   overrideIsCustom,
   schemaDefaults,
-} from "./node_settings.mjs?v=2026103135";
+} from "./node_settings.mjs?v=2026110820";
 
 const CSS_ID = "qgtools-settings-css";
 
@@ -211,8 +211,14 @@ function buildControl(entry, values, commit) {
   if (entry.type === "choice") {
     const seg = el("div", "qgtools-set-seg");
     for (const option of entry.options ?? []) {
-      const button = el("button", values[entry.key] === option ? "on" : "", option);
+      // 🔴 按钮上写的是 `option` 这个**取值**，但汉化插件的全局词表会按字面翻它
+      // （"float" → 「浮点」，"integer" 没词条就留着），中文界面就成了「integer 浮点」。
+      // 想双语就由 schema 给 `optionLabels`（值仍是 option，点击提交的也是 option），
+      // 别指望 `translate="no"` —— 插件用 createTreeWalker + 整段全等，不看属性。
+      const text = entry.optionLabels?.[option] ?? option;
+      const button = el("button", values[entry.key] === option ? "on" : "", text);
       button.type = "button";
+      button.dataset.qgtoolsValue = String(option);
       button.addEventListener("click", () => {
         for (const sibling of seg.children) sibling.classList.remove("on");
         button.classList.add("on");

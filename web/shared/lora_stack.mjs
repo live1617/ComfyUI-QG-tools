@@ -3,7 +3,7 @@
 // DOM 接线全在 web/lora_loader/index.js；这个文件零 DOM、零 ComfyUI 依赖，
 // 所以 tools/_check_lora_stack.mjs 能直接跑它。
 
-import { zhCount, zhPair, zhSep, zhEnd } from "./zh.mjs?v=2026103135";
+import { zhCount, zhPair, zhSep, zhEnd } from "./zh.mjs?v=2026110820";
 
 export const STRENGTH_MIN = -10;
 export const STRENGTH_MAX = 10;
@@ -59,7 +59,15 @@ export function rowRuns(row) {
   // 没有行就没有东西会跑。`undefined !== false` 是真，不先拦一下，一行空槽
   // 也会被算成「会加载」。
   if (!row) return false;
-  return row.enabled !== false && row.group_off !== true;
+  if (row.enabled === false || row.group_off === true) return false;
+  // 第三条判据：模型强度和 CLIP 强度**都是 0** 时这行什么都不做，后端
+  // loaded_rows 直接跳过、连文件都不去加载。以前这里只有前两条，注释却写着
+  // 「与后端是同一条判定」—— 一行 0/0 的 LoRA 会被前端算成「会跑」。
+  // 后端在没接 CLIP 时按 clip=0 算，那层前端不知道，这里按「接了 CLIP」算。
+  // 缺字段不算 0（Number(undefined) 是 NaN），与后端 parse 时补默认值一致。
+  const strength = Number(row.strength);
+  const clip = Number(row.strength_clip);
+  return !(strength === 0 && clip === 0);
 }
 
 export function normalizeRows(parsed) {

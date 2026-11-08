@@ -1,0 +1,233 @@
+{
+  "QG_ImageWatermark": {
+    "nodeDefs": {
+      "display_name": "图像水印",
+      "description": "给图像贴一张水印图：可缩放（不缩放 / 等比适配 / 按倍数 / 按指定宽高）、可定位（九宫格锚点加像素偏移）、可旋转、可调透明程度，还能接遮罩限定不透出区域。底图是批次时逐帧贴同一位置。",
+      "inputs": {
+        "base_image": {
+          "name": "底图",
+          "tooltip": "底图（可以是批次，水印会贴到每一帧上）"
+        },
+        "watermark_image": {
+          "name": "水印图",
+          "tooltip": "水印图；接批次时只用第一帧"
+        },
+        "scale_mode": {
+          "name": "缩放模式",
+          "tooltip": "不缩放：保持原尺寸；等比适配：缩到能放进底图；按倍数缩放：原尺寸乘以倍数；按指定宽高缩放：直接用下面填的宽高"
+        },
+        "scale_method": {
+          "name": "缩放算法",
+          "tooltip": "缩放水印图用的重采样方法（不缩放时无效果）",
+          "options": {
+            "nearest-exact": "最近邻（精确）",
+            "bilinear": "双线性",
+            "area": "区域",
+            "bicubic": "双三次",
+            "lanczos": "Lanczos（兰索斯）"
+          }
+        },
+        "scale_factor": {
+          "name": "缩放倍数",
+          "tooltip": "缩放模式选「按倍数缩放」时生效"
+        },
+        "target_width": {
+          "name": "目标宽",
+          "tooltip": "缩放模式选「按指定宽高缩放」时的宽度"
+        },
+        "target_height": {
+          "name": "目标高",
+          "tooltip": "缩放模式选「按指定宽高缩放」时的高度"
+        },
+        "position": {
+          "name": "锚点位置",
+          "tooltip": "水印在底图上的锚点位置"
+        },
+        "offset_x": {
+          "name": "横向偏移",
+          "tooltip": "在锚点基础上的横向像素偏移（正数往右）"
+        },
+        "offset_y": {
+          "name": "纵向偏移",
+          "tooltip": "在锚点基础上的纵向像素偏移（正数往下）"
+        },
+        "rotation": {
+          "name": "旋转角度",
+          "tooltip": "旋转角度（顺时针为正），画布会随旋转扩大"
+        },
+        "opacity": {
+          "name": "透明程度",
+          "tooltip": "0 = 完全不透明，100 = 完全透明"
+        },
+        "mask": {
+          "name": "遮罩",
+          "tooltip": "可选遮罩：白色区域不透出水印，黑色区域正常显示"
+        }
+      },
+      "outputs": {
+        "0": {
+          "name": "图像",
+          "tooltip": "贴好水印的图像（与底图同样张数）。"
+        }
+      }
+    },
+    "zh_pack": {
+      "title": "图像水印",
+      "description": "给图像贴一张水印图：可缩放（不缩放 / 等比适配 / 按倍数 / 按指定宽高）、可定位（九宫格锚点加像素偏移）、可旋转、可调透明程度，还能接遮罩限定不透出区域。底图是批次时逐帧贴同一位置。",
+      "inputs": {
+        "base_image": "底图",
+        "watermark_image": "水印图",
+        "scale_mode": "缩放模式",
+        "scale_method": "缩放算法",
+        "scale_factor": "缩放倍数",
+        "target_width": "目标宽",
+        "target_height": "目标高",
+        "position": "锚点位置",
+        "offset_x": "横向偏移",
+        "offset_y": "纵向偏移",
+        "rotation": "旋转角度",
+        "opacity": "透明程度",
+        "mask": "遮罩"
+      },
+      "outputs": {
+        "IMAGE": "图像"
+      }
+    },
+    "origins": [
+      {
+        "id": "QG_ImageWatermark",
+        "display": "图像水印",
+        "file": "nodes/qg_image_watermark.py",
+        "origin": "original",
+        "upstream": null,
+        "reference": {
+          "plugin": "ComfyUI_Muye",
+          "node": "AddImageWatermark",
+          "license": "MIT",
+          "relation": "idea"
+        },
+        "note": "v0.8.5 搬入，10-30 重写为自写实现"
+      }
+    ],
+    "sections": [
+      {
+        "anchor": "## 图像水印",
+        "nodes": [
+          "QG_ImageWatermark"
+        ]
+      }
+    ]
+  },
+  "QG_TextOverlayImage": {
+    "nodeDefs": {
+      "display_name": "文字叠加图像",
+      "description": "在图像上画文字：可选系统字体、字号、颜色（内置六色 / 直接在 R/G/B 三格填 / 从上游接 RGB 三元组，留 -1 表示这一路沿用内置色）、横排 / 竖排，按中心点坐标定位；除了画好的图像，还输出文字形状的遮罩，方便后续做区域限定。批次时每一帧都画同样的字。中心点按文字的实际笔画算，不是按字体行高 —— 所以「中心 Y」写多少，看到的字就真的居中在那里。",
+      "inputs": {
+        "image": {
+          "name": "图像",
+          "tooltip": "底图（批次时每一帧都画同样的字）"
+        },
+        "text": {
+          "name": "文字",
+          "tooltip": "要画的文字；换行会被保留，纵向排版时逐字换行"
+        },
+        "font": {
+          "name": "字体",
+          "tooltip": "系统字体（读的是操作系统字体目录）"
+        },
+        "font_size": {
+          "name": "字号",
+          "tooltip": "字号（像素）"
+        },
+        "color_name": {
+          "name": "内置颜色",
+          "tooltip": "文字颜色；只填了部分通道时，没填的通道（-1）取这里的颜色"
+        },
+        "layout": {
+          "name": "排版方向",
+          "tooltip": "横向逐行排；纵向把每个字拆成一行"
+        },
+        "x": {
+          "name": "中心 X",
+          "tooltip": "文字中心的 X 坐标（像素）。按实际笔画量，不是按行高，所以写多少就真的居中在那里。"
+        },
+        "y": {
+          "name": "中心 Y",
+          "tooltip": "文字中心的 Y 坐标（像素）。按实际笔画量，不是按行高，所以写多少就真的居中在那里。"
+        },
+        "color_rgb": {
+          "name": "自定义 RGB",
+          "tooltip": "可选自定义颜色：接 [R, G, B] 三元组（0-255 或 0-1），接了就不看内置颜色和下面三个通道格"
+        },
+        "r": {
+          "name": "红 R",
+          "tooltip": "红色通道 0-255。-1 表示沿用「内置颜色」的红。三个通道任意填了数就盖过内置颜色的对应通道"
+        },
+        "g": {
+          "name": "绿 G",
+          "tooltip": "绿色通道 0-255。-1 表示沿用「内置颜色」的绿"
+        },
+        "b": {
+          "name": "蓝 B",
+          "tooltip": "蓝色通道 0-255。-1 表示沿用「内置颜色」的蓝"
+        }
+      },
+      "outputs": {
+        "0": {
+          "name": "图像",
+          "tooltip": "画好字的图像。"
+        },
+        "1": {
+          "name": "遮罩",
+          "tooltip": "文字形状的遮罩（白=有字，黑=空白）。"
+        }
+      }
+    },
+    "zh_pack": {
+      "title": "文字叠加图像",
+      "description": "在图像上画文字：可选系统字体、字号、颜色（内置六色 / 直接在 R/G/B 三格填 / 从上游接 RGB 三元组，留 -1 表示这一路沿用内置色）、横排 / 竖排，按中心点坐标定位；除了画好的图像，还输出文字形状的遮罩，方便后续做区域限定。批次时每一帧都画同样的字。",
+      "inputs": {
+        "image": "图像",
+        "text": "文字",
+        "font": "字体",
+        "font_size": "字号",
+        "color_name": "内置颜色",
+        "layout": "排版方向",
+        "x": "中心 X",
+        "y": "中心 Y",
+        "color_rgb": "自定义 RGB",
+        "r": "红 R",
+        "g": "绿 G",
+        "b": "蓝 B"
+      },
+      "outputs": {
+        "IMAGE": "图像",
+        "MASK": "遮罩"
+      }
+    },
+    "origins": [
+      {
+        "id": "QG_TextOverlayImage",
+        "display": "文字叠加图像",
+        "file": "nodes/qg_text_overlay_image.py",
+        "origin": "original",
+        "upstream": null,
+        "reference": {
+          "plugin": "ComfyUI_Muye",
+          "node": "TextOverlayImage",
+          "license": "MIT",
+          "relation": "idea"
+        },
+        "note": "自写（10-30 换掉 v0.8.5 的搬运版）：ID / 八个输入 / 两路输出 / 六个内置颜色 / 横竖排 / 每帧都画 / 不做 IS_CHANGED 全不变，老存档照开。⚠️ **唯一一处可见的行为变化：文字位置**。旧实现用 Pillow 的 `anchor=\"mm\"`，那是按**字体行高**（ascender..descender）居中，而字体的行高比字母本身高，实测 100px 字号下 \"AB\" 的笔画中心比设定的 y 高 19px（两行、竖排、中文都一样偏差），节点承诺的「按中心定位」是虚的。现在先 `multiline_textbbox` 量真实墨迹框再按框心偏移，六组实测偏差 ≤1px，且不随字号放大（30px/300px 都是 1px 内）。🔴 代价：老工作流里所有文字会下移约 19% 字号，之前手调 y 补偿过的要调回来 —— 但旧位置本来就是错的（用户 10-30 确认要修）。另修三处：① `color_rgb` 漏了 forceInput（通配输入不加，前端画一个填不出颜色的文本框）；② **空批次以前抛 `stack expects a non-empty TensorList`** —— 那段 `if mask_out is None` 的兜底永远轮不到，因为 stack 先炸了，现在空进空出；③ `_FONT_INDEX` 是赋值了从不读的死变量（索引故意每次 INPUT_TYPES 重建，新装字体免重启），删掉，`_FONT_DIRS` 保留缓存"
+      }
+    ],
+    "sections": [
+      {
+        "anchor": "## 文字叠加图像",
+        "nodes": [
+          "QG_TextOverlayImage"
+        ]
+      }
+    ]
+  }
+}

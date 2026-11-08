@@ -269,10 +269,11 @@ class QGLoadImage:
                     # 交出去，不如说清楚 —— 用户还能去编辑器里重存一次。
                     # 带色输出不受影响：那本来就是用户要的东西。
                     raise ValueError(
-                        "[QG-tools] 加载图像：这张图是遮罩编辑器存的成品，但和它配对的原图副本 "
-                        "%s 不见了，还原不出原图。请重新在编辑器里存一次，或改选原图。"
-                        "（若你本来就要带色图，把「输出带色图」打开即可。）"
-                        % (source.name if source is not None else "qg-src-<时间戳>.png")
+                        "[QG-tools] Load Image: this file was saved by the mask editor, but "
+                        "its paired original %s is gone, so the original cannot be recovered. "
+                        "Save again from the editor, or pick the original file. (If you want "
+                        "the colourised image as-is, turn on Output Coloured Image.)"
+                        % (source.name if source is not None else "qg-src-<timestamp>.png")
                     )
                 else:
                     # 带色输出：painted 的 RGB 本来就是用户要的，整张不透明地交出去

@@ -31,6 +31,8 @@ import requests
 from server import PromptServer
 from aiohttp import web
 
+from ._qg_combo_legacy import combo_legacy
+
 # 连接超时 6s / 读取超时 20s。国内直连 Google 时连接阶段最容易被卡，收紧连接超时
 # 可以让第一跳尽快失败、立即落到第二跳（绕代理直连）重试。
 _TIMEOUT = (6, 20)
@@ -358,8 +360,17 @@ def _register_manual_route():
 _register_manual_route()
 
 
+@combo_legacy("QG_GoogleTranslateText")
 class QGGoogleTranslateText:
     """Translate a text prompt into another language with Google Translate."""
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, from_translate=None, to_translate=None):
+        # 两个语言下拉的中文标签（南非荷兰语 / 中文（简体）…）登记在
+        # nodes/_qg_combo_legacy.py 的 LEGACY 表里，值仍然是 BCP-47 语言码。
+        # 这里把两个选项名报上去，让 ComfyUI 跳过「值必须在列表里」——
+        # 中文界面上显示的是中文名，直接往 API 里塞中文名也不会炸。
+        return True
 
     @classmethod
     def INPUT_TYPES(cls):

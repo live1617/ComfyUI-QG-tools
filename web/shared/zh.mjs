@@ -11,7 +11,8 @@ let zhWarm = null;
 
 /**
  * 当前界面语言。ComfyUI 切换语言会整页重载，所以读一次就够。
- * 三级别兜底：前端 i18n 实例 → 设置项 → <html lang>。
+ * 四级兜底：前端 i18n 实例 → 设置项 → localStorage（扩展注册期只有它有值）
+ * → <html lang>。
  */
 function currentLocale() {
   try {
@@ -27,6 +28,17 @@ function currentLocale() {
     if (typeof value === "string" && value) return value;
   } catch {
     /* 同上 */
+  }
+  // 🔴 扩展在 `app.registerExtension({ settings, commands })` 里求值文案时，
+  // `app.i18n` 和 `app.ui.settings` 都还没建好，`<html lang>` 也还是模板里的
+  // "en" —— 中文界面下这些设置项名 / 命令名会一律落成英文（11-08 搬 snaplines
+  // 时实测到）。localStorage 里那份是 ComfyUI 自己的持久化位置，切换语言时
+  // 整页重载、加载早期就已经写好，所以在两份 app 接口都读不到时先看它。
+  try {
+    const saved = globalThis.localStorage?.getItem?.("Comfy.Locale");
+    if (typeof saved === "string" && saved) return saved;
+  } catch {
+    /* 无 localStorage（Node 里跑单测）→ 往下兜 */
   }
   try {
     return document?.documentElement?.lang || "";

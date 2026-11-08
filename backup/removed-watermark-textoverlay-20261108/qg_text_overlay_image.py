@@ -58,7 +58,14 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
+from ._qg_color_helpers import (
+    CHANNEL_UNSET,
+    as_rgb_triple,
+    channel_inputs,
+    mix_channels,
+)
 from ._qg_combo_legacy import combo_legacy
+from ._qg_tensor_helpers import as_image_batch
 
 COLOR_MAP = {
     "black": (0, 0, 0),
@@ -123,8 +130,11 @@ class QGTextOverlayImage:
         "Draws text on an image and also returns the text as a mask. Pick a "
         "system font, size, colour and horizontal or vertical layout; the text "
         "is centred on the X/Y position, measured on its actual strokes rather "
-        "than on the font's line box. The mask output is white where the text "
-        "sits, so it can drive inpainting or downstream compositing."
+        "than on the font's line box. For a custom colour, either type it into "
+        "the R/G/B boxes (leave a box at -1 to keep that channel from the "
+        "picker) or wire an RGB triple, which wins over both. The mask output is "
+        "white where the text sits, so it can drive inpainting or downstream "
+        "compositing."
     )
     SEARCH_ALIASES = [
         "text", "overlay", "caption", "title", "subtitle", "文字", "字幕", "标题", "qg",
@@ -201,6 +211,8 @@ class QGTextOverlayImage:
                         ),
                     },
                 ),
+                # 🔴 必须排在 color_rgb 之后（见 _qg_color_helpers.channel_inputs）
+                **channel_inputs("the built-in text colour above"),
             },
         }
 
@@ -214,34 +226,26 @@ class QGTextOverlayImage:
     FUNCTION = "execute"
 
     @staticmethod
-    def _resolve_color(color_rgb, color_name):
+    def _resolve_color(color_rgb, color_name, r=CHANNEL_UNSET, g=CHANNEL_UNSET,
+                       b=CHANNEL_UNSET):
         """A wired RGB triple to a PIL-safe 0-255 triple, else the named colour.
 
-        Every value is clamped and every non-number is refused: this used to
-        hand ``(300, 0, 0)`` and ``int("a" * 255)`` straight to Pillow, so a
-        wired colour could either raise inside ``Image.new`` or paint something
-        nobody asked for. QG_MaskColorize has had the same rule for longer;
-        the two nodes now agree.
+        The triple parsing (0-1 vs 0-255, clamping, refusing non-numbers) used to
+        be written twice - here and in ``QG_MaskColorize`` - and the two copies
+        rounded differently (this one truncated, that one rounded). Both now call
+        ``_qg_color_helpers.as_rgb_triple``. This used to hand ``(300, 0, 0)``
+        and ``int("a" * 255)`` straight to Pillow, so a wired colour could
+        either raise inside ``Image.new`` or paint something nobody asked for.
         """
-        if color_rgb is not None:
-            try:
-                values = [float(item) for item in color_rgb]
-            except (TypeError, ValueError):
-                values = []
-            if len(values) == 3:
-                # 三个值都不超过 1 → 按 0-1 读；否则按 0-255。和 QG_MaskColorize
-                # 同一条规则，[1,0,0] 二义时两边都当纯红。
-                scale = 255.0 if max(values) <= 1.0 else 1.0
-                return tuple(
-                    int(min(255.0, max(0.0, value * scale))) for value in values
-                )
-        return COLOR_MAP.get(color_name, (255, 0, 0))
+        triple = as_rgb_triple(color_rgb)
+        if triple is not None:
+            return triple
+        return mix_channels(COLOR_MAP.get(color_name, (255, 0, 0)), r, g, b)
 
     def execute(self, image, text, font, font_size, color_name, layout, x, y,
-                color_rgb=None):
-        if image.dim() == 3:
-            image = image.unsqueeze(0)
-        color = self._resolve_color(color_rgb, color_name)
+                color_rgb=None, r=CHANNEL_UNSET, g=CHANNEL_UNSET, b=CHANNEL_UNSET):
+        image, _ = as_image_batch(image, "文字叠加：底图")
+        color = self._resolve_color(color_rgb, color_name, r, g, b)
 
         path = _font_index().get(font)
         try:

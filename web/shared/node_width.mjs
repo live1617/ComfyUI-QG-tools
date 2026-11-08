@@ -5,7 +5,9 @@
  * （带多行文本框的节点会被撑到 400，普通节点是 270，某些只有两个控件的算出来只有 159）。
  * Python 侧 grep 不到宽度，也没法声明。所以统一在这里钉一遍。
  *
- * 规模：**41 个节点全部在表里**，一个都不漏。改尺寸只改这一处，别再往节点文件里写数字。
+ * 规模：**55 个节点全部在表里**，一个都不漏（`tools/verify_node_sizes.py` 会核对
+ * 表里的条目与 `nodes/*.py` 注册的 QG_ 节点一一对应，漏一个、多一个都报红）。
+ * 改尺寸只改这一处，别再往节点文件里写数字。
  *
  * 字段：
  *   w      默认宽。数字 = 照这个钉；null = 宽度跟内容算（按文字撑开的标签类）。
@@ -28,7 +30,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026103135";
+import { chainCallback } from "./index.mjs?v=2026110820";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════
@@ -46,12 +48,26 @@ export const SIZES = {
     QG_StepPreview: { w: 320, minW: 270, h: 360, minH: 240 },
     QG_IfElse: { w: 210, minW: 140, h: 78, minH: 78 },
     QG_ImageGrid: { w: 270, minW: 140, h: 130, minH: 130 },
-    QG_ImageOrLatentSize: { w: 210, minW: 140, h: 46, minH: 46 },
-    QG_ImageResize: { w: 270, minW: 140, h: 194, minH: 194 },
-    QG_ImageWatermark: { w: 270, minW: 140, h: 314, minH: 314 },
-    QG_MaskColorize: { w: 270, minW: 140, h: 98, minH: 98 },
+    // 1 输入 + 3 输出（WIDTH / HEIGHT / COUNT），实测 computeSize 159x66
+    QG_ImageOrLatentSize: { w: 210, minW: 140, h: 66, minH: 66 },
+    // 9 控件 + 1 输入槽 + 3 输出，实测 computeSize 210x290
+    QG_RatioResolution: { w: 270, minW: 160, h: 290, minH: 290 },
+    QG_ImageScale: { w: 270, minW: 160, h: 334, minH: 334 },
+    // ↑ h 是实测的：computeSize 给 210x334（16 槽 / 10 控件），按「10 控件 + 4 输出」
+    //   估成 320 会裁掉最下面那十几个像素。别估，跑 _probe_sizes_vs_table.cjs。
+    // 3 控件 + 1 输入槽 + 5 输出（标准化的尺寸由「模型档位」决定，不是用户填的）。
+    // h 实测：computeSize 给 210x162。
+    QG_ImageNormalize: { w: 270, minW: 160, h: 162, minH: 162 },
+    QG_AddWatermark: { w: 270, minW: 160, h: 366, minH: 366 },  // 13 控件 + 2 输入 + 1 输出
+    QG_MaskColorize: { w: 270, minW: 140, h: 162, minH: 162 },
     QG_MaskConcat: { w: 270, minW: 140, h: 102, minH: 102 },
+    QG_MaskBlend: { w: 270, minW: 160, h: 200, minH: 200 },  // 3 下拉 + 2 可选输入 + 3 输出
+    QG_MaskAnalysis: { w: 270, minW: 160, h: 250, minH: 250 },
+    QG_MaskDetect: { w: 270, minW: 140, h: 58, minH: 58 },  // 1 输入 + 1 滑块 + 1 输出
+    // ↑ h 是实测的：computeSize 给 210x250（12 槽 / 4 控件），写 230 会裁掉最下面
+    //   那行输出槽。别按「5 个输入 + 7 个输出」估，槽是 20px 一条算的。
     QG_MaskRefine: { w: 270, minW: 140, h: 270, minH: 270 },
+    QG_RemoveBGByMask: { w: 270, minW: 160, h: 240, minH: 240 },  // 2 输入 + 5 控件 + 3 输出
     // 12 个控件（尺寸四件套 + 四方向扩展 + 倍数 + 补洞 + 填充）铺满 315 高。
     QG_MaskCrop: { w: 270, minW: 160, h: 315, minH: 315 },
     QG_CropRestore: { w: 270, minW: 160, h: 170, minH: 170 },
@@ -63,7 +79,6 @@ export const SIZES = {
     QG_RouteBlocker: { w: 210, minW: 140, h: 82, minH: 82 },
     QG_SizeSelector: { w: 270, minW: 140, h: 310, minH: 310 },
     QG_TextConcat: { w: 270, minW: 140, h: 78, minH: 78 },
-    QG_TextOverlayImage: { w: 270, minW: 140, h: 252, minH: 252 },
     QG_TextReplace: { w: 270, minW: 140, h: 202, minH: 202 },
 
     // —— 400：带多行输入框，270 打不动字 ——
@@ -71,6 +86,10 @@ export const SIZES = {
     QG_TextEditOutput: { w: 400, minW: 140, h: 200, minH: 200 },  // 显示名「文本」
     QG_TextSplit: { w: 270, minW: 140, h: 272, minH: 272 },
     QG_StringSwitch: { w: 270, minW: 140, h: 200, minH: 200 },
+    // 1 多行文本 + 2 数字 + 1 开关 + 1 个「从 COMBO 链接中获取值」按钮 + 2 输出。
+    // h 实测：加完「从 COMBO 链接中获取值」按钮后 computeSize 是 210x204
+    // （探针只数普通控件时给 180，少算按钮那一行 —— 真机新建出来是 204）。
+    QG_PromptLine: { w: 270, minW: 140, h: 204, minH: 204 },
 
     // ══════════════════════════════════════════════════════════════
     // B 组：自带布局，宽度 / 最小宽由节点自己从表里读
@@ -88,15 +107,21 @@ export const SIZES = {
     QG_LoadImage: { w: 430, minW: 250, h: 645, minH: 312, own: true },  // 选择行 + 舞台 + 底栏，2:3
     QG_LoraLoader: { w: 430, minW: 320, h: 202, minH: 160, own: true },  // LoRA 面板
     QG_MDReader: { w: 400, minW: 140, h: 360, minH: 360, own: true },  // 文档预览（最小宽不额外限制）
-    QG_RunTimer: { w: 176, minW: 110, h: 56, minH: 35, own: true },  // 计时器卡片
+    // 画板 + 底栏。预览面板是画布，压到 220 以下不能操作（见 index.js 的 PANEL_MIN_H），
+    // 所以节点地板 = 面板地板 + 标题/底栏，由面板自报，表里只给新建时的 780。
+    QG_OutpaintBoard: { w: 430, minW: 380, h: 780, minH: 470, own: true },
+    QG_RunTimer: { w: 510, minW: 510, h: 140, minH: 140, own: true },  // 计时器深色面板（Capture it 字体）
     QG_Seed: { w: 320, minW: 300, h: 216, minH: 120, own: true },  // 种子卡片
     QG_TripleLoader: { w: 430, minW: 140, h: 210, minH: 210, own: true },  // 三联加载器，与 LoRA 加载器等宽
     QG_WorkflowNote: { w: 520, minW: 300, h: 620, minH: 120, own: true },  // 说明卡
+    // 便签：没有面板，尺寸就是用户拖的那块矩形。默认 560x120 与类里的 size 一致。
+    QG_Note: { w: 560, minW: 120, h: 120, minH: 60, own: true },
     QG_WorkflowSwitches: { w: 300, minW: 210, h: 134, minH: 60, own: true },  // 开关条
-
-    // —— 宽度跟文字算，表里写 null，谁都不许钉 ——
-    QG_CanvasLabel: { w: null, own: true, h: 26 },  // 画布标签
-    QG_MarkdownNote: { w: null, own: true, h: 32 },  // Markdown 便签
+    // 设置点 / 获取点（一对虚拟节点）。节点自己的 constructor 也写 [210, 60]，
+    // 但表里必须登记：pinNodeSize 对「QG_ 开头却不在表里」的会回落 270，
+    // 一登记这两块小方块就会被拉宽。own 不加 —— 它们没有自己的布局逻辑。
+    QG_SetPoint: { w: 210, minW: 140, h: 60, minH: 60 },
+    QG_GetPoint: { w: 210, minW: 140, h: 60, minH: 60 },
 };
 
 /** 不在表里的节点用这个（新节点忘了登记也有兜底）。 */

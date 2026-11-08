@@ -29,18 +29,18 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
-import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026103135";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026103135";
-import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026103135";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110820";
+import { BRAND, notifyQgChange } from "../shared/index.mjs?v=2026110820";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=2026110820";
+import { gearIconSvg } from "../shared/settings_menu.mjs?v=2026110820";
 import {
     detachDomWidget,
     installModeWatcher,
     onRenderModeSwitch,
     vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026103135";
-import { zh, zhPair, wantsChinese } from "../shared/zh.mjs?v=2026103135";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
+} from "../shared/vue_mode.mjs?v=2026110820";
+import { zh, zhPair, wantsChinese } from "../shared/zh.mjs?v=2026110820";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110820";
 
 const NODE_TYPE = "QG_ExportImage";
 const CSS_ID = "qgtools-export-css";
@@ -622,7 +622,7 @@ function togglePanel(node) {
 // 画成一个 DOM widget：
 //   - 齿轮从标题栏挪到概要行右侧（Vue 标题栏没有注入点，帮助徽章 ? 同样灭）
 //   - 面板本身是挂 document.body 的浮层，与渲染模式无关，直接复用
-//   - 不走 label_dom_base 的 createLabelDomDriver：那是给纯展示节点设计的
+//   - 不走通用的 `createLabelDomDriver` 那套 DOM 驱动：那是给纯展示节点设计的
 //     （全区域指针穿透 + 双击编辑），这个节点要的是「行内可点、其余穿透」，
 //     穿透状态机对它反而是负担 —— 自己挂，只借用 detachDomWidget 收尾。
 const EXP_DOM_CLASS = "qgtools-export-dom";

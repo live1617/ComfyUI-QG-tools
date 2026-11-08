@@ -21,7 +21,7 @@
  * 是否一致，漏一处就报错。
  */
 
-import { wantsChinese } from "./zh.mjs?v=2026103135";
+import { wantsChinese } from "./zh.mjs?v=2026110820";
 
 /** 子分类 → 中文菜单名。键必须跟后端 CATEGORY 的尾段逐字相同（含大小写）。 */
 export const CATEGORY_ZH = {
@@ -29,7 +29,6 @@ export const CATEGORY_ZH = {
     Text: "文本",
     Logic: "逻辑",
     Display: "展示",
-    Annotation: "标注",
     Workflow: "工作流",
     Mask: "遮罩",
     Image: "图像",
@@ -66,10 +65,28 @@ export function applyCategoryNames(litegraph) {
 }
 
 /**
+ * 把节点类钉到某个子分类，**并按当前界面语言翻译尾段**。
+ *
+ * 为什么要成对做：`LiteGraph.registerNodeType` 会清掉 `category`（并改写
+ * `cls.type`），所以注册之后必须再钉一次；而钉的动作如果只写英文，中文界面下
+ * 这个节点就永远停在英文 —— 纯前端裸节点（自己调 `registerNodeType`、不走
+ * 节点类 import 那条路）最常漏这一手。
+ * 以前靠在 `getCanvasMenuOptions` 里补一次兜底，那是核心点名弃用的 monkey patch。
+ *
+ * @param {Function} cls 节点类
+ * @param {string} tail 子分类尾段（`CATEGORY_ZH` 的键，如 "Loaders"）
+ */
+export function pinCategory(cls, tail) {
+    if (!cls || !tail) return;
+    cls.category = PREFIX + tail;
+    applyCategoryNames(globalThis.LiteGraph);
+}
+
+/**
  * 装上分类改写：先来一遍，再把 `registerNodeType` 包一层。
  *
- * 为什么要包：扩展的 setup 是按插件逐个跑的，别的扩展（包括我们自己的
- * canvas_label / markdown）可能在本函数之后才注册节点 —— 那样这些节点就漏掉了，
+ * 为什么要包：扩展的 setup 是按插件逐个跑的，别的扩展（包括插件内自己注册
+ * 纯前端节点的扩展）可能在本函数之后才注册节点 —— 那样这些节点就漏掉了，
  * 菜单里同一层里一半中文一半英文。registerNodeType 是唯一入口，包住它就不会漏。
  * 只包一次，重复调用无副作用。
  *

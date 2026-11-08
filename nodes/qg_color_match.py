@@ -38,6 +38,7 @@ import contextlib
 import torch
 import torch.nn.functional as F
 from ._qg_combo_legacy import combo_legacy
+from ._qg_tensor_helpers import as_image_batch, as_mask_batch
 
 # sRGB <-> XYZ (D65) —— IEC 61966-2-1 的标准矩阵
 RGB_TO_XYZ = (
@@ -117,10 +118,12 @@ WAVELET_LEVELS = 3
 
 
 def _to_batch(x):
-    """(H, W, C) → (1, H, W, C)，并记下是否要压回去。"""
-    if x.dim() == 3:
-        return x.unsqueeze(0), True
-    return x, False
+    """(H, W, C) → (1, H, W, C)，并记下是否要压回去。
+
+    判据本身在 `_qg_tensor_helpers.as_image_batch`（八个节点共用同一份）；
+    这里保留薄包装只是为了调用点读起来短一点。
+    """
+    return as_image_batch(x, "Color Match: image")
 
 
 def _rgb_to_lab_norm(rgb):
@@ -299,18 +302,13 @@ def _mask_bhw(mask, batch, height, width):
 
     只有一帧就当整批共用（广播），帧数不够就循环取 —— 与参考取帧的宽松口径一致。
     """
-    m = mask.to(torch.float32)
-    if m.dim() == 3:
-        if m.shape[0] == 1 and batch > 1:
-            m = m.expand(batch, -1, -1)
-        elif m.shape[0] < batch:
-            m = m.repeat((batch + m.shape[0] - 1) // m.shape[0], 1, 1)[:batch]
-        else:
-            m = m[:batch]
-    elif m.dim() == 2:
-        m = m.unsqueeze(0).expand(batch, -1, -1)
+    m = as_mask_batch(mask, "Color Match: mask").to(torch.float32)
+    if m.shape[0] == 1 and batch > 1:
+        m = m.expand(batch, -1, -1)
+    elif m.shape[0] < batch:
+        m = m.repeat((batch + m.shape[0] - 1) // m.shape[0], 1, 1)[:batch]
     else:
-        raise ValueError("遮罩应该是 (H, W) 或 (B, H, W)")
+        m = m[:batch]
     if (m.shape[1], m.shape[2]) != (height, width):
         m = F.interpolate(
             m.unsqueeze(1), size=(height, width), mode="bilinear", align_corners=False
@@ -459,8 +457,7 @@ def _wavelet_match(src, ref, levels=WAVELET_LEVELS, src_mask=None, ref_mask=None
             ll, det = _haar_dwt(ll)
             dets.append(det)
         if mask is not None:
-            mask = _low_mask(mask if mask.dim() == 3 else mask.unsqueeze(0),
-                             ll.shape[-2:])
+            mask = _low_mask(as_mask_batch(mask, "Color Match: mask"), ll.shape[-2:])
         return ll, dets, mask
 
     ll_s, dets, mask_s = prep(src, src_mask)
@@ -1063,16 +1060,16 @@ class QGColorMatch:
                     src_mode="per-frame", scope="all", feather=0, mask=None,
                     mask_use="result-only", detail=0.0, ref_mask=None):
         if not torch.is_tensor(image) or not torch.is_tensor(reference):
-            raise TypeError("image / reference 需要是 IMAGE 张量")
+            raise TypeError("image / reference must be IMAGE tensors")
 
         x, squeeze = _to_batch(image)
         ref, _ = _to_batch(reference)
         if x.dim() != 4 or ref.dim() != 4:
-            raise ValueError("image / reference 应该是 (B, H, W, C)")
+            raise ValueError("image / reference should be (B, H, W, C)")
         if x.shape[-1] < 3 or ref.shape[-1] < 3:
-            raise ValueError("图像至少要有 3 个通道")
+            raise ValueError("The image needs at least 3 channels")
         if ref.shape[0] < 1:
-            raise ValueError("参考图为空")
+            raise ValueError("The reference image is empty")
 
         out_dtype = x.dtype
         original = x[..., :3].to(torch.float32)

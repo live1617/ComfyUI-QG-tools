@@ -1,21 +1,21 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026103135";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026103135";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026103135";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110820";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026110820";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026110820";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026110820";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026103135";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026103135";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026103135";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026103135";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026103135";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026103135";
+} from "../shared/settings_menu.mjs?v=2026110820";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026110820";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026110820";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026110820";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026110820";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110820";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026110820";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -72,8 +72,8 @@ import {
   loraFolders,
   loraPickerEntries,
   loraStackKeyAction,
-} from "../shared/lora_stack.mjs?v=2026103135";
-import { civitaiButtonLabel, civitaiByHashUrl, civitaiFailureText, isCivitaiAddress, MAX_PICTURE_BYTES, parseCivitaiBody, pickCivitaiPicture, pictureError, pictureErrorText, smallPictureUrl } from "../shared/civitai_lookup.mjs?v=2026103135";
+} from "../shared/lora_stack.mjs?v=2026110820";
+import { civitaiButtonLabel, civitaiByHashUrl, civitaiFailureText, isCivitaiAddress, MAX_PICTURE_BYTES, parseCivitaiBody, pickCivitaiPicture, pictureError, pictureErrorText, smallPictureUrl } from "../shared/civitai_lookup.mjs?v=2026110820";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -3214,6 +3214,33 @@ function syncBoxCards(box) {
   }
 }
 
+// chainCallback 是往 box **实例**上包一层（`box[name] = function(){ prior?.(); fn(); }`），
+// 包上去就解不掉。所以这两个回调每个 box 只包一次，函数体自己去看当前有没有
+// 活跃的 watch —— 以前每次重新 watch 都包一层，「删掉 → 撤销」来回几次，同一个
+// box 上就叠了几层，每次 onConfigure 都要跑同样多次 syncBoxCards。
+const boxHooks = new WeakSet();
+
+function hookBox(box) {
+  if (boxHooks.has(box)) return;
+  boxHooks.add(box);
+  chainCallback(box, "onConfigure", () => {
+    if (box.__qgLoraWatch) requestAnimationFrame(() => syncBoxCards(box));
+  });
+  chainCallback(box, "onRemoved", () => {
+    if (box.__qgLoraWatch) dropBoxWatch(box);
+  });
+}
+
+function dropBoxWatch(box) {
+  box.__qgLoraWatch.abort();
+  // 标记要清：撤销/重做会把同一个 box 对象放回图里，留着标记 watchBox 就直接
+  // return，事件监听再也挂不上，盒子上的行从此不再跟随提升/收回。
+  delete box.__qgLoraWatch;
+  watchedBoxes.delete(box);
+  for (const state of box.__qgLoraCards?.values() ?? []) unmountCard(state, { resize: false });
+  box.__qgLoraCards?.clear();
+}
+
 function watchBox(box) {
   if (!box?.isSubgraphNode?.() || box.__qgLoraWatch) return;
   const abort = new AbortController();
@@ -3223,16 +3250,7 @@ function watchBox(box) {
   for (const type of ["widget-promoted", "widget-demoted", "input-added", "removing-input"]) {
     box.subgraph?.events?.addEventListener?.(type, later, { signal: abort.signal });
   }
-  chainCallback(box, "onConfigure", later);
-  chainCallback(box, "onRemoved", () => {
-    abort.abort();
-    watchedBoxes.delete(box);
-    // 标记也要清：撤销/重做会把同一个 box 对象放回图里，留着标记 watchBox 就
-    // 直接 return，事件监听再也挂不上，盒子上的行从此不再跟随提升/收回。
-    delete box.__qgLoraWatch;
-    for (const state of box.__qgLoraCards?.values() ?? []) unmountCard(state, { resize: false });
-    box.__qgLoraCards?.clear();
-  });
+  hookBox(box);
   later();
 }
 

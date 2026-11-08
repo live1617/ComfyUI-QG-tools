@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import torch
 
+from ._qg_combo_legacy import combo_legacy
 from ._qg_execution_helpers import raise_if_interrupted, warn_once
 from ._qg_mask_crop_helpers import mask_bounds
 
@@ -64,6 +65,7 @@ def _shift(mask: torch.Tensor, dx: int, dy: int) -> torch.Tensor:
     return out
 
 
+@combo_legacy("QG_MaskAlign")
 class QGMaskAlign:
     CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
@@ -77,6 +79,13 @@ class QGMaskAlign:
         "offset so video frames stay registered."
     )
     SEARCH_ALIASES = ["mask align", "center mask", "遮罩对齐", "对齐", "居中", "qg"]
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, align_x=None, align_y=None, output=None):
+        # 三个下拉的中文标签（不移动 / 居中 / 左 …；对齐后的遮罩 / 外接矩形）
+        # 登记在 nodes/_qg_combo_legacy.py 的 LEGACY 表里。值本身是英文，
+        # 这里只把选项名报上去跳过「值必须在列表里」，别的输入照常校验。
+        return True
 
     @classmethod
     def INPUT_TYPES(cls):

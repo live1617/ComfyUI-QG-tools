@@ -89,7 +89,7 @@ class QGIfElse:
         # 的输入，执行器就把这个节点反复调度到超时。校验早于懒状态，所以拦得住。
         if on_true is _MISSING and on_false is _MISSING:
             # 详情里前面会挂上输入名（`boolean - ...`），所以句子本身要能独立读。
-            return "是否判断：两路都没接，至少把「真时」或「假时」接上一个"
+            return "If/Else: neither branch is connected; connect at least the true or the false input"
         return True
 
     @classmethod
@@ -108,8 +108,8 @@ class QGIfElse:
     def execute(self, boolean=False, on_true=_MISSING, on_false=_MISSING):
         if on_true is _MISSING and on_false is _MISSING:
             raise ValueError(
-                "是否判断：两路都空着。至少把「真时」或「假时」接上一个 —— "
-                "这个节点透传的就是这两路之一。"
+                "If/Else: both branches are empty; connect at least the true or the false "
+                "input - this node passes one of the two through."
             )
         if on_false is _MISSING:
             return (on_true,)

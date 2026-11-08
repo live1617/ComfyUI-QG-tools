@@ -34,9 +34,6 @@ export const NODE_ALIASES = {
     QG_TextEditOutput: [
         "text", "text box", "textbox", "text edit", "prompt box", "文本", "文本框", "编辑文本", "输入框",
     ],
-    QG_TextOverlayImage: [
-        "text overlay", "textoverlay", "overlay text", "draw text", "text on image", "caption", "text", "文字叠加图像", "文字叠加", "图上加字", "加字",
-    ],
     QG_TextReplace: [
         "text replace", "textreplace", "find and replace", "search replace", "string replace", "literal replace", "regex replace", "regex", "replace text", "text", "文本替换", "替换", "查找替换", "批量替换",
     ],
@@ -45,6 +42,11 @@ export const NODE_ALIASES = {
     ],
     QG_TextConcat: [
         "text concat", "textconcat", "concatenate", "concat text", "merge text", "join text", "combine text", "string concat", "text", "文本合并", "合并文本", "拼接文本", "连接文本",
+    ],
+    QG_PromptLine: [
+        "prompt line", "promptline", "prompt rows", "lines", "string list", "combo list",
+        "prompt list", "split lines", "多行文本", "提示词行", "提示词列表", "按行拆分", "行列表",
+        "组合列表", "字符串列表",
     ],
     QG_AnySwitch: [
         "any switch", "anyswitch", "switch", "type switch", "merge inputs", "任意切换", "切换", "通路切换", "选择器",
@@ -87,14 +89,40 @@ export const NODE_ALIASES = {
     QG_WorkflowNote: [
         "workflow note", "workflownote", "note", "comment", "sticky note", "annotation", "workflow", "工作流说明卡", "说明卡", "说明", "注释",
     ],
+    QG_SetPoint: [
+        "set point", "setpoint", "set node", "setnode", "name a link", "named link",
+        "wireless", "reroute", "设置点", "设置节点", "命名连线", "无线连接",
+    ],
+    QG_GetPoint: [
+        "get point", "getpoint", "get node", "getnode", "named link", "wireless",
+        "reroute", "取值", "获取点", "获取节点", "无线连接",
+    ],
+    QG_Note: [
+        "note", "sticky note", "stickynote", "comment", "annotation", "label", "title",
+        "text card", "callout", "便签", "注释", "备注", "标题", "说明卡", "画布便签", "孤海注释",
+    ],
     QG_WorkflowSwitches: [
         "workflow switches", "workflowswitches", "switch group", "toggles", "bypass switches", "workflow", "工作流开关", "开关组", "开关",
+    ],
+    QG_MaskDetect: [
+        "mask detect", "maskdetect", "detect mask", "mask detection", "has mask", "mask exists", "mask area", "mask coverage", "area ratio", "threshold", "mask", "遮罩检测", "蒙版检测", "检测遮罩", "遮罩面积", "有效面积", "遮罩占比", "阈值", "判断遮罩",
     ],
     QG_MaskColorize: [
         "mask colorize", "maskcolorize", "color mask", "mask to color", "colorize mask", "mask", "遮罩上色", "遮罩着色", "上色", "遮罩预览",
     ],
+    QG_MaskBlend: [
+        "mask blend", "maskblend", "blend masks", "mask math", "mask boolean", "mask ops",
+        "union", "subtract", "intersect", "exclude", "nor", "mask bbox", "bounding box",
+        "mask rect", "mask region", "遮罩混合运算", "遮罩混合", "遮罩运算", "遮罩布尔",
+        "相交", "相减", "排除", "外接矩形", "遮罩外接框",
+    ],
     QG_MaskConcat: [
         "mask concat", "maskconcat", "concat mask", "merge masks", "join masks", "mask combine", "mask", "遮罩拼接", "遮罩合并", "合并遮罩",
+    ],
+    QG_MaskAnalysis: [
+        "mask analysis", "maskanalysis", "analyze mask", "mask bbox", "mask bounds",
+        "mask size", "mask center", "mask expand", "mask grow", "mask shrink",
+        "遮罩分析", "遮罩尺寸", "遮罩范围", "遮罩外接框", "扩展遮罩", "收缩遮罩", "遮罩中心",
     ],
     QG_MaskCrop: [
         "mask crop", "maskcrop", "crop by mask", "crop to mask", "crop around mask", "mask bounding box", "mask bbox",
@@ -121,14 +149,25 @@ export const NODE_ALIASES = {
     QG_ImageCropRotatePad: [
         "crop", "rotate", "pad", "crop rotate pad", "croprotatepad", "outpaint", "canvas", "straighten", "deskew", "image", "图像裁剪旋转补边", "裁剪旋转补边", "裁剪", "旋转", "补边", "扩图",
     ],
+    QG_OutpaintBoard: [
+        "outpaint", "outpainting", "outpaint board", "outpaintboard", "outpaint canvas", "extend canvas", "grow canvas", "expand canvas", "canvas", "pad", "padding", "board", "visual", "image", "扩图画板", "扩图", "外扩", "外补", "补边", "扩边", "扩画布", "加画布", "可视化扩图",
+    ],
     QG_ColorCorrect: [
         "color correct", "colour correct", "color corrector", "color correction", "colour correction", "colorcorrection", "color grade", "colour grade", "color grading", "grading", "color adjust", "color balance", "temperature", "white balance", "tint", "hue", "hue rotate", "brightness", "contrast", "saturation", "desaturate", "gamma", "exposure", "image", "颜色校正", "校色", "色彩校正", "调色",
     ],
     QG_ColorMatch: [
         "color match", "colour match", "color matching", "colour matching", "color transfer", "colour transfer", "colortransfer", "match color", "match colour", "match reference color", "recolor", "recolour", "palette transfer", "color harmonization", "colour harmonization", "color harmonisation", "reinhard", "mkl", "histogram match", "hist match", "reference color", "color palette", "image", "color", "颜色匹配", "配色", "色彩匹配", "统一色调",
     ],
-    QG_ImageResize: [
-        "image resize", "imageresize", "resize", "scale image", "image scale", "upscale", "image", "图像缩放", "缩放", "改尺寸", "放大", "缩小",
+    QG_ImageScale: [
+        "image scale", "imagescale", "resize", "scale image", "image resize",
+        "upscale", "downscale", "rescale", "image", "mask scale",
+        "图像缩放", "缩放", "图像", "遮罩缩放", "改尺寸", "放大", "缩小", "拉伸", "填充", "等比例",
+    ],
+    QG_ImageNormalize: [
+        "image normalize", "imagenormalize", "normalize image", "standardize", "bucket",
+        "resolution bucket", "model resolution", "qwen image", "sdxl", "sd 1.5", "flux",
+        "aspect bucket", "图片标准化", "图像标准化", "标准化", "分辨率桶", "模型档位",
+        "档位对齐", "对齐分辨率", "统一尺寸",
     ],
     QG_LoadImage: [
         "load image", "open image", "image input", "upload image", "image source", "rgba", "alpha", "transparent", "cutout", "png alpha", "filename", "keep alpha", "transparent channel", "mask", "mask editor", "paint mask", "draw mask", "brush mask", "inpaint mask", "加载图像", "上传图像", "选图", "透明通道", "保留透明通道", "抠图", "遮罩", "遮罩编辑器", "编辑遮罩", "画遮罩", "涂遮罩", "画笔遮罩", "局部重绘遮罩", "加载图片", "读图",
@@ -136,11 +175,15 @@ export const NODE_ALIASES = {
     QG_ImageOrLatentSize: [
         "image size", "latent size", "get size", "resolution", "width height", "dimensions", "size info", "image", "size", "图像或Latent尺寸", "读尺寸", "取尺寸", "宽高",
     ],
-    QG_ImageWatermark: [
-        "watermark", "image watermark", "water mark", "add watermark", "logo", "stamp", "image", "图像水印", "水印", "加水印",
+    QG_AddWatermark: [
+        "add watermark", "watermark", "image watermark", "text watermark", "water mark", "watermark text", "tile watermark", "logo", "stamp", "image", "添加水印", "图像添加水印", "图像水印", "文字水印", "水印", "加水印", "平铺水印", "文字叠加图像", "图上加字",
     ],
     QG_ImageGrid: [
         "image grid", "imagegrid", "grid", "tile images", "contact sheet", "collage", "mosaic", "image", "宫格图像拼接", "宫格", "拼图", "九宫格", "拼接图像",
+    ],
+    QG_RatioResolution: [
+        "ratio", "resolution", "aspect", "aspect ratio", "megapixel", "mp", "size", "latent size",
+        "ratio and resolution", "比例", "分辨率", "比例与分辨率", "宽高", "百万像素", "尺寸", "倍数取整",
     ],
     QG_SizeSelector: [
         "size selector", "sizeselector", "resolution preset", "aspect ratio", "size picker", "megapixel", "megapixels", "mp", "preset ratio", "adopt ratio", "ratio preset", "ratio", "size", "尺寸选择器", "选尺寸", "尺寸预设",
@@ -156,12 +199,6 @@ export const NODE_ALIASES = {
     QG_ExportImage: [
         "save image", "saveimage", "export image", "exportimage", "save", "export", "write image", "jpg", "jpeg", "png", "webp", "quality", "compress", "image", "导出图像", "导出", "保存图片", "输出图片",
     ],
-    QG_CanvasLabel: [
-        "canvas label", "canvaslabel", "label", "text label", "sticky note", "note", "annotation", "comment", "title", "caption", "text", "画布标签", "标签", "标题", "便签",
-    ],
-    QG_MarkdownNote: [
-        "markdown note", "markdownnote", "markdown", "md note", "sticky note", "note", "annotation", "comment", "documentation", "markdown text", "Markdown便签", "便签", "笔记", "备注",
-    ],
     QG_FreeMemory: [
         "free memory", "freememory", "free vram", "vram", "unload models", "unload", "offload",
         "empty cache", "clear cache", "purge", "cleanup", "release memory", "clean memory",
@@ -173,6 +210,11 @@ export const NODE_ALIASES = {
         "latent preview", "preview", "taesd", "latent2rgb", "quick preview", "no preview",
         "采样预览", "步预览", "中间预览", "实时预览", "过程预览", "预览开关", "预览方式",
         "关闭预览", "打开预览", "开预览", "关预览", "taesd 预览",
+    ],
+    QG_RemoveBGByMask: [
+        "remove bg by mask", "removebg", "remove background", "cutout", "mask cutout",
+        "alpha", "rgba", "transparent", "stroke", "outline", "crop to mask", "background removal",
+        "抠图", "去背景", "移除背景", "按遮罩抠图", "遮罩抠图", "透明底", "描边", "裁边",
     ],
     QG_MaskRefine: [
         "mask refine", "maskrefine", "refine mask", "grow mask", "shrink mask", "expand mask",

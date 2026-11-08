@@ -26,7 +26,7 @@ ComfyUI-QG-tools/
 ├── nodes/
 │   ├── __init__.py                    # 占位，不要在这里写节点
 │   ├── _qg_lora_helpers.py            # 被引用，不注册节点（下划线开头 = 不扫）
-│   ├── _qg_combo_legacy.py            # 下拉选项老中文值 → 英文值（全插件唯一的表）
+│   ├── _qg_combo_legacy.py            # 下拉选项：英文值 ↔ 中文名（全插件唯一的表）
 │   ├── qg_lora_loader.py              # 注册 QG_LoraLoader
 │   ├── qg_workflow_note.py            # 注册 QG_WorkflowNote（纯前端节点，无依赖）
 │   └── qg_workflow_switches.py        # 注册 QG_WorkflowSwitches（纯前端节点，无依赖）
@@ -50,13 +50,13 @@ ComfyUI-QG-tools/
 
 ComfyUI 的节点默认宽度**不在 Python 里**，是前端按控件类型算的（带多行文本框的会被撑到
 400，普通节点 270，只有两个控件的甚至算成 159），`INPUT_TYPES` 里没法声明，grep 也 grep 不到。
-所以全部 42 个节点在一张表里登记，**改尺寸只改这一处**：
+所以全部 55 个节点在一张表里登记，**改尺寸只改这一处**：
 
 ```js
 export const SIZES = {
     QG_ColorMatch: { w: 270 },                                   // 简单节点：钉宽
     QG_LoadImage:  { w: 270, minW: 250, h: 405, own: true },     // 自带布局：最小宽也从表取
-    QG_CanvasLabel:{ w: null, own: true },                       // w: null = 宽度跟文字算
+    QG_WorkflowNote:{ w: 520, minW: 300, h: 620, own: true },    // 自带布局：最小宽也从表取
 };
 ```
 
@@ -109,7 +109,7 @@ export const SIZES = {
 - **节点 ID**：`QG_` 前缀
 - **显示名**：**不带** `QG ` 前缀（2026-10-18 起；标题栏只留功能名，分类已经说明归属）
 - **分类**：`QG-tools`，二级子分类共八个，**一律英文**：
-  `Loaders` / `Text` / `Logic` / `Display` / `Workflow` / `Mask` / `Annotation` / `Image`。
+  `Loaders` / `Text` / `Logic` / `Display` / `Workflow` / `Mask` / `Retouch` / `Image`。
   🔴 后端写中文，英文界面的节点菜单里就会冒出中文分组。中文名走**官方通道**
   `locales/zh/main.json` 的 `nodeCategories`（见「双语与下拉选项值 · 分类」一节），
   不依赖汉化插件；经典画布的右键「添加节点」菜单官方不管，由
@@ -152,7 +152,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "My Node"}
 | `web/shared/node_aliases.mjs` | 登记英文别名；`verify_display_names.py` 会检查键不多不少 |
 | `web/shared/node_width.mjs` | 在 `SIZES` 里登记一条（`w` / `minW` / `h` / `own`）；漏了会退回 270 默认宽，`verify_node_sizes.py` 会报 |
 | `tools/sync_translation_pack.py` | 加进 `NODE_ORDER`，否则同步汉化包时报「字典里还有本脚本没列出的键」 |
-| `nodes/_qg_combo_legacy.py` | 有新下拉选项的，把老中文值登记进 `LEGACY`，再跑 `tools/gen_combo_zh.py` |
+| `nodes/_qg_combo_legacy.py` | **只要有下拉就登记**（不只是老的、可能存过中文值的那种）：`LEGACY[节点ID][输入名] = {英文值: 中文名}`，再去节点上挂 `@combo_legacy("节点ID")` + `VALIDATE_INPUTS` 具名列选项，最后跑 `tools/gen_combo_zh.py`。漏了不报错、只是中文界面上露出一串英文，`verify_combo_coverage.py` 会抓 |
 
 改完跑 `verify_display_names.py` / `verify_i18n.py` / `verify_i18n_reverse.py` /
 `verify_bilingual.py` / `verify_combo_i18n.py` / `js_check.py` / `verify_port.py`，
@@ -226,6 +226,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "My Node"}
   宽度被打回默认值。宽度是这些节点唯一的把手，用户拉开就是为了放长名字。
   正确写法：只把高度按回去，宽度取 `node.size[0]`（`run_timer` 用 `__qgKeepWidth`
   在 `uninstall` 时记住，新建节点才落到默认值）。
+  📌 2026-11-08：`run_timer` 已整套换成自有插件 QG-Multipack 的实现，不再走
+  `usesVueNodes()` 分流（改在主画布上叠 overlay canvas）；本条对 `bool_toggle` 仍适用。
 - **面板上的文案：静态串进字典，拼接串/后写的 `title`/画布文字必须走 `zh()`。**
   汉化插件只整串全等匹配、且不监听属性变化，细节与纪律见下方「汉化深度清理」。
 - **前端绝不在页面加载时调用 ComfyUI-Manager 的接口；非要用必须带 `skip_update=true`**。
@@ -283,8 +285,8 @@ custom_node 的 `locales/<lang>/*.json` 收上来，经 `/i18n` 发给前端，�
 中文显示走 **`widget.options.getOptionLabel(value)`** —— 这是前端官方的显示名钩子，
 `ComboWidget._displayValue` 与 Vue 的 `useWidgetSelectItems.ts` 都认它，所以
 canvas 和 Nodes 2.0 两种渲染模式一次覆盖，而且**不动存档里的值**。
-（`locales/*/nodeDefs.json` 里也有 `options` 映射，但那只对 settings 生效，
-翻不了节点下拉 —— 踩过。）
+（`locales/*/nodeDefs.json` 里也有 `options` 映射，实测当前前端不读它、翻不了节点
+下拉；但汉化插件会读，所以它和 `LEGACY` **必须同口径**，见下面「全量覆盖」。）
 
 三腿兜底，缺一条都会漏：
 
@@ -307,8 +309,35 @@ min/max 之类校验一起关掉。
 `python tools/gen_combo_zh.py`（从 LEGACY 生成 `web/shared/combo_zh.mjs`，别手抄）。
 校验 `tools/verify_combo_i18n.py`（选项值全英文 / LEGACY 与列表对得上 / 装饰器与
 `VALIDATE_INPUTS` 到位 / mjs 与 LEGACY 同步 / 同一输入里中文标签唯一 —— 迁移是反查，
-重复就不知道换回哪个）。功能冒烟 `tools/test_combo_migration.py`（真加载 13 个节点，
-拿老中文值和新英文值各跑一遍，结果必须完全一致）。
+重复就不知道换回哪个）。功能冒烟 `tools/test_combo_migration.py`（真加载 23 个节点，
+拿老中文值和新中文名各跑一遍，结果必须完全一致）。
+
+#### 全量覆盖（11-08）
+
+这条链以前只管「曾经中文化过、后来改英文」的那 17 个节点 —— 其余带下拉的节点在
+中文界面上就默默露出一串英文值（`crop` / `pad` / `af` / `sq` …），而**没有任何检查
+会提醒**，因为 `verify_combo_i18n` 只审「已登记的条目对不对」。现在补到全覆盖：
+
+- `LEGACY` 从 17 节点 / 92 条 → **23 节点 / 347 条**。新增的 6 个都是「从没中文化
+  过、纯补显示名」：`QG_ImageResize`、`QG_MDReader`、`QG_MaskAlign`、`QG_MaskBlend`、
+  `QG_MaskCrop`、`QG_GoogleTranslateText`。`coerce` 对它们是空操作（老存档本来就是英文）。
+- 翻译节点单列：`_LANG_ZH` 是 **106 条语言码 → 中文名**（`af` 南非荷兰语 … `zu` 祖鲁语），
+  `from_translate` 多一个 `auto`。🔴 `iw` / `he` 都是希伯来语，中文名必须区分
+  （「希伯来语（旧码）」/「希伯来语」），否则迁移反查二义、`verify_combo_i18n` ⑤ 直接红。
+  🔴 巽他语仍然不在表里（`LANGUAGES` 本身没有它，Registry 的 YARA 把那个语言码判成提权）。
+- 新增三件工具：
+  | 工具 | 作用 |
+  |---|---|
+  | `tools/verify_combo_coverage.py` | 按 `INPUT_TYPES` 反查覆盖率：「该翻却没人登记」才红。文件选择器（有扩展名 / 带路径）与 `JPEG/PNG/WEBP` 这类中英同形的值有**显式豁免表**，豁免条目失效（输入改名）会报红逼人清理 |
+  | `tools/sync_combo_options.py` | 把 `locales/zh/nodeDefs.json` 里**已有**的 `options` 对齐到 `LEGACY`（只改已有、不新增，老节点一直没这份、不去改结构） |
+  | `tools/_check_combo_zh_labels.cjs` | 真机探针：英文界面不许挂钩子、中文界面逐个对译名、再截图看画布渲染。静态检查证不了「钩子挂上去了」 |
+- 三条都进了 `regress.py`（含 `test_combo_migration.py`）。
+
+🔴 **`combo_legacy` 包装必须透传位置参数**（`call(self, *args, **kwargs)`）。ComfyUI
+自己永远用 `func(**inputs)`，但节点单测 / 巡检脚本会按签名顺序位置调用
+（`node.execute(mode, "off", "center", a, b)`）—— 只收 `**kwargs` 的包装会让它们
+全炸成 `takes 1 positional argument but 6 were given`，跟功能对不对毫无关系。
+代价是位置传进来的值不做 `coerce`，可那只有脚本会做，且传的都是英文值。
 
 前端自建的下拉（不是 ComfyUI 原生 combo 控件）也要认这个钩子：
 
@@ -357,8 +386,8 @@ category: def.category.split('/')
 
 `nodeCategories` 只作用在 **nodeDefs** 上（Vue 节点库 / 侧边栏 / 搜索框）。经典画布的
 「右键 → 添加节点」不查 nodeDefs，它直接拿 `LiteGraph.registered_node_types[].category`
-当名字用 —— 分类改成英文之后，中文界面里这一层就一直是 `Logic` / `Annotation`，
-和旁边已经翻好的「画布标签」「Markdown 文本」并排着很扎眼（2026-10-24 用户截图）。
+当名字用 —— 分类改成英文之后，中文界面里这一层就一直是 `Logic` / `Image`，
+和旁边已经翻好的中文分类名并排着很扎眼（2026-10-24 用户截图）。
 
 补法：`web/shared/category_zh.mjs` 在中文界面下把 QG 节点 category 的尾段就地换中文
 （`QG-tools/Logic` → `QG-tools/逻辑`），由 `QG.tools.init` 的 `setup()` 装上：
@@ -366,17 +395,24 @@ category: def.category.split('/')
 1. 先改一遍现有注册表；
 2. **包住 `LiteGraph.registerNodeType`** —— 实测 `setup()` 跑在**任何节点注册之前**
    （`__QG_CATEGORY_ZH__.setup` 恒为 0），真正生效的是这层包装，漏了它半张菜单仍是英文；
-3. 开菜单前（`getCanvasMenuOptions`）再补一次兜底，防止有人绕过入口直接写 `category`。
+3. **纯前端虚拟节点注册完会自己再钉一次 `category`**（自己调 `registerNodeType` 的那类：
+   `registerNodeType` 会清空它，所以必须重钉）。这里**别只写英文**，改调
+   `category_zh.mjs` 的 `pinCategory(cls, tail)` —— 钉基线 + 按当前语言翻译一次做完。
+   以前正是在这一钉之后漏掉了翻译，靠在 `getCanvasMenuOptions` 里补一次兜底；
+   那个补丁已被核心点名弃用（`Monkey-patching getCanvasMenuOptions is deprecated`），已删。
 
 三条约束：
 
 - **只在中文界面动手**（`wantsChinese()`，读 `app.i18n.global.locale`）。英文界面保持
-  后端英文原样，`tools/probe_category_zh_locale.cjs` 有正反两面证据（zh→中文、切 en→英文、切回→中文）。
+  后端英文原样，`tools/probe_category_zh.cjs` 两个方向都断言（zh→9 个中文分类、
+  切 en→9 个英文且**零汉字**，含两个纯前端节点），跑完自己切回中文。
 - 只改 QG 节点的尾段，别的插件和原生节点一律不碰。
 - 文案的第三份副本在这份 mjs 里，`verify_categories.py` 第 8 节会跟 `main.json` 逐条比对。
 
 验证：`node tools/_test_category_zh.mjs zh|en`（纯逻辑，不需要浏览器）、
-`node tools/probe_category_zh_locale.cjs`（headless Chrome 打开 8199 临时用户目录，中英来回切）。
+`node tools/probe_category_zh.cjs`（headless Chrome 打开 8199，两个语言各读一遍注册表；
+🔴 切语言要「读回确认 + 最多三轮」—— `setSettingValue` 异步写盘且自己会触发重载，
+只切一次会偶发读到旧 locale，把探针自己的失败伪装成「英文界面泄漏中文」）。
 
 ## 后端路由
 
@@ -420,19 +456,21 @@ python tools/verify_origin.py          # 校验：与注册节点 / README / 文
 | ComfyUI-AusBoss + rgthree-comfy（MIT） | 种子 | `QG_Seed` | 卡片界面来自 AusBoss，取值与随机逻辑来自 rgthree；老存档 -1/-2/-3 在 `onConfigure` 翻译 |
 | ComfyUI_Muye 1.0.17（MIT） | Text Edit Output | `QG_TextEditOutput` | v0.6.0，见「Text Edit Output 搬家记录」 |
 | ComfyUI_Muye 1.0.17（MIT，**只借思路，算原创**） | 遮罩拼接 | `QG_MaskConcat` | 10-30 整段重写成原创（四个控件 / 方向取值 / 单帧输出尺寸全不变，老存档照开；`combo_legacy` 的老中文「左右」「上下」仍照旧翻译）。🔴 **核心缺陷：批次被压成一条** —— 搬运版对 3 维遮罩走 `mask.max(dim=0)`，把 `(B,H,W)` 收成 `(H,W)`，**四帧进、一帧出**，不报错不提示（实测同一批断言：原版 `1 帧`、现在 `3 帧` 且每帧内容各自独立）。现在原样保留 `(B,H,W)`；两路帧数不同就把短的按序重复补齐（`expand` 做不到，只能 `repeat` 再截断）；空批次补成空帧而不是 `max(dim=0)` 抛错。B=1 时与搬运版逐字节一致。另修三处：① 混精度按 `torch.promote_types` 取宽 —— 原版按 `mask1.dtype` 建画布，float16 配 float32 会静默降位；② 不认识的 `direction` 值按左右拼 —— 原版按左右算画布、却只在值严格等于 `left-right` 时填充，于是任何怪字符串都给一张尺寸正确但**全黑**的遮罩；③ `direction` 改成模块常量比较，`FUNCTION` 改 `execute`。📌 **刻意不改**：`match_size` 会把小遮罩连同纵横比一起拉到对方的框（512x512 配 1024x256 → 512x512，圆变椭圆）。拼接要求两侧同尺寸，保比例就必然留黑边、那就成了 pad 而不是 match，所以这是选项的代价而非疏漏，写进 tooltip 与 DESCRIPTION 而不是「修」掉。断言 `tools/_check_mask_concat.py`（28 项：接口 / 单帧布局 / 批次 / 未知方向 / dtype·老值·空批） |
-| ComfyUI_Muye 1.0.17（MIT，**只借思路，算原创**） | 遮罩上色 | `QG_MaskColorize` | 10-30 整段重写成原创（三个输入 / 六个内置色 / 0.5 硬切 / 输出全不变）。🔴 **核心缺陷：遮罩帧数比图像少时直接崩** —— 搬运版用 `mask[:image.shape[0]]` 处理帧数不等，**遮罩短的时候等于没截**，紧接着的乘法广播失败（实测 4 帧图配 2 帧遮罩 → `The size of tensor a (4) must match the size of tensor b (2)`）；现在短的按序重复补齐、长的截断。另修四处：① 通配输入 `color_rgb` 漏了 `forceInput`，前端会多画一个填不出颜色的文本框（`QG_Exists` / `QG_RouteBlocker` / `QG_TextOverlayImage` / `QG_ImageOrLatentSize` / `QG_FreeMemory` 之后**第六处**同款）；② 遮罩与图像尺寸不一致时给中文错误并点名两边尺寸，原版只抛泛泛的广播错误；③ 三元组解析统一进 `as_triple()` —— 原版 `max(['a','b','c']) <= 1.0` 直接 `TypeError`，`[300,-20,0]` 会把 300 漏进 `int()`，张量输入要走逐元素 Python；现在非数字回退下拉色、逐分量钳到 0-255、张量一次读完；④ 不再 `ones_like(image) * color` 造一张整幅纯色图，色值直接广播进混合。📌 **刻意不改**：0-1 与 0-255 的歧义（`[1,0,0]` 两档都说得通，无解），规则仍是「三个都 ≤1 当 0-1」，只是从隐含改成写进 tooltip。断言 `tools/_check_mask_colorize.py`（34 项） |
+| ComfyUI_Muye 1.0.17（MIT，**只借思路，算原创**） | 遮罩上色 | `QG_MaskColorize` | 10-30 整段重写成原创（三个输入 / 六个内置色 / 0.5 硬切 / 输出全不变）。🔴 **核心缺陷：遮罩帧数比图像少时直接崩** —— 搬运版用 `mask[:image.shape[0]]` 处理帧数不等，**遮罩短的时候等于没截**，紧接着的乘法广播失败（实测 4 帧图配 2 帧遮罩 → `The size of tensor a (4) must match the size of tensor b (2)`）；现在短的按序重复补齐、长的截断。另修四处：① 通配输入 `color_rgb` 漏了 `forceInput`，前端会多画一个填不出颜色的文本框（`QG_Exists` / `QG_RouteBlocker` / `QG_TextOverlayImage` / `QG_ImageOrLatentSize` / `QG_FreeMemory` 之后**第六处**同款）；② 遮罩与图像尺寸不一致时给中文错误并点名两边尺寸，原版只抛泛泛的广播错误；③ 三元组解析统一进 `as_triple()` —— 原版 `max(['a','b','c']) <= 1.0` 直接 `TypeError`，`[300,-20,0]` 会把 300 漏进 `int()`，张量输入要走逐元素 Python；现在非数字回退下拉色、逐分量钳到 0-255、张量一次读完；④ 不再 `ones_like(image) * color` 造一张整幅纯色图，色值直接广播进混合。📌 **刻意不改**：0-1 与 0-255 的歧义（`[1,0,0]` 两档都说得通，无解），规则仍是「三个都 ≤1 当 0-1」，只是从隐含改成写进 tooltip。📌 **11-01 补**：`color_rgb` 是 `forceInput` 的只读连线，画布上根本没有可填的控件 —— 想自定义颜色只能从上游接三元组，多数人做不到，于是永远只能在六个内置色里选。新增 `r` / `g` / `b` 三个可选 INT（0-255，默认 **-1**＝这一路沿用内置颜色），可只改某一路；优先级保持「连线三元组 > r/g/b > 内置色」；插入在 `color_rgb` **之后**，老存档的 `widgets_values` 与 link 槽位都不动，行为完全不变。断言 `tools/_check_mask_colorize.py`（47 项） |
+| 作者自有插件 ComfyUI-QG-Multipack v0.1.0（GPL-3.0-or-later）+ Goohaitools（GPL-3.0，**只借思路，算原创**） | 比例与分辨率 | `QG_RatioResolution` | 2026-11-08 1:1 搬入（`ratio_resolution_node.py` + `web/qg_ratio_resolution.js`）。计算逻辑与源文件**完全等价**：1248 组对照（13 比例 × 6 模式 × 4 倍数 × 4 种图）输出逐项相同，含「未知模式回落固定长边」「倍数不足一个倍数仍给一个」这些边界。只做命名适配：输入名英文化、两个下拉的中文值换英文 key（老存档进 `_qg_combo_legacy.LEGACY`，前端 onConfigure + 后端 `combo_legacy` 双路迁移）、输出槽名改 `ratio`/`width`/`height`、文案英化、前端 import 改绝对路径。🔴 **与 `QG_EmptyLatentResolution` / `QG_SizeSelector` 不重叠**（清单标了 overlap，核实后否）：那两个直接产 `LATENT`，这个**只算数**（比例字符串 + 宽高），还多一个「长边范围」模式（跟随已接图像夹取）和输出口旁的青色实时预览。断言 `tools/_check_ratio_resolution.py` |
 | ComfyUI_Muye 1.0.17（MIT，**只借思路，算原创**） | 宫格图像拼接 | `QG_ImageGrid` | 10-30 整段重写成原创（五控件 / 自动行列几何 / match_size 等比装入不裁 / 黑帧过滤 / 预览输出全不变，仍是 `OUTPUT_NODE`）。🔴 **核心缺陷：灰度图被压成 1 像素宽** —— 搬运版按**第 0 维**判 `(H,W,C)` 还是 `(B,H,W)`（`if shape[0] == 1 or shape[-1] > 1`），而灰度单图是 `(H,W,1)`、第 0 维是高度 → 被当成批次，`unsqueeze(-1)` 后 `(64,64,1,1)`、通道扩三倍 `(64,64,1,3)`、再取第一帧只剩一行：**64x64 的灰度进 → 1x64 出**。判据改成看**最后一维**（≤ `MAX_CHANNELS`=4 当通道维），与包内其他三维判据一致。同一个判据还修了反向错误：灰度批次 `(B,H,W)` 原来被当成一张图（4x32x32 进 → 32x4 出），现在正常拆帧拼四格。另：两通道输入原来在画布赋值处崩（既不落 `channels == 1` 也不落 `> 3`），现在取第一通道当灰；`drop_black` 不再假设每个条目都是张量（列表套列表原来 `AttributeError`）；全黑报错补一句「把剔除全黑关掉」；`FUNCTION` 改 `execute`。📌 **刻意不改**：`drop_black` 默认开、真黑帧也会被丢（批次节点拿 `torch.zeros` 填空槽的历史原因），以及 `MAX_IMAGES=16` / `MAX_COLS=4` 的截断 —— 两条都写在 tooltip 里。断言 `tools/_check_image_grid.py`（30 项：接口 / 8 组几何 / 两种 match_size / 黑帧 / 间隙背景 / 三维输入 / 边界） |
-| ComfyUI_Muye 1.0.17（MIT，**只借思路，算原创**） | 图像水印 | `QG_ImageWatermark` | v0.8.5 搬入，10-30 整段重写成原创（十个控件 / 四种缩放 / 九宫格 / 单路输出全不变，老存档照开）。🔴 **核心缺陷：不接遮罩时透明度完全失效** —— 上游 `img_pil.paste(wm_pil, location)` 不带 mask 参数，`Image.paste` 会**直接丢掉 alpha 通道**：白底上贴一张「透明度 50」的纯红水印，实测出来是**纯红 (255,0,0)**，旋转 45° 后扩出来的透明角也变成**纯黑**。也就是说那两个功能只有碰巧接了「水印遮罩」才工作。现在永远 `paste(wm, loc, wm)`，真机落盘 PNG 验得 `(255,127,127)` / 角上 `(255,255,255)`。另修五处：① **多帧水印直接崩** —— 上游 `tensor2pil` 里的 `.squeeze()` 对 `(3,16,16,3)` 无效，`Image.fromarray` 抛 `TypeError`；现在明确只取第一帧并写进 tooltip；② **三维判据**：`(H,W,3)` 单帧与 `(B,H,W)` 灰度批次靠**最后一维**区分（`≤MAX_CHANNELS` 当通道）。上游把 `(6,4,3)` 当 6 帧批次拆开 —— 输出形状对、**内容全错**（每帧各贴一次水印），比崩更隐蔽；③ `scale_method` 读 `nodes.ImageScale.upscale_methods` 时没有兜底，核心一改名整个节点在注册阶段消失（`QG_ImageResize` 之后第二处同款），现在退到 `common_upscale` 认得的五个；④ **认不出的 `scale_mode` 回落 `none`** —— 上游未知值等于不缩放，10-24 那次搬运却落进了 `width-height` 分支、静默强制 512×512（**这是我方引入的回归，这轮认掉**）；⑤ 遮罩缩放改 `Image.BILINEAR`（默认 BICUBIC 在二值边缘振铃出灰边）、旋转改 `Image.BICUBIC`（上游用默认 `NEAREST`，细笔画锯齿）、`rotation` 的 tooltip 原来写「顺时针为正」，**PIL `rotate` 正角度其实是逆时针**（实测：40×20 图左下角的点经 `rotate(90)` 落到 19,39 即右下）。📌 **刻意不改**：`opacity` 反向（0 不透明、100 全透明）、遮罩白=打洞、`fit` 名不副实（最小比例，小水印会被放大）、输出恒三通道 RGB（下游普遍假设 `(B,H,W,3)`）—— 四条都是上游语义，只写进 tooltip。断言 `tools/_check_image_watermark.py`（51 项，同一脚本跑搬运版复现 4 条失败）+ 真机 `_check_image_watermark_live.py`（12 项，判据取落盘 PNG）+ 上游最小复现 `tools/_probe_muye_watermark_upstream.py`（6 项，直接加载 Muye 原文） |
+| 作者自有插件 ComfyUI-QG-Multipack v0.1.0（GPL-3.0-or-later）+ Goohaitools（GPL-3.0，**只借思路，算原创**） | 添加水印 | `QG_AddWatermark` | 2026-11-08 1:1 搬入，并**顶替已删除的 `QG_ImageWatermark`（图像水印）与 `QG_TextOverlayImage`（文字叠加图像）** —— 文字 / 图像两种水印这一个全覆盖。计算段逐字未改，与本机 Goohaitools「孤海-图像添加水印」同输入逐位比对（13 组文字水印 + 3 组图像水印，maxdiff 全 0）。三处改动：① 中文选项值换英文 key（`center/left/right`、`center/top/bottom`，老存档登记在 `LEGACY`）；② 字体改枚举系统字体 —— 源包自带 54 MB `fonts/`，其中苹方、华文细黑等是商业字体，不能进公开仓库；插件目录下自己放了 `fonts/` 时仍优先；③ 文案英化。🔴 刻意保留参考实现两处「看着不对」的行为：batch 只处理第一帧（输出单帧）、`angle=0` 时按文字墨迹框定位却粘贴带安全边距的图层 —— 为了让同一组参数在两个节点之间逐位相同。与源包唯一的设置差异：本包没有前端取色器，`text_color` 是普通 STRING、手填 `#RRGGBB`。🔴 **字体目录特意不读环境变量**（`WINDIR` 那条曾被 Registry 判成 `python_environment_manipulation`，见下文「v0.8.0 ~ 0.8.5 被打上的四条」），改用「用户级字体目录 + `C://Windows//Fonts`」两个固定路径。断言 `tools/_check_add_watermark.py`（58 项，含参考对照） |
+| 作者自有插件 ComfyUI-QG-Multipack v0.1.0（GPL-3.0-or-later）+ Goohaitools（GPL-3.0，**只借思路，算原创**） | 遮罩检测 | `QG_MaskDetect` | 2026-11-08 1:1 搬入（计算段 1784 字节与源文件逐字节相同）；只做界面文案英化与命名适配。概念参考孤海工具箱「孤海遮罩检测」，逐行相似度 7.1%（连续 ≥2 行重合 8 行，全是 `if` / `return` 级别的样板），源包为独立实现。🔴 **四条判定规则照原样保留、一条没改**：有效像素严格 `> 0.5`（本包其余节点惯用 `>=`）、`squeeze()` 之后按整个数组算占比（batch 不是逐帧判断）、过滤最小值填 0 跳过面积判断、全黑遮罩恒 False。改成「看着更对」的写法，同一组参数在参考节点和本节点上会给出不同答案，「参数可直接互换」就不成立。**与 `QG_Exists` 不重复**：那个问「有没有值到达」（ANY 输入，遮罩最大值低于 0.02 也算空、latent 全零也算空），这个问「遮罩够不够大」（只收 MASK，0.5 硬切加可调百分比）；一个给「什么都没接」当条件，一个给「遮罩太小不值得跑」当条件。断言 `tools/_check_mask_detect.py`（51 项，含与参考实现的 484 组同输入对照） |
 | ComfyUI_Muye 1.0.17（MIT，**只借思路，算原创**） | 尺寸选择器 | `QG_SizeSelector` | v0.8.5 搬入，v0.9.4 起分几轮重写（精确比例求解 / 百万像素 / 比例下拉 / 手填宽高），10-30 收口为自写实现。44 个预设 / 15 个比例选项 / 七个控件 / 四路输出全不变，老存档照开。🔴 **这轮修的是时间轴**：只声明了 `downscale_ratio_spacial`，`downscale_ratio_temporal` 一直缺席 → 8x 时间压缩的模型（LTXV / Cosmos）把帧数**翻倍**，实测填 121 帧真跑 **241 帧**；现在 `frames > 0` 时声明 4（**只在有帧时声明**，图像 latent 是 4 维、核心会把 H 当时间轴）。另修三处：① `width` / `height` 漏 `forceInput`（通配输入，包内第七处同款）；② 手填宽高不贴 8 —— 接 1001 进来节点报 1001、张量只有 1000，现在贴到 1008；③ 比例写成单个数字（`1.85`、`2.39`，银幕比例常见写法）静默失效、落回预设像素，现在按 `n:1` 读。🔴 **一处判断被推翻**：「上游硬编码 16 通道害了 SD1.5/SDXL」是错的 —— `fix_empty_latent_channels` 会把空 latent 的通道数按模型重写（实测 16 通道经 SDXL 出来是 4），所以 `latent_channels` 只是「不经过采样器时」的便利参数，文档与 tooltip 已改成实话。断言 `tools/_check_size_selector.py`（63 项）+ 真机 `_check_size_selector_live.py`（14 项，三路 INT 接 `PreviewAny` 读回真值）+ 上游复现 `tools/_probe_muye_size_selector_upstream.py`（6 组） |
-| ComfyUI_Muye 1.0.17（MIT，**只借思路，算原创**） | 文字叠加图像 | `QG_TextOverlayImage` | v0.8.5 搬的是 `TextOverlayImage`，10-30 整段重写成原创。八个输入、两路输出、六个内置色、横竖排、每帧都画、不做 `IS_CHANGED` 全不变。⚠️ **唯一可见的行为变化：文字位置**。旧实现用 Pillow `anchor="mm"`，那是按**字体行高**（ascender..descender）居中，行高比字母本身高 —— 实测 100px 字号下 `"AB"` 的笔画中心比设定 y 高 **19px**，两行、竖排、中文同样偏 19px，而节点承诺的「按中心定位」是虚的。现在先 `multiline_textbbox` 量真实墨迹框再按框心偏移，六组实测偏差 ≤1px 且不随字号放大（30px 与 300px 都在 1px 内）。🔴 **代价：老图文字整体下移约 19% 字号**，手调过 y 的要调回来（用户 10-30 确认要修）。另修三处：① `color_rgb` 漏了 `forceInput`（通配输入不加，前端画一个填不出颜色的文本框）；② **空批次以前抛 `stack expects a non-empty TensorList`** —— 那段 `if mask_out is None` 的兜底永远轮不到，因为 `torch.stack([])` 先炸，现在空进空出；③ `_FONT_INDEX` 是赋值了从不读的死变量（索引故意每次 `INPUT_TYPES` 重建，新装字体免重启），删掉，`_FONT_DIRS` 保留缓存。断言 `tools/_check_text_overlay_image.py`（35 项，B 组是几何判据：包围盒中心与 (x,y) 相差 ≤2px，且用「纵向」老值验证转换真的生效 —— 拿「横排」测是无效的，它不在映射表里，走的正是「未知值当横向」的兜底） |
 | ComfyUI_Muye 1.0.17（MIT，**只借思路，算原创**） | 文本按分隔符分割 | `QG_TextSplit` | v0.8.5 搬的是 `TextSplitByDelimiterEnhanced`，10-30 整段重写成原创。三路输出（`ALL` / `LIST` / `SEGMENT`）、四个序号、空段丢弃、默认 `<think>`、`OUTPUT_IS_LIST=(True,True,False)` 全不变，老存档照开。🔴 **修掉一个真假判**：SEGMENT 的取数池原来写成 `total if input_source == "文本框" else selected_pieces`，而该输入的值从 v0.8.5 起就是 `text-field` / `external-list`，条件永假 → 永远读 `selected_pieces`。文本框模式下两者同源所以看不出来，唯独 `list_index=0`（LIST 被清空）时 SEGMENT 跟着一起空 —— 而它只该受 `segment_index` 支配（实测：`segment_index=2` + `list_index=0`，修前 `""`、修后 `"b"`）。现在按模块常量 `TEXT_FIELD` 比较。另外：非法正则分隔符原来抛裸英文 `missing ), unterminated subpattern`，改成中文点名「分隔符」并提示可以关掉「用正则」；`FUNCTION` 改 `execute` 统一命名。📌 保留一个已知行为不改：正则模式用捕获组时分隔符会留在结果里（`re.split("(,)", "a,b")` → `['a', ',', 'b']`），那是 Python 的语义、偶尔正是想要的，只在文档里写明。断言 `tools/_check_text_split.py`（53 项）+ 真机 `_check_text_split_live.py`（17 项，C 组专测那个 bug） |
 | ComfyUI_Comfyroll_CustomNodes（MIT，**只借思路，算原创**） | 文本替换 | `QG_TextReplace` | v0.9.4 搬的是 `CR_TextReplace`（更早的 v0.8.5 ~ v0.9.3 搬的是 Muye `BatchTextReplace`），10-30 整段重写成原创。ID / 文本槽 / 六组查找替换 / 三条规则按序 / 空查找跳过 / 不做 trim 全不变，两份旧存档仍由 `web/text_replace/index.js` 自动迁移。保留我们自己加的两处：`mode`（`literal` 默认）与空查找跳过（`str.replace("", x)` 会在每个字之间插替换串）。🔴 这次修的三处：① `RETURN_TYPES` 是 `*` 而 `RETURN_NAMES` 写 `STRING`，自相矛盾 → 改真类型 `STRING`、槽名 `text`；② `FUNCTION` 改 `execute` 统一命名（存档不存方法名，前端只按 widget 位置迁移，安全）；③ **regex 模式只 catch 了 compile 阶段的错**，`sub` 阶段的错会漏出原始英文 —— 而 `sub` 阶段最常见的恰恰是替换内容里的反斜杠：Python 的 `re.sub` 把替换文本当**模板**，`C:\temp` 会静默变成「C: + 制表符 + emp」（`\t` 是合法转义，拦不住，只能在文档里说明），`C:\xyz` 直接抛 `bad escape \x`。现在两个阶段都 catch，错误用中文点名「第几条规则」+「查找内容还是替换内容」+「反斜杠要写两次」。🔴 **前端迁移依赖 `widgets_values` 长度是 7**（`text` 是 forceInput 不产生 widget），输入数量或顺序一动，老图整排错位。断言 `tools/_check_text_replace.py`（45 项）+ 真机 `_check_text_replace_live.py`（20 项，含老中文 `mode` 值能不能过队列校验并按正则跑） |
 | ComfyUI_Comfyroll_CustomNodes（MIT，**只借思路，算原创**） | 文本合并 | `QG_TextConcat` | v0.9.4 搬的是 `CR_TextConcatenate`，10-30 整段重写成原创（ID / 输入名 / 分隔符是控件 / 不做 trim 全不变，老工作流照开）。🔴 **真改进是把「没接线」和「接了但是空」分开**：搬运版两路 `default` 都是 `""`，判不出某一路是不是根本没接，分隔符照样吐 —— 只接 text1 得 `A-`、只接 text2 得 `-B`、两路都不接得一个孤零零的 `-`（实测见提交说明）。现在两路签名默认值是 `_MISSING` 哨兵，没接的那一路连同分隔符一起省掉；**接了线但是空串仍算参与**（`"" + "-" + "X"` 还是 `-X`，别把这个也「修」掉）。🔴 这个区分依赖「ComfyUI 用函数签名默认值补未接线的参数」—— `execution.get_input_data` 只返回 prompt 里真有的输入，没出现的交给 Python 补；哪天上游改成拿 `INPUT_TYPES` 的 `default` 填，判据会静默失效，`tools/_check_text_concat.py` 里「签名默认值与模块级哨兵是同一个对象」那条就是盯这个的。输出类型同时从 `*` 改成 `STRING`（原来 `RETURN_NAMES` 写 STRING、`RETURN_TYPES` 是任意，自相矛盾；`*` 接 STRING 输入和 STRING 接 STRING 输入是同一条边，老图不断）。断言 `tools/_check_text_concat.py`（36 项）+ 真机 `_check_text_concat_live.py`（16 项，含「只接一路」「两路都不接」「空文本参与」「两级串联」） |
 | rgthree-comfy（MIT，**只借思路，算原创**） | 图像缩放 | `QG_ImageResize` | 10-30 整段重写成原创（ID / 六个控件顺序 / 三路输出与槽名全不变，仍走核心 `common_upscale`，零新增依赖）。保留了原版的四条正确设计：`common_upscale` 而非私有重采样、0 = 该维没填并由另一维锁比例、`crop`/`pad`/`contain` 三选、宽高从**结果**读而不是从请求读。🔴 **修掉三处**：① **percentage 的「没填」被四舍五入吃掉** —— 搬运版先换算再判 0（`width = round(width * W / 100)` 之后才 `if width == 0`），50 像素宽的图上填 1% 换算成 0 像素，正好撞上「没填」的哨兵，于是按高度推出整宽（实测 1% → 宽 50，应为 1）；现在「没填」在**换算前**按百分比判，换算结果一律抬到 1 像素。② **推导可能得到 0 像素** —— 1000×1 的图按宽推高得 0，`common_upscale` 直接抛 `Input and output sizes should be greater than 0`；推导与换算两侧都钳 `MIN_SIDE = 1`。③ **无操作分支返回输入张量本身**，而其余分支都返回新张量，于是「输出是否与上游共 storage」取决于走哪条分支（下游就地写就会改到缓存里的图）；现在所有路径都返回自己的张量。另：裁剪出来的是 `narrow` 的 view，返回前 `contiguous()`；pad 由逐张 Python 循环改成一次切片赋值；`FUNCTION` 改 `execute`。`nodes.ImageScale.upscale_methods` 读不到时退到 `common_upscale` 认得的那五个，不让核心一改名就整个节点消失。断言 `tools/_check_image_resize.py`（34 项，comfy/nodes 用桩，因此不依赖 ComfyUI 环境；桩的 `common_upscale` 只换尺寸，像素断言全部用常量图 + 位置，不比插值细节） |
-| rgthree-comfy（MIT，**只借思路，算原创**） | 图像或 Latent 尺寸 | `QG_ImageOrLatentSize` | 10-30 整段重写成原创。ID / 通配 `*` 输入 / 两路 `INT` / `WIDTH`·`HEIGHT` 槽名全不变。🔴 **核心缺陷：只认四维张量** —— 原实现 `if len(shp) == 4` 之外一律 `return (0, 0)`，而 ComfyUI 的 MASK 主流是**三维**：`ImageToMask` 给 `image[:, :, :, channel]`、`LoadImage` 给 `mask.unsqueeze(0)`，都是 `(B,H,W)`。于是接最常见的遮罩得到 0×0，且不报错、不提示（真机实测同一张图：IMAGE 读 2560×3413、MASK 读 0×0）。现在 2/3/4 维都认：三维 `(B,H,W)`、二维 `(H,W)`、四维 `(B,1,H,W)`。🔴 四维歧义不能只看第二维（`(B,H,W,C)` 与 `(B,1,H,W)` 都是四维，高度为 1 的图会被当遮罩），判据是「第二维为 1 **且** 末维不是通道数 1/3/4」。另修：通配 `*` 输入漏了 `forceInput`，前端会在画布上多画一个填了也没用的文本框（`QG_Exists` / `QG_RouteBlocker` 同款）。LATENT 取最后两维（支持五维视频 latent）×8。断言 `tools/_check_image_or_latent_size.py`（29 项）+ 真机 `_check_image_or_latent_size_live.py`（12 项） |
+| rgthree-comfy（MIT，**只借思路，算原创**） | 图像或 Latent 尺寸 | `QG_ImageOrLatentSize` | 10-30 整段重写成原创。ID / 通配 `*` 输入 / 前两路 `INT` 与 `WIDTH`·`HEIGHT` 槽名全不变。🔴 **核心缺陷：只认四维张量** —— 原实现 `if len(shp) == 4` 之外一律 `return (0, 0)`，而 ComfyUI 的 MASK 主流是**三维**：`ImageToMask` 给 `image[:, :, :, channel]`、`LoadImage` 给 `mask.unsqueeze(0)`，都是 `(B,H,W)`。于是接最常见的遮罩得到 0×0，且不报错、不提示（真机实测同一张图：IMAGE 读 2560×3413、MASK 读 0×0）。现在 2/3/4 维都认：三维 `(B,H,W)`、二维 `(H,W)`、四维 `(B,1,H,W)`。🔴 四维歧义不能只看第二维（`(B,H,W,C)` 与 `(B,1,H,W)` 都是四维，高度为 1 的图会被当遮罩），判据是「第二维为 1 **且** 末维不是通道数 1/3/4」。另修：通配 `*` 输入漏了 `forceInput`，前端会在画布上多画一个填了也没用的文本框（`QG_Exists` / `QG_RouteBlocker` 同款）。LATENT 取最后两维（支持五维视频 latent）×8。🔴 **11-08 又并入自有插件 `QG_GetImageSize` 的三项优点**（该节点与本节点几乎完全重叠，所以没有另搬一个同类节点进来）：① 新增第三路 `COUNT` = batch 维（帧数），前两路顺序不动；② numpy / 嵌套 list 按 shape 读，不转张量不拷贝；③ **不再静默给 0** —— 接了但读不出宽高（一维 / 零维 / 五维张量、字符串、无 `samples` 的字典、`samples` 不足 4 维）改为报错并说出拿到了什么形状，旧版一律 `(0,0)` 最后在 `EmptyLatentImage` 炸「width must be > 0」；**未接线仍是 `(0,0,0)`**（契约）。五维视频 latent 的时间维不猜，`COUNT` 只报 `samples` 第 0 维。断言 `tools/_check_image_or_latent_size.py`（68 项，含与源包 `QG_GetImageSize` 的 108 + 27 + 9 组三路对照）+ 真机 `_check_image_or_latent_size_live.py` |
 | ComfyUI_Custom_Nodes_AlekPet（MIT，**只借思路，算原创**） | Google 翻译 | `QG_GoogleTranslateText` | 10-30 整段重写成原创（ID / 四个控件顺序 / `STRING`·`text` 槽全不变，老工作流照开）。上游用 `googletrans`（驱动未公开的 Google 网页端点，隔几个月坏一次：缺模块、TKK 令牌 `AttributeError`），这里直接用 `requests` 打同一批端点，**零新增依赖**，代码里没有一行上游实现。🔴 **修掉五处**：① **长文本整段发** —— 免费端点约 5000 字符上限、还是 GET，超了直接 400 `Text too long`（搬运版没有分片）；现在按换行切片、超长行退到句末标点、再退到硬切，译完用 `\n` 拼回，单片失败就整段退回原文（不半译半原文）。② **官方接口没传 `format`** —— 该参数默认是 **html**，于是多行提示词被挤成一行、引号和 `&` 变成 `&#39;`／`&amp;`；现在显式 `format=text`。③ **`/qg/translate/manual` 在事件循环里做同步网络调用** —— 两跳各带 20s 读取超时，一次失败能把 aiohttp 卡住几十秒，期间整个 ComfyUI 的进度推送和所有接口都不响应（真机实测：黑洞代理下搬运版探测 `/system_stats` 等了 **5.12 秒**，现在 **0.01 秒**）；改用 `run_in_executor`。④ **`text` 非字符串会崩**（`value.strip()`）、官方接口空 `translations` 返回空串而不重试 —— 都归一/改抛。另：前端「手动翻译」按钮的文字从 `addWidget` 的第二个参数挪到 `widget.label` —— 🔴 **那第二个参数同时是控件的 name**，而汉化字典里有 `Manual Translate → 手动翻译`，于是中文界面下 name 变成中文，`findWidget` 全落空、按钮**点了就报 TypeError**（真机复现：`["from_translate","to_translate","manual_translate","手动翻译","text"]`）；按钮位置也从写死的 `splice(3, ...)` 改成按 `text` 控件名定位。🔴 **语言表故意比 googletrans 少 1 项（巽他语）**，删它是合规要求（见「Registry 扫描」那一章的 v0.9.3 小节），**别按「107 项只有 106 项」把它补回来** —— 补回去等于把扫描命中带回发布包；断言里已经钉了「表里不含那一项」，`check_registry_status.py` 也能确认最新一版是 `Active`。断言 `tools/_check_google_translate.py`（68 项，`requests` 整个用桩，能直接看请求体里的 `format`）+ 真机 `_check_google_translate_live.py`（15 项，含黑洞代理下的阻塞对照）+ 前端 `_check_google_translate_ui.cjs`（11 项，中英文界面各一遍，含按钮点击） |
 | 孤海工具箱（Goohaitools-comfyui，GPL-3.0） | 任意切换 / 展示任意 | `QG_AnySwitch` / `QG_DisplayAny` | 类名与分类改成 QG，GPL 出处标注保留在文件头 |
 | 孤海工具箱（GPL-3.0，**只借思路，算原创**） | 路由阻断 | `QG_RouteBlocker` | v0.8.0 搬的是 `GoohaiRouteBlocker`，10-30 整段重写成原创（ID / 槽名 / 选项值 / 三种结果全不变，老工作流照开）。`block`(BOOLEAN) + `mode`(combo: `empty` / `cut`) + `any`(optional, `*`, forceInput) 进，`any`(`*`) 出；`empty` 给 `None`（下游照跑）、`cut` 给 `ExecutionBlocker(None)`（下游静默跳过）。🔴 **真改进是给 `any` 加 `lazy`** —— 搬运版把 `any` 当普通输入，ComfyUI 在调用节点前先把它求值掉，于是开关打开（要掐断）时上游照样跑完一整遍再被丢掉；加 `lazy` + `check_lazy_status` 后，开关打开时上游一个节点都不排队。🔴 `any` 没接线必须用 `_MISSING` 哨兵跟 `None` 分开（lazy 输入下 `None` 表示「接了还没求值」），混用会让没接的线被反复索要、执行器无限重调度。🔴 `_qg_combo_legacy.py` 里登记着老中文选项值（`仅输出空值` / `中断后续分支`），`VALIDATE_INPUTS` 必须具名收 `mode` 才跳过 combo 校验。断言 `tools/_check_route_blocker.py`（41 项）+ 真机 `_check_route_blocker_live.py`（10 项，懒执行用 `QG_Math` 除零做阳性对照） |
+| 孤海工具箱（GPL-3.0，**只借思路，算原创**） | 扩图画板 | `QG_OutpaintBoard` | 2026-11-01 从零写，对位孤海「外补画板（可视化）」的**用法**；没有搬代码（实测最长连续相同 2 行、去样板行重合 3.0%、序列相似 2.0%）。交互四处刻意不同：扩边时缩放钉死、扩出去的边能点回 / 拖回、参数收进右侧浮层、主色琥珀橙。几何是纯函数 `compute_layout`（单位换算 → 长边上限只削补边 → 整除数向上取整补右下），源图走切片复制不重采样；颜色解析复用 `_qg_color_helpers.parse_fill_color`。详见下方「Outpaint Board（`QG_OutpaintBoard`，自写，2026-11-01）」 |
 | ComfyUI-Easy-Use（GPL-3.0，**只借思路，算原创**） | 是否判断 | `QG_IfElse` | v0.8.0 搬的是 `easy ifElse`，10-30 整段重写成原创（ID / 槽名 / 懒执行语义全不变，老工作流照开）。核心是**「没接线」和「接了还没求值」要分得开**：前者是 `_MISSING` 哨兵，后者是 `None` —— 判据一律用 `is _MISSING` 而不是 `is None`。上游把两路写成 required，少接一路在验证阶段就被拒；这里改成 `optional` + `lazy`，**只接一路也成立**（那一路总被选中，条件不参与），读法与核心 `comfy_extras/nodes_logic.py` 的 `ComfySwitchNode` 一致，两个节点混在一张图里不会打架。🔴 **两路全空必须在 `VALIDATE_INPUTS` 拦**（返回错误串而不是 True）：校验早于懒状态，`check_lazy_status` 放过去就会一直索要一个根本不存在的输入，执行器把这个节点反复调度到超时。断言在 `tools/_check_if_else.py`（42 项）+ 真机 `tools/_check_if_else_live.py`（懒执行用 `QG_Math` 除零做阳性对照，证明探针真能检测出「被执行」） |
 | ComfyUI-MD-Reader（**作者自有插件**） | 加载文档 | `QG_MDReader` | 同一作者的旧插件，合并进来，算**原创**（本来就不是第三方代码） |
 | ComfyUI-TripleLoader（**作者自有插件**） | 模型加载器 | `QG_TripleLoader` | 同上，算**原创**；它在 import 期就实例化内置的 UNET / CLIP / VAE Loader |
@@ -445,8 +483,9 @@ python tools/verify_origin.py          # 校验：与注册节点 / README / 文
 | 原创（无上游代码） | 数值滑条 | `QG_Slider` | v0.9.5。一行：滑条 + 读数 + 齿轮；类型 / 范围 / 步长收在齿轮菜单里，五个控件全隐藏、输入槽也摘掉。默认 0–1 / 一格 0.1 / 输出小数（LoRA 强度那一档）。读数**按范围定宽**（默认 22px），轨道一直铺到它左缘前 4px；**点读数就地输入**（`web/slider/` 的 `openValueEditor`，回车提交 / Esc 取消 / 输入法回车放过）。🔴 **经典模式是 canvas 自绘**（和布尔开关同一套模板），节点恒 320×58、和布尔开关同尺寸；Nodes 2.0 走 DOM 卡片（`addDOMWidget` 那条路最低只能到 90，压不到 58）。🔴 输出槽恒 `*`，两种模式都接得进 `FLOAT` 口；`onMouseDown` 必须用 `chainHandler`（`chainCallback` 会丢掉 `return true`，节点会跟着拖动）。🔴 拖拽的 window 监听必须 `{capture:true}`：LiteGraph 在 canvas 的 pointerup 里 stopPropagation，冒泡收不到 → 松手后 `dragging` 一直 true。见 `web/slider/` |
 | 原创（无上游代码） | 数学运算 | `QG_Math` | v0.9.4，见下方「数学运算」 |
 | 原创（无上游代码） | 存在判断 | `QG_Exists` | v0.9.5。纯后端、无前端 JS：`任意`(optional, `*`) 进，`任意`(`*`) + `布尔`(BOOLEAN) 出。🔴 输入必须 optional —— required 的话 ComfyUI 在执行前就报「缺输入」，节点永远没机会输出假。🔴 `_present()` 口径**对齐孤海工具箱 `GoohaiAnyExists`「万能是否存在(GH)」**：`None` / `ExecutionBlocker` / 空 str·bytes·list·tuple·dict·set / **全黑 MASK**（`(H,W)`·`(B,H,W)`，`max ≤ 0.02`）/ **全零 LATENT**（`samples` 同阈值）算没有；**`0`、`False`、全黑 IMAGE**（`(B,H,W,C)`）算有。🔴 与孤海唯一有意的差异：**只判不改** —— 孤海会顺手把 ≤0.02 的遮罩像素抹成 0 再输出，我们原样透传（那节点叫「原样输出」，改值就是 bug）。逐场景对拍过：13 个用例 + `0.03` 边界 / `zeros(1,4,1,1)` / 0 元素张量全部一致。`VALIDATE_INPUTS` 返回 True 放行具体类型（否则接 IMAGE 端口会被判类型不符，照抄 `QG_IfElse`） |
-| 原创（无上游代码） | 画布标注 / Markdown 便签 / 导出图像 | `QG_CanvasLabel` / `QG_MarkdownNote` / `QG_ExportImage` | v0.9.3。前两个是纯前端裸节点，第三个只借了 KOOK / 孤海同类节点「quality 该放在哪」的结论 |
+| 原创（无上游代码） | 导出图像 | `QG_ExportImage` | v0.9.3。只借了 KOOK / 孤海同类节点「quality 该放在哪」的结论 |
 | 原创（无上游代码） | 加载图像 | `QG_LoadImage` | v0.9.8。口径照孤海「加载图像」，但有两处刻意不同。**输出只留两个**：`IMAGE` + `MASK`；宽/高/帧数写在面板图下方，文件名一个字符串节点就能拿到，早先的 `NAME` 槽已砍（旧存档在 `beforeConfigureGraph` 里截到 `KEPT_OUTPUTS = 2` 并删掉线，`addOutput` 再兜一道）。**带色图做成可选开关，不是档位**：`tint_output` 默认关，关着 `IMAGE` 永远是画之前那张图；开着才把 `tint_color`（九色，与编辑器同一套 RGB 值）+ `tint_alpha`（0~100，步长 5，默认 50）混进遮罩区 —— `w = mask * strength`、`colour * (1 - w) + rgb * w`，羽化边缘按遮罩强度渐变（孤海是半透明硬叠色，实测遮罩内均值正好 = 原图 × 0.5 + 色 × 0.5）。编辑器存盘 `onSaved(stored, {colour, alpha})` 回写这两个控件，节点面板、编辑器、下游收到的永远是同一个颜色。遮罩编辑器保存时往 `input/clipspace/` 写三个 PNG —— `qg-src-<13位戳>.png`（原图副本，只为留住自己的 alpha）、`qg-view-<戳>.png`（**不透明**的带色画面，只给编辑器取颜色）与 `qg-painted-<原名>-<戳>.png`（RGB 是画面 / A 是遮罩）；后端 `PAINTED_NAME` 配对，用副本的 alpha 换掉成品的 alpha，所以 IMAGE 默认永不含遮罩、MASK = 1 − alpha。实现自写：配对靠文件名里的时间戳（孤海靠像素比对 + mtime 反查）、写三个文件（孤海也是三个）。遮罩尺寸恒等于图，不会再有 64 × 64 占位。🔴 **一笔一色是「按颜色分层」实现的**（照孤海的 `colorLayers`）：`ed.colours` 是 `Map<色名, canvas>`，每层直接存彩色像素；`ed.mask` 仍是单通道 alpha，所以 MASK 输出、配对、后端 alpha 交换全都不用改。落笔/重放走同一条 `replayStroke()`：画笔只画自己的色层，**橡皮要在所有色层上挖**（否则换色重画时旧颜色会透出来）。`ed.baseLayers` 装「打开时那张图自带的遮罩」的彩色版，`ed.fillLayer` 装自动填充那块（用当前笔色），三者按 base → 笔画 → 填充 的顺序叠。🔴 **存盘要把颜色烧进成品 RGB**（孤海 color 模式就是这么做的），但不能用 `destination-out` 挖遮罩 —— canvas 预乘 alpha，那样会把刚混好的 RGB 一起乘暗；正确做法是先不透明地画完「画面 + 各色层（`globalAlpha = 透明度`）」，再**只改 A 通道**（`A = 255 - mask`）。🔴 干净画面改由后端从 `qg-src` 副本取 RGB（成品 RGB 已经带色了，直接取会污染 IMAGE）；`tint_output` 打开时用 `_has_baked_colour()` 判断成品有没有烧色（遮罩内平均差 > 0.02），有就直接返回成品 RGB（多色），没有（旧版本存的）才退回单色 tint 混。🔴 **成品那张的遮罩区 alpha=0，浏览器加载 PNG 时会把透明像素的 RGB 一律清零** —— 二次进编辑器读回来遮罩区就是 (0,0,0)，按浓度反解后落到最近的中性灰（实测 50% 绿画满一个圆，重开变成 `128,128,128`，用户 2026-10-26 报的）。所以存盘多留一份 `qg-view`（改 A 通道**之前**编的那张不透明画面），读回时把它的 RGB 抄进 ImageData，alpha 仍用成品的。老存档没有这份 → 退回原行为（颜色偏灰、形状对），控制台会喊一句。🔴 读回成品要**先用存盘浓度反解再最近邻**：成品像素是「原图×(1-s) + 色×s」，直接分类会跑偏（50% 绿混在土色上最近的居然是中性灰，屏幕直接变灰板）；没烧色的旧成品则整块铺当前笔色。🔴 反复存盘会「量化漂移」：每次打开都按九色重新归类，第一次打开与之后几次的边缘像素不同（实测最大差 108）。`probe_display_invariance` 因此要先 warm-up 存一次再比。🔴 `sized(canvas, w, h)` 返回的是 **2d context**，不是 canvas，别写成 `sized(...).getContext`。🔴 `tintMask()` 在落笔期间（`ed.stroke` 非空）**必须染 `ed.mask` 而不是 `ed.filled`** —— 填充层是抬笔后 `scheduleFill()` 才算的，正在画的这一笔还没并进去，用它会变成「画的时候什么都不动、一抬笔整片才冒出来」。孤海与官方都是笔迹实时跟手、填充是抬笔后的事。🔴 **孤海那支的填充是自动的，别记成手动**：`Goohaitools-comfyui/web/js/goohai_mask_editor.js` 里 `autoFillHoles` 绑在输出状态的 `data-output-fill` 复选框上，`pointerup` 时 `++fillRevision` 再 `setTimeout(0)` 调 `rebuildFilledPaint()` / `rebuildFilledColorLayers()`；画的过程中 `refreshMaskDisplay(false)` 取的是 `drawingPreviewPaint`（原始笔迹），`refreshMaskDisplay(true)` 才取 `filledPaint`。我们这套时序与它同构（落笔染 `ed.mask`、抬笔 `scheduleFill()` 后染 `ed.filled`）。**墙判据也与它一字不差：`data[i*4+3] > 5` 就算墙**（`rebuildSingleColorFill` 里 `<= 5` 直接 continue），不是「画到一半」。实测 100% 软度 200px 笔宽围出的圈：`> 5` 补 41418 px，`>= 128` 只补 13326 px —— 软边被当成没画，灌水顺着边缘漏出去。🔴 **自动填充必须逐色层灌水**（`holesOfLayer()` 每层各跑一次），不能拿合并后的 mask 算一次 —— 洞的颜色要跟着「围住它的那一笔」走。用户报过：青笔围一圈、换别的笔色之后，圈里整块变色（截图里青/蓝笔迹配紫/绿的洞）。同色的 `baseLayers` 与 `colours` 先合成一张再灌。🔴 `ed.filled` 是「**整张**遮罩」（先 `drawImage(ed.mask)` 再叠洞），不是「只有洞」—— 存盘用它挖 alpha、仅遮罩模式用它上白，只画洞的话笔迹会从遮罩里消失（MASK 全 0、存盘整张不透明，屏幕上看着就是一片黑底）。`ed.fillLayer` 才是「只有洞 + 各自颜色」。🔴 往 `filled` / `fillLayer` 落笔时要用**这一笔自己的颜色**，默认的 `#000` 会在彩色层上留黑块。🔴 **填充必须按色分层**（`ed.fillLayers`，每色一张洞层，跟 `ed.colours` 同形状）：所有色的洞合成一张盖在最上面，会把后画的颜色整块盖掉 —— 先红圈填满、再换绿笔在红块上画，绿笔消失（用户 2026-10-25 报的）；而且后来再补一笔红，红色整组按「最后落笔」跳回最上层，照样盖。叠的顺序由 `paintOrder()` 算：每色最后一次落笔越晚越靠上（`ed.layerOrder` 记 `ed.strokeSeq`，只有画笔落笔才记，橡皮不改层序；没落过笔的排最前垫底）。🔴 **洞只补「原本没遮住」的地方**（只剔 `ed.base` 一道）：`ed.base`（打开时自带遮罩）已经盖住的不填 —— 打开成品时 `baseLayers` 是按颜色拆开的**碎片**（一个像素只属于一个色），对碎片灌水会把碎片之间的小缝当成洞，`growIntoWall` 再把缝撑成实心，实测一张成品重开一次多出 5 万多像素假洞、颜色一轮一轮漂（`probe_display_invariance` 从 0 差异跳到 11419）。🔴 **别的颜色画到的地方不要剔**：曾经加过「这一层的洞让给别的颜色的笔画」，结果红圈套在绿块上时，红洞绕着绿笔留空、圈里露出绿色（用户 2026-10-25 第二张截图）。谁在上面**只由层序决定**：先红填满后画绿笔 → 绿组最后落笔、绿笔压在红洞上；先绿填满后画红圈 → 红组最后落笔、红洞连绿一起盖住。两条都靠 `paintOrder()`，不在这里特判。`ed.filled` 仍是合并的整张遮罩（存盘挖 alpha、仅遮罩模式上白都用它），不受层序影响。🔴 **洞算完再往笔迹里多吃 `FILL_EDGE = 3` 像素**（`growIntoWall()`，见下条）。`ed.soft` **默认 0**（硬笔）。**自动填充漏洞默认开，而且是「视图层」**：`ed.filled` 每次抬笔从 `ed.mask` 重算（`requestAnimationFrame` 一帧一次），灌水以 `alpha > 5` 为墙、只填没通到外面的连通域，**洞算出来之后再往笔迹里多吃 `FILL_EDGE = 3` 像素**（`growIntoWall()`：一轮只收「不是洞、但 `alpha > 5`」的像素，先收集再标记免得一轮连长两圈）—— 洞是切出来的硬边、紧挨着的却是笔迹抗锯齿的软边，255 掉到 6 再升回 255，50% 预览下就是一圈淡线，白底图上像一道虚线（用户 2026-10-25 报的就是这个）。孤海没这毛病是因为 `rebuildSingleColorFill` 把墙一起涂成 255，代价是笔迹边缘也变硬；我们只补洞这一侧。它不算笔画，撤销回退的是笔本身（旧的 `fillUndo` 整层换回机制已删），关掉开关立刻退回手画的样子。灌水本身仍不膨胀：旧版先膨胀 2px 再灌水，能补上收笔时那条 1px 的缝，但每抬一次笔遮罩就胖一圈 —— 自动模式每笔都跑，攒几次轮廓就散了，宁可少填。编辑器画布缩放照孤海的做法：`frame` 包住底图与遮罩色两层，CSS `transform: translate() scale()` （滚轮 factor 1.12/0.89、范围 0.05~12、以指针为锚点，`zoomAt()` 照抄它的 `wheel()`），笔尖圈留在最外层不缩放，线宽永远 1px（**深色垫底 3px + 白色 1px 两道描边**；只描白线的话白底图上整个圈看不见；悬停时也认 Ctrl / 右键，圈会立刻变红）；按住空格或中键拖 `panX/panY`。🔴 **`toPicture()` 必须用 `frame.getBoundingClientRect()` 再除以 `ed.zoom`** —— 用 `view`（不缩放那层）的 rect 等于假装没放大，实测 1.57 倍时笔迹偏 (40, 22) px，越放大越歪。编辑器内部画布分三层（底图 / 遮罩色 / 笔尖圈，各自一张 canvas，各自 `imageSmoothingQuality` medium / low / —，指针移动只重画笔尖那圈，染色也只在帧里做一次）。🔴 **遮罩位图尺寸 = 原图 × maskScale（长边 2048），不是原图尺寸**：笔画坐标按 maskScale 落下来，画布要是按原图建，大图上笔迹会缩到左上角一小块 —— 屏幕看着偏、存盘更偏，而且每帧染色要多算 3 倍像素（8.7M vs 3.1M），直接卡成幻灯片。编辑器底栏是「三根滑条（笔宽 2~600px / 软度 / 透明度）+ 九色圆点」，滑条是原生 input[type=range]，右侧带读数与单位，拖动 / 点轨道 / 方向键都能调，syncTools() 里三根都 set()，所以 [ ] 键和 Alt 拖拽改完笔宽，滑条位置会跟着回来，`draw()` 里 `globalAlpha = alpha / 100`，所以预览浓度就是输出浓度（仅遮罩模式写死 .5）。前端 `web/load_image/`：media_picker + 「保留透明通道」胶囊 + 大图舞台 + 「编辑遮罩」按钮。🔴 **舞台高度是常数 `STAGE_H = 200`，不跟图片比例、也不跟节点宽度走**（早先是 `宽度 × 图高/图宽` 夹 90~420，一张 2560×3413 的竖图能把节点撑到 576 高）：图片 `object-fit: contain` 缩到框里，节点尺寸只由用户拖，换任何图都是同一个尺寸（实测 [270,469] 不变）。`ResizeObserver` 那套「拖宽重算高度」随之删掉，`applyStageHeight` / `stageHeightFor` 整支删除；换图后仍旧要 `syncPanelHeight() + relayout()` 各跑一次，否则节点高度会漂 12px。（`web/shared/mask_editor.mjs` **动态 import** —— 静态 import 失败会连累整份扩展不注册，节点裸奔成原生控件；画笔/橡皮/撤销/清空/反色/自动填充共用 `shared/brush.mjs`）。旧存档的 7 个输出槽（彩色叠加 / 宽 / 高 / 帧数）和后来的 `NAME` 槽都按 `KEPT_OUTPUTS` 截断；老的 `alpha` 值按位置落在 `keep_alpha` 上，`onConfigure` 里换算成布尔。原生 `image` / `keep_alpha` / `tint_output` / `tint_color` / `tint_alpha` / `upload` **六个全藏**（`hideWidget` + `hideInputsInDef` 两套渲染器都盖住），widget 顺序一律不动 —— 存档兼容全靠这一条。面板上只留 `qg_load_panel` 里的 DOM：文件名 + 上传、图、编辑遮罩、`宽 × 高` + 齿轮。🔴 **开关搬到齿轮浮层**（用户 2026-10-26 要求）：`meta` 行右侧一颗 19px 齿轮（内联 SVG，不用字体里的 ⚙），点开弹出一个挂 **`document.body` + `position:fixed`** 的浮层 —— 面板是 `overflow:hidden`，放里面会被裁掉一半；摆位是「右边缘对齐齿轮右边、底边压在齿轮上方 6px」，先 `visibility:hidden` 量完再定位。浮层里两行「名字 + 开/关胶囊」，胶囊只写状态不抄名字（两边都写全名看不出状态）。收起条件：点浮层外、点齿轮、Esc、画布 `wheel`、窗口 `resize`、节点 `onRemoved` —— 全用 capture 阶段听，画布会 stopPropagation。`META_H` 从 15 提到 21 给齿轮腾地方；删掉 `switchRow` 之后节点净矮 18px（`[270,469]` → `[270,403]`）。🔴 **顶栏三段是「输出档位」，不是「显示方式」**（用户 2026-10-26 定，照孤海的做法）：`ed.mode` 只决定 `save()` 时回写的 `tintOutput = (mode === "tint")`，**屏幕上除 `plain` 外看到的永远是同一张「图 + 半透明彩色遮罩」** —— 「仅遮罩」不再涂白、也不再换纯色底（曾经两版都试错：涂白 → 白底图上什么都看不见；换实色遮罩 + 深底 → 跟"我看到的就是我画的"矛盾）。`drawBase()` 一律画原图，`drawTint()` 只有 `plain` 才 `return`。打开编辑器时按节点上的 `tint_output` 定初始档（`true → tint`，`false → mask`），`onSaved` 回传 `tintOutput` 由面板写回 widget —— 面板上那颗「输出带色图」开关已经删掉，两个地方改同一个值必然打架。🔴 **浮层文案用 `zhPair(en, cn)` 而不是 `zh()`**：三段的名字（彩色叠加 / 仅遮罩 / 原图）是新造的，汉化词典里没有对应英文词条，`zh()` 和汉化插件的 DOM 翻译器两边都查不到，中文界面会留英文。`zhPair` 在 `web/shared/zh.mjs`，按当前语言直接给中英两份。🔴 凡是「要看画面」的地方（节点预览、下拉悬浮图、编辑器底图）一律指向**副本**：成品 alpha 就是遮罩，浏览器渲染出来遮罩区全透明；编辑器另把成品自己的 alpha 读回来当初始遮罩，二次编辑才接得上。🔴 预览里的遮罩色是**独立的一层 `<canvas>`** 叠在原图上（stage `display:grid` + 子项全 `1/1`，两层吃同一套 `max-width/max-height` 等比约束），只画刷过的地方、其余透明，**不做 PNG 编码**（旧写法 toBlob，1 兆像素首轮 1.1s、热态 88ms + 解码 4ms，纯白等）；画面与遮罩**并行下载**，`__qgLoadOverlayKey` / `__qgLoadVeilKey` 分别记「占位」「画好」，遮罩可能先到，所以只在画面已就位时才显示绿层 |
+| 原创（无上游代码） | 核心加载节点的遮罩入口 | （挂在 `LoadImage` / `LoadImageOutput` 的右键） | 11-01 补。官方那支编辑器保存时**直接改写原图的 alpha**（server.py `/upload/mask` 把原文件重存一遍），画坏了回不去。现在右键菜单多一项「编辑遮罩（QG-tools）」，走同一支「另存新文件」的编辑器。🔴 挂法用 `beforeRegisterNodeDef` + `getExtraMenuOptions`（litegraph 原生的节点级钩子）；先写的 `LGraphCanvas.prototype.getNodeMenuOptions` 能用，但核心会点名弃用（`Monkey-patching getNodeMenuOptions is deprecated. (Extension: "QG.CoreImageMask")`）。🔴 用菜单项而不是 `addWidget`：控件会进 `widgets_values`，等于往别人的存档里塞自家插件的值；菜单项不参与序列化。🔴 成品留在 `input/clipspace/`、节点值直接写成 `clipspace/qg-painted-….png`，不往 output 塞文件 —— 核心 `LoadImage.VALIDATE_INPUTS` 只问 `exists_annotated_filepath`（文件在不在），**不看目录**，实测 `"0.jpg [input]"` 与 `"clipspace/qg-painted-x.png"` 都能跑、`"nope-xyz.png [output]"` 被拒。🔴 `imageUrl` 的 `type` 必须由调用方显式传：`pictureOf` / `viewOf` 会把注解尾剥掉（`"a.png [output]"` → `"a.png"`），再靠值去猜就一律猜成 input → 去 input 找一张 output 的图 → `/view` 404，界面只显示「图加载失败」。🔴 探针 `_probe_core_mask_editor.cjs`（17 项）：核心 COMBO 拉完 `/internal/files/output` 会「自动选第一个」（`control_after_refresh: "first"`），设完值必须读回确认；编辑器有三张 canvas（`qgtools-mask-base` / `-tint` / `-view`），取第一个会拿到 `ed.mask` 那个 300×150 的默认画布 |
 
 
 搬运与改名用的是一批开发期脚本（`port_node.py` 抽节点、`rename_to_qg.py` 统一命名、
@@ -534,7 +573,8 @@ RETURN_TYPES = ("BOOLEAN",)
   时乘 0.69 只剩 15px，卡片会切掉槽名下半截。顶部只让 `SLOT_ROW`，别再叠 `pad`。
 - **标签太长要缩字号**：按胶囊左边的剩余宽度 `measureText`，超了就等比缩（下限 11px）。
 - Nodes 2.0 下 canvas 不绘制 → `installDom()` 挂一个大按钮（`addDOMWidget`），
-  两种渲染器用 `usesVueNodes()` 分流（同 `web/run_timer/`）。
+  两种渲染器用 `usesVueNodes()` 分流（旧版 `web/run_timer/` 也这么做；11-08 后它改走
+  overlay canvas，别再照抄这条）。
 
 真机验证（`--port 8199` + `POST /prompt`）：`BoolToggle → StringSwitch.boolean → PreviewAny`，
 开 → `TRUE_BRANCH`、关 → `FALSE_BRANCH`。
@@ -996,7 +1036,8 @@ CPU、64×64）确认这三条路径都会出预览：
 - `MAX_PICTURE_BYTES = 8 MB`（`content_length` 先挡，读完再按实际长度挡一次）
 - `MAX_PICTURE_PIXELS = 4000 万` —— 解压炸弹防线。20000×20000 的 PNG 只有几百 KB，
   解开要 1.2 GB，**只按字节数限制挡不住**。
-- `open(target, "xb")` 独占创建 —— 已有预览图的 LoRA **永不覆盖**，两个请求同时到达也覆盖不了。
+- 以「独占创建」方式打开目标文件（同名已存在就直接失败，不会截断）—— 已有预览图的
+  LoRA **永不覆盖**，两个请求同时到达也覆盖不了。
   用户自己放的那张比 Civitai 的珍贵。
 
 🔴 「先查有没有预览图，再解码」—— 顺序别反，已有的文件连解码都省了。
@@ -1307,6 +1348,7 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 - **共享层需求**：`shared/index.mjs`（BRAND/chainCallback/keepDomWidgetWidthAuto）与
   `panel_layout.mjs`（holdNodeMinWidth）本来就有；**新增 `shared/run_timer.mjs`**
   （83 行纯逻辑 reducer + 缓存发光层，零 import，测试友好的那部分都在这）。
+  ⚠️ 2026-11-08 该文件已随整套实现替换而删除；本节 1312–1330 是旧版搬家记录，留作溯源。
 - **改名**：`tools/port_run_timer.py`，8 条改名 + 命中数断言。教训：**短串的预期命中数
   要按改之前的原文统计**——`ausboss_run_timer` 原文 3 处 = `_panel` 1 + `PROPERTY` 值 1 +
   DOM widget 名 1，第一版断言写成 2 被 FATAL 当场拦下（这正是断言的价值）。
@@ -1358,6 +1400,12 @@ ui 合并后比对，看不出「某个键在别的节点有、在本节点没�
 > v0.9.4 补充：其中「批量文本替换」（`QG_TextReplace`）后来**改搬 Comfyroll 的
 > `CR_TextReplace`**（加了字面/正则模式下拉），显示名也从「批量文本替换」变成「文本替换」。
 > 本节其余 7 个节点没动。
+>
+> 2026-11-08 补充：「图像水印」（`QG_ImageWatermark`）与「文字叠加图像」
+> （`QG_TextOverlayImage`）**已删除**，被作者自有插件搬入的 `QG_AddWatermark` 顶替
+> —— 那一个同时做文字与图像两种水印。本节下面关于这两个节点的记录留作历史，
+> 它们讲的坑（`bislerp` 未定义、`squeeze()` 压批、`paste` 丢 alpha、`anchor="mm"`
+> 按行高居中）都是真发生过的，但代码已经不在了。
 
 ### 上游 bug（不是改名，是修逻辑）
 
@@ -1600,6 +1648,52 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
   里的 `if anchor == "center":` 读成输入名（`QG_MaskAlign` 踩过，已把 `_anchor_offset`
   挪到 class 之后）。
 
+## Outpaint Board（`QG_OutpaintBoard`，自写，2026-11-01）
+
+### 为什么要自己写
+
+功能对位孤海工具箱的「外补画板（可视化）」。**没有搬一行代码**（实测：归一化后最长连续
+相同 2 行 —— 只是 `};` 和 `}`；去样板行逐行重合 3.0%；行级序列相似 2.0%），
+交互与实现都是按本包的约定重来的。
+
+### 和参考实现的四处刻意不同
+
+| 方面 | 本节点 | 参考实现 |
+|---|---|---|
+| 扩边时的缩放 | 钉死：点一下 / 拖一下只改画板，画面在屏幕上的位置和大小都不动 | 随画板自动收缩 |
+| 缩小 | 点回或拖回都能把扩出去的边收回来 | 只能往外扩 |
+| 参数位置 | 收进节点右侧的浮层（`.qgtools-obp-sheet`，贴右边放不下时翻到左侧） | 直接铺在面板上 |
+| 主色 | 琥珀橙 `#FFA23A` | 青色 |
+
+「可见范围就是上限」是刻意的：想再扩就先滚轮缩小。扩出去能撤回也是刻意的 ——
+一个扩了回不去的画板是一道单向门。
+
+### 不复用 `_qg_pad_helpers.resolve_pad_geometry`
+
+那个函数的整除数语义是「就近取整、可能裁掉几像素」，本节点的契约是
+「只往上取整、差额补右下、绝不动图像」，合并会改变行为，所以几何是独立的纯函数
+`compute_layout`。颜色解析**复用** `_qg_color_helpers.parse_fill_color` —— 那一层
+全包共用没有语义分歧。
+
+### 前端四条硬约定（都在 `web/outpaint_board/index.js` 里注释了）
+
+1. **不要覆盖 `widget.computeSize`**。覆盖过之后前端不再按 `getHeight` 走，
+   会自己把节点撑高（早期版本出现过「拉一下节点，面板疯长到 1196」）。
+2. **坐标必须除以 `rect.width / clientWidth`**。ComfyUI 把整块节点按 `ds.scale`
+   做 CSS transform，`getBoundingClientRect()` 给的是视觉像素，canvas 内部用布局像素；
+   在 86% 缩放下直接混用会让准星偏几十像素。
+3. **wheel / 中键必须在 `document` 捕获阶段拦**。LiteGraph 在捕获阶段就把它们吃了，
+   面板拿不到；所以是 `addEventListener(type, fn, {capture: true})` + `stopImmediatePropagation`。
+4. **准星走 DOM 层**（`.qgtools-obp-cursor` 的 `transform`），不画在 canvas 上。
+   画在 canvas 上等于每次 `pointermove` 都重绘整张图，视觉上会抖；现在重绘计数恒定。
+
+### 高度归尺寸表
+
+节点高度不写死：`fillNodeHeight` 的地板取 `panelHeight()`，面板地板 `PANEL_MIN_H = 220`，
+节点地板 470 从 `sizeFor("QG_OutpaintBoard").minH` 读。**新建默认高 780 只能写在
+`node_width.mjs` 的 `SIZES` 里** —— 少了那条登记时 `pinNodeSize` 会按 `DEFAULT_WIDTH`
+把宽度钉成 270、高度留给控件自己算，节点只有 266 高、预览区挤成一条（本轮踩过）。
+
 ## 导出图像（`QG_ExportImage`）：JPEG 参数到底怎么选
 
 ### 为什么要有这个节点
@@ -1685,7 +1779,7 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.11  |  47 nodes loaded  |  9 categories
+  QG-tools v0.9.12  |  55 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```
@@ -1725,6 +1819,31 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
   各节点条目里本来就有，`zh()` 走合并字典直接复用。
 - **验证**：专项脚本 `tools/verify_appearance.py`（真机 CDP 造节点看上色 / 徽章 /
   菜单）；`tools/probe_teo_color.py` 验 TextEditOutput 也吃到配色。
+
+## snaplines 全局扩展（QG-Multipack 搬入，2026-11-08）
+
+用户点名搬 `EXT.SnapLines`（自有插件 `ComfyUI-QG-Multipack v0.1.0` 的
+`web/snaplines_v7.js`，1291 行），经确认后按 **1:1 搬运**落到 `web/snaplines/index.js`。
+清单在 `dist/QG-Multipack-节点搬迁清单.html`，搬完该项已划除。
+
+- **它是什么**：一个文件注册两个全局扩展 `QG.SnapLines`（拖动 / 缩放时的橙色对齐
+  参考线，8 屏幕像素阈值、Shift 临时关、Alt 副本参与）与 `QG.Align`（选中 ≥2 个对象
+  后的 12 图标排列面板：对齐 / 统一尺寸 / 等间距）。**不产生节点形态**，所以不进
+  `ORIGINS.json`、nodeDefs、`node_width`、别名表等节点登记；只有 `package_plugin.py`
+  的 REQUIRED 加了这一条文件。
+- **只改了四处**：`../../scripts/app.js` → `/scripts/app.js`（目录层级变了，也是本包
+  约定）；日志前缀 `[QG-Multipack]` → `[QG-tools]`；设置面板分类首段
+  `"QG 工具"` → `"QG-tools"`（两处）；文件名与目录。反向还原后与源文件逐字节相同，
+  功能逻辑一行未改。扩展名、设置键 `QG.SnapLines.Enabled` /
+  `QG.Align.ToolboxButton`、命令 id、`QYH.*` 老设置迁移、CSS 的 `qyh-align-*` 前缀、
+  `window.__qyh*` 调试钩子全部保留。
+- 🔴 **搬前查过的三处冲突**：① `QG-NodeMeasure` 只挂 `getNodeMenuItems`，本扩展包的是
+  canvas 级 `getExtraMenuOptions`，不会让右键出现两项「测量尺寸」；② `lora_loader` 用
+  `chainCallback(canvas, "onDrawForeground", …)`，本扩展的 `hookDraw` 也保留并调用
+  `prev`，两者叠加不互相覆盖；③ 本机 `custom_nodes/` 没有装 QG-Multipack，所以不会
+  双份注册 —— **换机器两个插件只能留一个**，同名扩展 + 同名设置 + 两套 pointer 钩子
+  会打架。另外它检测到 `AusBoss.Canvas.SnapLines` 或 `Pixaroma.Align.Enabled` 开着时会
+  自动让位。
 
 ## 发布到 Registry
 
@@ -1767,7 +1886,7 @@ curl -s 'https://api.comfy.org/nodes/comfyui-qg-tools/versions?include_status_re
 | 位置 | 命中内容 | 被认定成 | 实际 |
 |---|---|---|---|
 | `nodes/qg_google_translate.py:141` | 读取可选 API key 的那一行 | `python_environment_manipulation`（T1574.007 环境变量劫持） | 读自己可选 API key |
-| `nodes/qg_text_overlay_image.py:45` | 读 `WINDIR` 环境变量的那行 | 同上 | 找 Windows 字体目录 |
+| `nodes/qg_text_overlay_image.py:45` | 读 `WINDIR` 环境变量的那行 | 同上 | 找 Windows 字体目录（该文件 11-08 已删除；接手的 `QG_AddWatermark` 特意改用固定路径、不读环境变量） |
 | `nodes/qg_google_translate.py:121` | `su` → `sundanese` 这一条 | `python_privilege_escalation`（sudo/su 提权） | 巽他语的 BCP-47 语言码（**v0.9.3 已删除该键**） |
 | `web/google_translate/index.js:89` | 给 `manual_translate_prompt` 做 `bind` 绑定的那行 | `python_network_operations`（socket bind） | JS 的函数 `bind` |
 

@@ -8,18 +8,20 @@
 // 移植自 ComfyUI-AusBoss（MIT，js/shared/compare_erase_stage.mjs）。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026103135";
-import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026103135";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026103135";
-import { makeScrubInput } from "./scrub_input.mjs?v=2026103135";
-import { makeSlideSwitch } from "./slide_switch.mjs?v=2026103135";
-import { zhPair } from "./zh.mjs?v=2026103135";
-import { extendStroke } from "./compare_erase.mjs?v=2026103135";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026110820";
+import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=2026110820";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026110820";
+import { makeScrubInput } from "./scrub_input.mjs?v=2026110820";
+import { makeSlideSwitch } from "./slide_switch.mjs?v=2026110820";
+import { zhPair } from "./zh.mjs?v=2026110820";
+import { extendStroke } from "./compare_erase.mjs?v=2026110820";
 import {
   CHECKER,
   ERASE_OUTSIDE,
   ERASE_SIZE,
   ERASE_SOFT_DEFAULT,
+  SAVE_NAME,
+  SAVE_NAME_MAX,
   brushCore,
   brushSigma,
   clampSize,
@@ -39,7 +41,7 @@ import {
   steppedSoft,
   strokeFits,
   typedName,
-} from "./compare_erase.mjs?v=2026103135";
+} from "./compare_erase.mjs?v=2026110820";
 
 // 图上面那行工具、图下面那行保存，各有多高。节点窄的时候这两行会折成两行，
 // 而不是把节点撑宽——地方从图上出。
@@ -477,7 +479,7 @@ function syncTools(er) {
   er.nameInput.disabled = wired;
   if (wired) er.nameInput.value = er.refs?.name || "";
   else if (document.activeElement !== er.nameInput) er.nameInput.value = typed;
-  er.nameInput.placeholder = wired ? zhPair("from the filename input", "来自 filename 输入") : "compare";
+  er.nameInput.placeholder = wired ? zhPair("from the filename input", "来自 filename 输入") : SAVE_NAME;
   const hint = nameHint(wired ? er.refs?.name : typed, layers);
   er.nameInput.title = wired
     ? zhPair(
@@ -857,6 +859,10 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved,
   };
   er.canvas.className = "qgtools-compare-erase";
   stage.append(er.canvas);
+  // 只读出口，给真机探针用：`er` 是闭包里的，外面拿不到，而「笔圈有没有跟着
+  // 指针消失」这类问题只有看数据源（er.pointer）才判得准，截图只能靠猜。
+  // 挂在 canvas 元素上而不是 window 上：节点一删，它跟着一起没。
+  er.canvas.__qgErase = er;
 
   const click = (button, action) => {
     button.addEventListener("pointerdown", (event) => event.stopPropagation(), { signal });
@@ -980,7 +986,9 @@ export function makeEraser({ node, root, stage, imageA, imageB, signal, onSaved,
   er.nameInput = document.createElement("input");
   er.nameInput.type = "text";
   er.nameInput.spellcheck = false;
-  er.nameInput.maxLength = 80;
+  // 上限跟着 SAVE_NAME_MAX 走：前端 typedName 已经截断，这里是浏览器自己的
+  // 第二道，两处写死同一个数迟早会不一致。
+  er.nameInput.maxLength = SAVE_NAME_MAX;
   er.nameInput.setAttribute("aria-label", zhPair("File name", "文件名"));
   er.nameInput.addEventListener("pointerdown", (event) => event.stopPropagation(), { signal });
   er.nameInput.addEventListener("keydown", (event) => {

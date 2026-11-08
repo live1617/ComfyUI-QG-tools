@@ -15,11 +15,13 @@ from __future__ import annotations
 import os
 
 from . import _qg_md_core as md_core
+from ._qg_combo_legacy import combo_legacy
 from ._qg_md_routes import NO_FILE, register_md_routes
 
 register_md_routes()
 
 
+@combo_legacy("QG_MDReader")
 class QGMarkdownReader:
     CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
@@ -29,6 +31,13 @@ class QGMarkdownReader:
         "the file exactly as it is. The node previews the document on the canvas."
     )
     SEARCH_ALIASES = ["md", "markdown", "document", "doc", "text", "read", "qg", "加载文档"]
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, mode=None):
+        # mode 的中文标签（纯文本 / 原始）登记在 nodes/_qg_combo_legacy.py 的
+        # LEGACY 表里；值本身一直是英文，这里只是把选项名报上去，让 ComfyUI
+        # 跳过「值必须在列表里」这道检查。md_file 是文件列表，不在此列。
+        return True
 
     @classmethod
     def INPUT_TYPES(cls):

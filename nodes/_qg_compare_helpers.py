@@ -375,7 +375,7 @@ def align_pair(*, picture_a, picture_b, temp_root, name: str = "") -> dict:
     # 按「实际看到的样子」量：透明部分铺在中灰上。
     result = measure(_on_gray(source), _on_gray(edit), "zoom + shift", ALIGN_MAX_ZOOM)
     if not result.reliable:
-        logging.info("[QG-tools] 图像对比：对齐没动 B —— %s", result.reason)
+        logging.info("[QG-tools] Image Compare: alignment did not move B - %s", result.reason)
         return _settled("align_failed")
     off = result.worst_corner
     if off < ALIGN_SETTLED:

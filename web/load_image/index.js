@@ -22,15 +22,15 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026103135";
-import { createMediaPicker } from "../shared/media_picker.mjs?v=2026103135";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026103135";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026103135";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
-import { commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026103135";
-import { vueNodesEnabled } from "../shared/vue_mode.mjs?v=2026103135";
-import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "../shared/widget_visibility.mjs?v=2026103135";
-import { zh, zhPair } from "../shared/zh.mjs?v=2026103135";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026110820";
+import { createMediaPicker } from "../shared/media_picker.mjs?v=2026110820";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026110820";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026110820";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110820";
+import { commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026110820";
+import { vueNodesEnabled } from "../shared/vue_mode.mjs?v=2026110820";
+import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "../shared/widget_visibility.mjs?v=2026110820";
+import { zh, zhPair } from "../shared/zh.mjs?v=2026110820";
 
 const NODE_CLASS = "QG_LoadImage";
 const CSS_ID = "qgtools-load-image-css";
@@ -62,7 +62,7 @@ const FONT = `-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`;
 let maskEditor = null;
 function loadMaskEditor() {
   if (maskEditor) return Promise.resolve(maskEditor);
-  return import("../shared/mask_editor.mjs?v=2026103135").then(
+  return import("../shared/mask_editor.mjs?v=2026110820").then(
     (module) => (maskEditor = module),
     (error) => {
       console.error("[QG-tools] mask editor failed to load", error);
@@ -154,12 +154,26 @@ function viewOf(selection) {
 
 // 选中值可能是 "sub/a.png"，也可能是编辑器存的 "clipspace/qg-painted-x-123.png"。
 // `bust` 每次存盘后加一：文件名不同也照样加，省得浏览器拿缓存。
-function imageUrl(selection, bust) {
+//
+// 🔴 `type` 必须从注解尾读，不能写死 input：同一个函数现在也给核心的
+//    LoadImageOutput 用，它的值是 "xxx.png [output]"（列表来自 output 目录）。
+//    写死 input 的话 /view 会去 input 里找那张图，直接 404 —— 而编辑器只显示
+//    「图加载失败」，看起来像文件丢了。
+function imageType(selection) {
+  const match = /\s+\[(input|output|temp)\]\s*$/i.exec(String(selection ?? ""));
+  return match ? match[1].toLowerCase() : "input";
+}
+
+// 🔴 `type` 必须显式传：`pictureOf` / `viewOf` 会把注解尾剥掉（"a.png [output]" →
+//    "a.png"），到这一步已经猜不出原值在哪个目录了。核心 LoadImageOutput 的值都
+//    带 [output]，靠猜就会去 input 里找一张 output 的图 —— /view 404，编辑器只
+//    显示「图加载失败」，看着像文件丢了。不传时按注解尾兜底（QG_LoadImage 用）。
+function imageUrl(selection, bust, type) {
   const text = String(selection || "").split("[")[0].trim().replaceAll("\\", "/");
   const parts = text.split("/");
   const filename = parts.pop() || "";
   const subfolder = parts.join("/");
-  const query = { filename, subfolder, type: "input" };
+  const query = { filename, subfolder, type: type ?? imageType(selection) };
   if (bust) query.t = String(bust);
   return api.apiURL(`/view?${new URLSearchParams(query)}`);
 }
@@ -612,9 +626,9 @@ function mountPanel(node) {
     module.openMaskEditor({
       title: zh("Edit mask"),
       name: selection,
-      imageUrl: imageUrl(flat, node.__qgLoadBust),
-      maskUrl: flat === selection ? null : imageUrl(selection, node.__qgLoadBust),
-      viewUrl: view ? imageUrl(view, node.__qgLoadBust) : null,
+      imageUrl: imageUrl(flat, node.__qgLoadBust, "input"),
+      maskUrl: flat === selection ? null : imageUrl(selection, node.__qgLoadBust, "input"),
+      viewUrl: view ? imageUrl(view, node.__qgLoadBust, "input") : null,
       // 上次选的颜色、透明度和输出档位跟着打开，别每次都回到绿色 50% 仅遮罩。
       tint: valueOf(node, "tint_color", "green"),
       alpha: Number(valueOf(node, "tint_alpha", 50)),
@@ -831,6 +845,106 @@ app.registerExtension({
       } catch (error) {
         console.error("[QG-tools] load image panel failed to mount", error);
       }
+    });
+  },
+});
+
+// ── 核心加载节点的「编辑遮罩」─────────────────────────────────────────────
+// QG_LoadImage 有自己面板上的按钮，核心的 Load Image / Load Image (Output) 只能
+// 用官方那支编辑器 —— 而它保存时是**直接改写原图的 alpha**（server.py 的
+// /upload/mask 把原文件重存一遍），画坏了没法回头。这两类节点选中的常常正是
+// 想打遮罩的那张图，所以在右键菜单里补一项，用同一支编辑器（另存新文件、
+// 原图一个字节不动）。
+//
+// 🔴 为什么是右键菜单而不是加控件：`addWidget` 加的东西会进 `widgets_values`，
+//    等于往**别人的**存档里塞一个自家插件的值 —— 没装本插件的人打开那张图会多
+//    出一列没人认识的数据，还可能顶掉后面的控件。菜单项不参与序列化，零副作用。
+//
+// 🔴 为什么能直接改核心节点的 COMBO 值：核心 `LoadImage.VALIDATE_INPUTS` 只问
+//    `folder_paths.exists_annotated_filepath(image)`（文件在不在），不看它在哪个
+//    目录。所以成品留在 input/clipspace、值写 "clipspace/qg-painted-….png" 一样
+//    跑得通，不用把文件塞进 output 去污染用户的产图目录。
+//
+// 实测（8199 真机 /prompt）：`"0.jpg [input]"`、`"clipspace/qg-painted-x.png"`
+// 都能过校验并跑通；`"nope-xyz.png [output]"` 被拒（文件不存在）。
+const CORE_LOADERS = new Set(["LoadImage", "LoadImageOutput"]);
+
+function coreImageWidget(node) {
+  return node?.widgets?.find((widget) => widget?.name === "image") ?? null;
+}
+
+// 改值必须走 `widget.callback`：Nodes 2.0 里控件是 Vue 组件，光赋 `value` 不会
+// 刷新显示，用户会以为没保存。
+function setCoreImage(node, value) {
+  const widget = coreImageWidget(node);
+  if (!widget) return;
+  widget.value = value;
+  try {
+    widget.callback?.(value, app.canvas, node, [0, 0]);
+  } catch (error) {
+    console.warn("[QG-tools] core image widget callback failed", error);
+  }
+  node.setDirtyCanvas?.(true, true);
+  app.graph?.setDirtyCanvas?.(true, true);
+  notifyQgChange();
+}
+
+async function openCoreEditor(node) {
+  const selection = String(coreImageWidget(node)?.value ?? "");
+  if (!selection) {
+    showToast({
+      severity: "warn",
+      detail: zhPair("Pick an image first, then edit its mask.", "先选一张图，再编辑遮罩。"),
+    });
+    return;
+  }
+  const module = maskEditor ?? (await loadMaskEditor());
+  if (!module) {
+    showToast({
+      severity: "error",
+      detail: zhPair(
+        "Mask editor could not be loaded. Refresh the page and try again.",
+        "遮罩编辑器没有加载出来，刷新页面再试。",
+      ),
+    });
+    return;
+  }
+  // 画面用原图副本（不透明），遮罩从成品自己的 alpha 读回来 —— 二次编辑接着改。
+  // 🔴 type 要从**原始值**上取：它可能指着 output（核心节点）也可能是 input 里的
+  //    成品，剥掉注解尾之后就看不出区别了。
+  const type = imageType(selection);
+  const flat = pictureOf(selection);
+  const view = flat === selection ? null : viewOf(selection);
+  module.openMaskEditor({
+    title: zh("Edit mask"),
+    name: selection,
+    imageUrl: imageUrl(flat, undefined, type),
+    maskUrl: flat === selection ? null : imageUrl(selection, undefined, type),
+    viewUrl: view ? imageUrl(view, undefined, type) : null,
+    // 核心节点没有 tint_output / tint_color / tint_alpha 三件套，所以颜色强度
+    // 用编辑器默认值。成品 PNG 本身已经把颜色烘进去了，再打开还是那个颜色。
+    onSaved: (stored) => setCoreImage(node, stored),
+  });
+}
+
+app.registerExtension({
+  name: "QG.CoreImageMask",
+  // 用 litegraph 原生的 `getExtraMenuOptions`（节点级扩展点），不去补
+  // `LGraphCanvas.prototype.getNodeMenuOptions` —— 后者已被核心标为 deprecated，
+  // 控制台会直接点名我们的扩展，而且核心换实现时会静默失效。
+  beforeRegisterNodeDef(nodeType, nodeData) {
+    const kind = String(nodeData?.name ?? "");
+    if (!CORE_LOADERS.has(kind)) return;
+    chainCallback(nodeType.prototype, "getExtraMenuOptions", function (canvas, options) {
+      if (!Array.isArray(options)) return;
+      // 追加在末尾：别的插件（BlueBox / KOOK / rgthree）也在这张菜单里插条目，
+      // 抢位置只会让顺序随加载时间变。
+      options.push({
+        content: zhPair("Edit mask (QG-tools)", "编辑遮罩（QG-tools）"),
+        callback: () => {
+          void openCoreEditor(this);
+        },
+      });
     });
   },
 });

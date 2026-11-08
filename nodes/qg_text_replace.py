@@ -56,8 +56,8 @@ MODES = [LITERAL, REGEX]
 
 # Where the two boxes that can be wrong are named in errors. Kept apart from
 # the message text so the wording can change without touching the logic.
-_FIND_LABEL = "查找内容"
-_REPLACE_LABEL = "替换内容"
+_FIND_LABEL = "the Find box"
+_REPLACE_LABEL = "the Replace box"
 
 
 @combo_legacy("QG_TextReplace")
@@ -172,7 +172,7 @@ class QGTextReplace:
             pattern = re.compile(find)
         except re.error as exc:
             raise ValueError(
-                "[QG-tools] 文本替换：第 %d 条规则的模式选了 regex，但%s不是合法正则 —— "
+                "[QG-tools] Text Replace: rule %d uses regex mode but %s is not a valid regex - "
                 "%r（%s）" % (rule_no, _FIND_LABEL, find, exc)
             ) from None
 
@@ -184,10 +184,10 @@ class QGTextReplace:
             #   back\slash-> bad escape \s
             #   \1        -> invalid group reference（没分组或分组不够）
             raise ValueError(
-                "[QG-tools] 文本替换：第 %d 条规则的%s里有 regex 不认的转义 —— %r（%s）。"
-                "regex 模式下替换内容是模板：反斜杠要写两次（C:\\\\temp），"
-                "\\1 表示第 1 个分组。只是想原样插入一段带反斜杠的文本，"
-                "就把这条规则改成字面模式（literal 不解释任何字符）。"
+                "[QG-tools] Text Replace: rule %d has an escape in %s that regex does not understand - %r (%s). "
+                "In regex mode the replacement is a template: write backslashes twice (C:\\temp), "
+                "\\1 means group 1. To insert text that contains backslashes verbatim, "
+                "switch this rule to literal mode (literal does not interpret anything)."
                 % (rule_no, _REPLACE_LABEL, replace, exc)
             ) from None
 

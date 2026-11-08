@@ -44,16 +44,16 @@ CONSTANTS = {
 # 报错时把 ast 的运算符类翻成人话：红框里写「文本不能做 除法 运算」比
 # 「不能做 Div 运算」好懂。
 _OP_TEXT = {
-    ast.Sub: "减法",
-    ast.Div: "除法",
-    ast.FloorDiv: "整除",
-    ast.Mod: "取余",
-    ast.Pow: "幂",
-    ast.BitAnd: "按位与",
-    ast.BitOr: "按位或",
-    ast.BitXor: "按位异或",
-    ast.LShift: "左移",
-    ast.RShift: "右移",
+    ast.Sub: "subtraction",
+    ast.Div: "division",
+    ast.FloorDiv: "floor division",
+    ast.Mod: "modulo",
+    ast.Pow: "power",
+    ast.BitAnd: "bitwise and",
+    ast.BitOr: "bitwise or",
+    ast.BitXor: "bitwise xor",
+    ast.LShift: "left shift",
+    ast.RShift: "right shift",
 }
 
 # 全角 / 中文输入法打出来的运算符 → 半角。用户从聊天窗口、比例标注里粘进来的
@@ -116,7 +116,7 @@ def to_value(value):
     if not isinstance(value, str):
         value = str(value)
     if len(value) > MAX_TEXT:
-        raise MathError("接进来的文本太长了（上限 %d 个字符）" % MAX_TEXT)
+        raise MathError("Text from the input is too long (limit %d characters)" % MAX_TEXT)
     # 只有「判断像不像数字」用归一化后的串，返回的仍是原文 ——
     # 归一化会把全角括号改成半角，拿它当文本内容会悄悄改字。
     stripped = value.strip()
@@ -139,7 +139,7 @@ def format_number(value):
         return str(value)
     if not math.isfinite(number):
         # evaluate() 出口已经拦过，这里只是别让 format 出 "inf" 这种下游看不懂的串。
-        raise MathError("算出来的不是有限数，没法当文本用")
+        raise MathError("The result is not a finite number, so it cannot be used as text")
     if number == int(number) and abs(number) < 1e16:
         return str(int(number))
     text = "%.10g" % number
@@ -163,16 +163,16 @@ def _concat(left, right):
     a = _text_of(left)
     b = _text_of(right)
     if len(a) + len(b) > MAX_TEXT:
-        raise MathError("拼接出来的文本太长了（上限 %d 个字符）" % MAX_TEXT)
+        raise MathError("The joined text is too long (limit %d characters)" % MAX_TEXT)
     return a + b
 
 
 def _repeat(text, count):
-    times = int(_number(count, "重复"))
+    times = int(_number(count, "repetition"))
     if times <= 0:
         return ""
     if len(text) * times > MAX_TEXT:
-        raise MathError("重复出来的文本太长了（上限 %d 个字符）" % MAX_TEXT)
+        raise MathError("The repeated text is too long (limit %d characters)" % MAX_TEXT)
     return text * times
 
 
@@ -185,7 +185,7 @@ def _repeat(text, count):
 def _int(x):
     number = _number(x, "int")
     if abs(number) > MAX_ABS:
-        raise MathError("int() 的值太大（上限 %g）" % MAX_ABS)
+        raise MathError("int() value is too large (limit %g)" % MAX_ABS)
     return int(number)
 
 
@@ -201,7 +201,7 @@ def round_half_away(value):
     """
     if not math.isfinite(value):
         # round(inf) 在 math.floor 里抛的是裸 OverflowError，红框会显示英文回溯。
-        raise MathError("round() 需要有限数，收到 %r" % (value,))
+        raise MathError("round() needs a finite number, got %r" % (value,))
     lower = math.floor(value)
     diff = value - lower
     if diff > 0.5:
@@ -218,7 +218,7 @@ def _round(x, digits=None):
         return round_half_away(number)
     places = int(_number(digits, "round"))
     if not -15 <= places <= 15:
-        raise MathError("round() 的小数位要在 -15 到 15 之间")
+        raise MathError("round() digits must be between -15 and 15")
     factor = 10.0 ** places
     return round_half_away(number * factor) / factor
 
@@ -229,7 +229,7 @@ def _factorial(x):
     # 写到 300，可节点输出是 float：171 以上会在节点层的 float(result) 里抛
     # 裸 OverflowError，红框里是英文回溯而不是这里设计的提示。
     if not 0 <= number <= 170:
-        raise MathError("factorial() 只接受 0 到 170 的整数（更大的阶乘超出双精度范围）")
+        raise MathError("factorial() only accepts integers from 0 to 170 (larger factorials exceed double precision)")
     return math.factorial(number)
 
 
@@ -245,13 +245,13 @@ def _lcm(x, y):
     return abs(a * b) // math.gcd(a, b)
 
 
-def _number(value, name="参数"):
+def _number(value, name="argument"):
     if isinstance(value, bool):
         return 1.0 if value else 0.0
     try:
         return float(value)
     except (TypeError, ValueError):
-        raise MathError("%s() 只接受数字，收到 %r" % (name, value))
+        raise MathError("%s() only accepts numbers, got %r" % (name, value))
 
 
 def _sign(x):
@@ -265,15 +265,15 @@ def _pow(base, exponent):
     b = _number(base, "pow")
     e = _number(exponent, "pow")
     if abs(e) > MAX_EXPONENT:
-        raise MathError("指数太大（上限 %d）" % MAX_EXPONENT)
+        raise MathError("Exponent is too large (limit %d)" % MAX_EXPONENT)
     if abs(b) > MAX_ABS:
-        raise MathError("底数太大（上限 %g）" % MAX_ABS)
+        raise MathError("Base is too large (limit %g)" % MAX_ABS)
     try:
         return b ** e
     except ZeroDivisionError:
-        raise MathError("0 不能取负数次幂")
+        raise MathError("Zero cannot be raised to a negative power")
     except OverflowError:
-        raise MathError("幂运算结果溢出")
+        raise MathError("Power operation overflowed")
 
 
 def _guard(name, function):
@@ -284,9 +284,9 @@ def _guard(name, function):
         except MathError:
             raise
         except ZeroDivisionError:
-            raise MathError("%s() 里出现了除以零" % name)
+            raise MathError("%s(): division by zero" % name)
         except (ValueError, TypeError, OverflowError) as exc:
-            raise MathError("%s() 算不了：%s" % (name, exc))
+            raise MathError("%s() failed: %s" % (name, exc))
     return call
 
 
@@ -327,13 +327,13 @@ def _arg_text(value, name):
         return value
     if isinstance(value, (int, float)):
         return format_number(value)
-    raise MathError("%s() 只接受文本，收到 %r" % (name, value))
+    raise MathError("%s() only accepts text, got %r" % (name, value))
 
 
 def _len(value):
     if isinstance(value, (str, list)):
         return len(value)
-    raise MathError("len() 只接受文本或列表，收到 %r" % (value,))
+    raise MathError("len() only accepts text or a list, got %r" % (value,))
 
 
 def _str(value):
@@ -344,7 +344,7 @@ def _replace(text, old, new):
     source = _arg_text(text, "replace")
     result = source.replace(_arg_text(old, "replace"), _arg_text(new, "replace"))
     if len(result) > MAX_TEXT:
-        raise MathError("replace() 出来的文本太长了（上限 %d 个字符）" % MAX_TEXT)
+        raise MathError("replace() result is too long (limit %d characters)" % MAX_TEXT)
     return result
 
 
@@ -355,15 +355,15 @@ def _split(text, sep=None):
     else:
         parts = source.split(_arg_text(sep, "split"))
     if len(parts) > MAX_LIST:
-        raise MathError("split() 出来的项太多了（上限 %d 项）" % MAX_LIST)
+        raise MathError("split() produced too many items (limit %d)" % MAX_LIST)
     return parts
 
 
 def _join(sep, items):
     if not isinstance(items, list):
-        raise MathError("join(分隔符, 列表) 的第二个参数要写成 […]")
+        raise MathError("join(separator, list) needs the second argument written as […]")
     if len(items) > MAX_LIST:
-        raise MathError("join() 的列表太长了（上限 %d 项）" % MAX_LIST)
+        raise MathError("join() list is too long (limit %d items)" % MAX_LIST)
     separator = _arg_text(sep, "join")
     total = 0
     parts = []
@@ -371,7 +371,7 @@ def _join(sep, items):
         piece = _text_of(item)
         total += len(piece) + len(separator)
         if total > MAX_TEXT:
-            raise MathError("join() 拼出来的文本太长了（上限 %d 个字符）" % MAX_TEXT)
+            raise MathError("join() result is too long (limit %d characters)" % MAX_TEXT)
         parts.append(piece)
     return separator.join(parts)
 
@@ -380,7 +380,7 @@ def _zfill(text, width):
     source = _arg_text(text, "zfill")
     size = int(_number(width, "zfill"))
     if not 0 <= size <= MAX_TEXT:
-        raise MathError("zfill() 的宽度要在 0 到 %d 之间" % MAX_TEXT)
+        raise MathError("zfill() width must be between 0 and %d" % MAX_TEXT)
     return source.zfill(size)
 
 
@@ -414,11 +414,11 @@ def _eval(node, scope):
         value = node.value
         if isinstance(value, str):
             if len(value) > MAX_TEXT:
-                raise MathError("表达式里的文本太长了（上限 %d 个字符）" % MAX_TEXT)
+                raise MathError("Text in the expression is too long (limit %d characters)" % MAX_TEXT)
             return value
         if isinstance(value, (int, float)):
             return value
-        raise MathError("表达式里出现了不支持的常量 %r" % (value,))
+        raise MathError("Unsupported constant in the expression: %r" % (value,))
 
     if isinstance(node, ast.Name):
         if node.id in scope:
@@ -427,8 +427,8 @@ def _eval(node, scope):
         lowered = node.id.lower()
         if lowered in scope:
             return scope[lowered]
-        raise MathError("不认识的名字「%s」，能用的是 %s"
-                        % (node.id, "、".join(sorted(scope))))
+        raise MathError("Unknown name \"%s\"; available: %s"
+                        % (node.id, ", ".join(sorted(scope))))
 
     if isinstance(node, ast.UnaryOp):
         value = _eval(node.operand, scope)
@@ -440,7 +440,7 @@ def _eval(node, scope):
             return not value
         if isinstance(node.op, ast.Invert):
             return ~int(_number(value))
-        raise MathError("不支持的一元运算")
+        raise MathError("Unsupported unary operation")
 
     if isinstance(node, ast.BinOp):
         left = _eval(node.left, scope)
@@ -459,15 +459,15 @@ def _eval(node, scope):
         # 其余算术只对数字成立：给一句人话，别让 float("abc") 的英文异常漏出去。
         if isinstance(left, str) or isinstance(right, str):
             raise MathError(
-                "文本不能做 %s 运算（%r 和 %r）：要算数先用 float() 或 int() 转成数字"
-                % (_OP_TEXT.get(type(op), "这个"), left, right)
+                "Text cannot be used with %s (%r and %r): convert it to a number with float() or int() first"
+                % (_OP_TEXT.get(type(op), "this operation"), left, right)
             )
         if isinstance(op, ast.Sub):
             return _number(left) - _number(right)
         if isinstance(op, (ast.Div, ast.FloorDiv, ast.Mod)):
             divisor = _number(right)
             if divisor == 0:
-                raise MathError("除数是 0")
+                raise MathError("Division by zero")
             dividend = _number(left)
             if isinstance(op, ast.Div):
                 return dividend / divisor
@@ -486,7 +486,7 @@ def _eval(node, scope):
             return int(_number(left)) << min(32, max(0, int(_number(right))))
         if isinstance(op, ast.RShift):
             return int(_number(left)) >> min(64, max(0, int(_number(right))))
-        raise MathError("不支持的运算符")
+        raise MathError("Unsupported operator")
 
     if isinstance(node, ast.BoolOp):
         values = [_eval(item, scope) for item in node.values]
@@ -514,10 +514,10 @@ def _eval(node, scope):
                 ok = left != right
             elif isinstance(op, (ast.In, ast.NotIn)):
                 if not isinstance(right, (str, list)):
-                    raise MathError("in 的右边只能是文本或列表，收到 %r" % (right,))
+                    raise MathError("The right side of 'in' must be text or a list, got %r" % (right,))
                 if isinstance(right, str) and not isinstance(left, str):
                     # `5 in "abc"` 在 Python 里抛 TypeError，那会一路穿到红框。
-                    raise MathError("右边是文本时，左边也得是文本，收到 %r" % (left,))
+                    raise MathError("When the right side is text, the left side must be text too, got %r" % (left,))
                 ok = left in right
                 if isinstance(op, ast.NotIn):
                     ok = not ok
@@ -534,7 +534,7 @@ def _eval(node, scope):
                     ast.GtE: first >= second,
                 }[type(op)]
             else:
-                raise MathError("不支持的比较运算")
+                raise MathError("Unsupported comparison")
             if not ok:
                 return False
             left = right
@@ -545,58 +545,58 @@ def _eval(node, scope):
 
     if isinstance(node, (ast.List, ast.Tuple)):
         if len(node.elts) > MAX_LIST:
-            raise MathError("列表太长了（上限 %d 项）" % MAX_LIST)
+            raise MathError("List is too long (limit %d items)" % MAX_LIST)
         return [_eval(item, scope) for item in node.elts]
 
     if isinstance(node, ast.Subscript):
         target = _eval(node.value, scope)
         if not isinstance(target, (str, list)):
-            raise MathError("只有文本和列表能用下标（[ ]），收到 %r" % (target,))
+            raise MathError("Only text and lists support indexing ([ ]), got %r" % (target,))
         part = node.slice
         if isinstance(part, ast.Slice):
             bounds = []
             for piece in (part.lower, part.upper, part.step):
                 bounds.append(None if piece is None
-                              else int(_number(_eval(piece, scope), "下标")))
+                              else int(_number(_eval(piece, scope), "index")))
             try:
                 return target[slice(bounds[0], bounds[1], bounds[2])]
             except ValueError:
-                raise MathError("切片的步长不能是 0")
-        position = int(_number(_eval(part, scope), "下标"))
+                raise MathError("Slice step cannot be 0")
+        position = int(_number(_eval(part, scope), "index"))
         try:
             return target[position]
         except IndexError:
-            raise MathError("下标越界：这里只有 %d 项，取不到第 %d 个"
+            raise MathError("Index out of range: only %d items, cannot take item %d"
                             % (len(target), position))
 
     if isinstance(node, ast.Call):
         if not isinstance(node.func, ast.Name):
-            raise MathError("只能直接调用白名单里的函数，不支持 a.b() 这种写法")
+            raise MathError("Only whitelisted functions can be called directly; a.b() is not supported")
         name = node.func.id
         function = FUNCTIONS.get(name)
         if function is None:
-            raise MathError("没有叫「%s」的函数，能用的是 %s"
-                            % (name, "、".join(sorted(FUNCTIONS))))
+            raise MathError("No function named \"%s\"; available: %s"
+                            % (name, ", ".join(sorted(FUNCTIONS))))
         if node.keywords:
-            raise MathError("%s() 不支持关键字参数" % name)
+            raise MathError("%s() does not accept keyword arguments" % name)
         args = []
         for arg in node.args:
             if isinstance(arg, ast.Starred):
-                raise MathError("%s() 不支持 *展开" % name)
+                raise MathError("%s() does not accept * unpacking" % name)
             args.append(_eval(arg, scope))
         try:
             return function(*args)
         except MathError:
             raise
         except TypeError as exc:
-            raise MathError("%s() 参数不对：%s" % (name, exc))
+            raise MathError("%s() got invalid arguments: %s" % (name, exc))
         except ZeroDivisionError:
-            raise MathError("%s() 里出现了除以零" % name)
+            raise MathError("%s(): division by zero" % name)
 
     if isinstance(node, ast.Attribute):
-        raise MathError("不支持属性访问（%s.…），函数请直接写名字" % getattr(node.value, "id", "?"))
+        raise MathError("Attribute access is not supported (%s....); call functions by name" % getattr(node.value, "id", "?"))
 
-    raise MathError("表达式里有不支持的写法：%s" % type(node).__name__)
+    raise MathError("Unsupported construct in the expression: %s" % type(node).__name__)
 
 
 def variables_of(**values):
@@ -610,27 +610,27 @@ def evaluate(expression, variables=None):
     if not text:
         return 0.0
     if len(text) > MAX_LENGTH:
-        raise MathError("表达式太长了（上限 %d 个字符）" % MAX_LENGTH)
+        raise MathError("Expression is too long (limit %d characters)" % MAX_LENGTH)
     try:
         tree = ast.parse(text, mode="eval")
     except SyntaxError as exc:
-        where = ("第 %s 个字符附近" % exc.offset) if exc.offset else "某个位置"
-        raise MathError("语法错误（%s）：%s" % (where, exc.msg))
+        where = ("near character %s" % exc.offset) if exc.offset else "somewhere"
+        raise MathError("Syntax error (%s): %s" % (where, exc.msg))
     if sum(1 for _ in ast.walk(tree)) > MAX_NODES:
-        raise MathError("表达式太复杂了（上限 %d 个语法节点）" % MAX_NODES)
+        raise MathError("Expression is too complex (limit %d syntax nodes)" % MAX_NODES)
     scope = dict(CONSTANTS)
     scope.update(variables or {})
     result = _eval(tree.body, scope)
     if isinstance(result, str):
         if len(result) > MAX_TEXT:
-            raise MathError("算出来的文本太长了（上限 %d 个字符）" % MAX_TEXT)
+            raise MathError("The resulting text is too long (limit %d characters)" % MAX_TEXT)
         return result
     # 出口统一拦一次：inf / nan 一律当错误。以前只兜了 NaN（静默收成 0），
     # inf 会漏到节点层变成 `int(round(inf))` 的裸 OverflowError，红框里是
     # 一句英文，跟其它中文报错对不上。这里拦掉，报错信息才说得清。
     if isinstance(result, float) and not math.isfinite(result):
         raise MathError(
-            "算出来的不是有限数（%s）：检查是不是写了 inf，或者某一步溢出了"
-            % ("无穷" if math.isinf(result) else "NaN")
+            "The result is not a finite number (%s): check for a literal inf, or an intermediate overflow"
+            % ("infinity" if math.isinf(result) else "NaN")
         )
     return result

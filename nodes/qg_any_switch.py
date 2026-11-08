@@ -136,12 +136,12 @@ class QGAnySwitch:
             if values:
                 names = ", ".join(sorted(str(key) for key in values))
                 raise RuntimeError(
-                    "QG 任意切换：收到了输入（%s），但名字对不上任何一路槽"
-                    "（要 any_01 到 any_%02d）。检查 API 图里的键名。"
+                    "QG Any Switch: got inputs (%s) but none of the names match a slot "
+                    "(expected any_01 through any_%02d). Check the key names in the API graph."
                     % (names, MAX_INPUTS)
                 )
             raise RuntimeError(
-                "QG 任意切换：一路输入都没接。至少接一路，节点才知道要输出什么。"
+                "QG Any Switch: no input is connected. Connect at least one so the node knows what to output."
             )
 
         carriers = [(name, value) for name, value in slots if not is_blank(value)]
@@ -150,10 +150,11 @@ class QGAnySwitch:
         # 是什么类型都不影响结果。这一点与原版相同，别改成把空值也算进来。
         families = {name: family_of(value) for name, value in carriers}
         if len(set(families.values())) > 1:
-            listed = "，".join("%s 是 %s" % (name, family) for name, family in families.items())
+            listed = ", ".join("%s is %s" % (name, family) for name, family in families.items())
             raise RuntimeError(
-                "QG 任意切换：接进来的输入类型不一致（%s）。这个节点只做同类型的"
-                "合并与回退，混接会把它原样交给下游，下游只会报更难懂的错误。"
+                "QG Any Switch: the connected inputs have different types (%s). This node "
+                "only merges and falls back within one type; mixed types are passed through "
+                "as-is and the downstream node will report something harder to understand."
                 % listed
             )
 
@@ -161,11 +162,12 @@ class QGAnySwitch:
             return (carriers[0][1],)
 
         # 都接了线，但值全是空的。和「没接线」区别对待：这里上游跑过了。
-        names = "、".join(name for name, _value in slots)
+        names = ", ".join(name for name, _value in slots)
         raise RuntimeError(
-            "QG 任意切换：接了 %d 路（%s），但每一路的值都是空的（None／空文本／"
-            "空列表／0 元素的张量），没有可输出的内容。检查上游是不是真的产出了"
-            "数据，或者在这些路都为空时接一路兜底。"
+            "QG Any Switch: %d inputs are connected (%s) but every one is empty "
+            "(None / empty text / empty list / zero-element tensor), so there is nothing "
+            "to output. Check that the upstream actually produced data, or wire a fallback "
+            "for the empty case."
             % (len(slots), names)
         )
 

@@ -13,8 +13,8 @@
 // 函数拖进上千行。
 // 后端对应文件：nodes/_qg_compare_helpers.py（两边数字必须一致）。
 
-import { BRUSH_SOFT_DEFAULT, clampBrushSize, clampSoft, steppedBrushSize } from "./brush.mjs?v=2026103135";
-import { zhPair } from "./zh.mjs?v=2026103135";
+import { BRUSH_SOFT_DEFAULT, clampBrushSize, clampSoft, steppedBrushSize } from "./brush.mjs?v=2026110820";
+import { zhPair } from "./zh.mjs?v=2026110820";
 
 // 画笔本身就是全包共用那一支（brush.mjs）。
 export {
@@ -28,7 +28,7 @@ export {
   moveAdjust,
   startAdjust,
   steppedSoft,
-} from "./brush.mjs?v=2026103135";
+} from "./brush.mjs?v=2026110820";
 
 export const ERASE_SIZE = [2, 2000];
 export const ERASE_MAX_STROKES = 400;
@@ -196,8 +196,17 @@ export const SAVE_NAME_MAX = 80;
 
 // 名字框里能打进去的东西：字母、数字、空格、点、横线、下划线留着，别的都不
 // 进，所以目录永远不可能混进名字里。服务端按同样的规矩再查一遍，不合格就拒。
+//
+// 🔴 开头必须是字母 / 数字 / 下划线：后端 clean_save_name 的规则是
+// `[\w][\w .\-]*`，开头的横线它一律拒。这里原来只去掉开头的空格和点，
+// 于是「-abc」在名字框和提示行里显示成 -abc_00001.png、看着完全正常，
+// 点保存却 400 说名字不合法 —— 而用户打的全是允许的字符。
 export function typedName(text) {
-  return String(text ?? "").replace(/[^\p{L}\p{N}_ .\-]/gu, "").replace(/\.{2,}/g, ".").replace(/^[ .]+/, "").slice(0, SAVE_NAME_MAX);
+  return String(text ?? "")
+    .replace(/[^\p{L}\p{N}_ .\-]/gu, "")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^[^\p{L}\p{N}_]+/u, "")
+    .slice(0, SAVE_NAME_MAX);
 }
 
 // 文件最后会叫什么，给指针下面那行提示用。

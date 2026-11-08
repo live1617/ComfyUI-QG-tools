@@ -15,19 +15,20 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110820";
 import {
   BRAND,
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=2026103135";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026103135";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026103135";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026103135";
-import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026103135";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026103135";
-import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026103135";
+  zhPair,
+} from "../shared/index.mjs?v=2026110820";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026110820";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026110820";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026110820";
+import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026110820";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110820";
+import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026110820";
 
 const NODE_CLASS = "QG_Seed";
 const CSS_ID = "qgtools-seed-css";
@@ -183,7 +184,7 @@ function showMenu(state) {
   menu.className = "qgtools-seed-menu";
   const head = document.createElement("div");
   head.className = "qgtools-seed-menu-head";
-  head.textContent = "这个节点跑过的种子";
+  head.textContent = zhPair("Seeds this node has run", "这个节点跑过的种子");
   menu.append(head);
   const current = seedWidget(state.node)?.value;
   for (const seed of seeds) {
@@ -192,7 +193,7 @@ function showMenu(state) {
     item.className = "qgtools-seed-menu-item";
     if (seed === current) item.classList.add("current");
     item.textContent = formatSeed(seed);
-    item.title = "填回这个种子并固定";
+    item.title = zhPair("Use this seed and lock it", "填回这个种子并固定");
     item.addEventListener("click", () => {
       setSeed(state.node, seed);
       render(state);
@@ -227,10 +228,10 @@ async function copySeed(state) {
   const copied = await copyToClipboard(formatSeed(Number(value)));
   // 被浏览器拦下就如实显示 ✕ —— 数字还在框里，手抄也能抄。
   state.copy.innerHTML = copied ? CHECK_SVG : "✕";
-  state.copy.title = copied ? "已复制" : "复制失败";
+  state.copy.title = copied ? zhPair("Copied", "已复制") : zhPair("Copy failed", "复制失败");
   setTimeout(() => {
     state.copy.innerHTML = COPY_SVG;
-    state.copy.title = "复制种子";
+    state.copy.title = zhPair("Copy seed", "复制种子");
   }, copied ? 700 : 1400);
 }
 
@@ -308,8 +309,9 @@ function buildPanel(node) {
   const copy = el("button", "qgtools-seed-icon");
   copy.type = "button";
   copy.innerHTML = COPY_SVG;
-  copy.title = "复制种子";
-  copy.setAttribute("aria-label", "复制种子");
+  copy.title = zhPair("Copy seed", "复制种子");
+  // aria-label 屏幕阅读器要念，跟可见 tooltip 用同一串
+  copy.setAttribute("aria-label", zhPair("Copy seed", "复制种子"));
   field.append(tag, input, copy);
   field.addEventListener("pointerdown", (event) => event.stopPropagation());
 

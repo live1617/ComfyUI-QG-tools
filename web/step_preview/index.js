@@ -11,11 +11,11 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026103135";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026103135";
-import { keepDomWidgetWidthAuto } from "../shared/index.mjs?v=2026103135";
-import { hideCanvasWidget } from "../shared/core_preview.mjs?v=2026103135";
-import { zhPair } from "../shared/zh.mjs?v=2026103135";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110820";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026110820";
+import { keepDomWidgetWidthAuto } from "../shared/index.mjs?v=2026110820";
+import { hideCanvasWidget } from "../shared/core_preview.mjs?v=2026110820";
+import { zhPair } from "../shared/zh.mjs?v=2026110820";
 
 const NODE_TYPE = "QG_StepPreview";
 const PANEL_WIDGET = "qg_step_preview_panel";

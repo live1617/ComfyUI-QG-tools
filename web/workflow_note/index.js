@@ -11,15 +11,15 @@
 // URLs become buttons or links (the parser already filtered them).
 
 import { api } from "/scripts/api.js";
-import { zh, zhPair } from "../shared/zh.mjs?v=2026103135";
+import { zh, zhPair } from "../shared/zh.mjs?v=2026110820";
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026103135";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026103135";
-import { collectGraphNodes } from "../shared/appearance.mjs?v=2026103135";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026103135";
-import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026103135";
-import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026103135";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026103135";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026110820";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=2026110820";
+import { collectGraphNodes } from "../shared/appearance.mjs?v=2026110820";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026110820";
+import { confirmDiscard } from "../shared/discard_prompt.mjs?v=2026110820";
+import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=2026110820";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026110820";
 import {
   COMMON_FOLDERS,
   INPUT_FOLDER,
@@ -39,9 +39,9 @@ import {
   rowFromCells,
   serializeNote,
   subfolderOf,
-} from "../shared/workflow_note.mjs?v=2026103135";
-import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026103135";
-import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026103135";
+} from "../shared/workflow_note.mjs?v=2026110820";
+import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026110820";
+import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=2026110820";
 
 const NODE_CLASS = "QG_WorkflowNote";
 const CSS_ID = "qgtools-workflow-note-css";
@@ -91,12 +91,30 @@ function inputExists(name) {
     .catch(() => undefined);
 }
 
+// /models 只给文件夹下拉框提供建议值。请求要是挂住（后端不响应、连接半开），
+// 不能一直等下去 —— openEditor 的 busy 标记会跟着永远为真，✎ 从此点了毫无反应
+// （而且一句提示都没有）；更糟的是 modelFolders 缓存的就是这个 promise，
+// 连重试的机会都没有。
+const FOLDERS_TIMEOUT_MS = 5000;
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
+}
+
 function knownFolders() {
-  modelFolders ??= api
-    .fetchApi("/models")
-    .then((response) => (response.ok ? response.json() : []))
+  modelFolders ??= withTimeout(
+    api.fetchApi("/models").then((response) => (response.ok ? response.json() : [])),
+    FOLDERS_TIMEOUT_MS,
+  )
     .then((list) => (Array.isArray(list) ? list.filter((item) => typeof item === "string") : []))
-    .catch(() => []);
+    .catch(() => {
+      // 超时和失败都不进缓存：下拉框少几个建议值不影响编辑，下次打开再试一次。
+      modelFolders = null;
+      return [];
+    });
   return modelFolders;
 }
 

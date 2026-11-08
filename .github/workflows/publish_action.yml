@@ -15,7 +15,10 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
       - name: Publish Custom Node
-        uses: Comfy-Org/publish-node-action@main
+        # 钉住 tag 而不是 @main：这个 action 自 2024-05 的 1.0.1 之后就没再发布新版，
+        # 但 main 分支随时可能被改。发版是一步不可逆的操作（版本号一上传就占住了），
+        # 不该让上游一次无声的 push 改变它的行为。要升级就显式改这一行。
+        uses: Comfy-Org/publish-node-action@1.0.1
         with:
           # 在仓库 Settings -> Secrets and variables -> Actions 里
           # 新建名为 REGISTRY_ACCESS_TOKEN 的 secret，值填 registry.comfy.org 上

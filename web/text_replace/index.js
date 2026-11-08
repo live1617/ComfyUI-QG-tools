@@ -20,7 +20,7 @@
  */
 
 import { app } from "/scripts/app.js";
-import { chainCallback } from "../shared/index.mjs?v=2026103135";
+import { chainCallback, zhPair } from "../shared/index.mjs?v=2026110820";
 
 const NODE_CLASS = "QG_TextReplace";
 const TEXT_SOURCE = "PrimitiveStringMultiline"; // comfy_extras 内置的多行文本
@@ -111,8 +111,15 @@ function rescueLegacyText(node, text) {
 
   app.extensionManager?.toast?.add?.({
     severity: "warn",
-    summary: "文本替换：老节点的文本已接回来",
-    detail: "这个替换节点以前的「文本」是直接打的，新版改成只能从上游接。已自动补了一个「多行文本」节点并连上，确认无误后可以删掉那个多余的「文本列表」槽。",
+    summary: zhPair(
+      "Text Replace: the old node's text is connected again",
+      "文本替换：老节点的文本已接回来",
+    ),
+    detail: zhPair(
+      "This node used to have a text box you typed into; now the text has to come from upstream. " +
+        "A Text node was added and wired for you. Once it looks right you can delete the extra slot.",
+      "这个替换节点以前的「文本」是直接打的，新版改成只能从上游接。已自动补了一个「多行文本」节点并连上，确认无误后可以删掉那个多余的「文本列表」槽。",
+    ),
     life: 12000,
   });
 }

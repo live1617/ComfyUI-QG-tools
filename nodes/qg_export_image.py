@@ -131,12 +131,12 @@ def _guard_directory(path):
     absolute = os.path.abspath(path)
     lowered = absolute.lower().rstrip("\\/")
     if not lowered or os.path.dirname(lowered) == lowered or len(lowered) <= 3:
-        raise ValueError("[QG-tools] 导出图像：不允许写入盘符根目录 %s" % absolute)
+        raise ValueError("[QG-tools] Export Image: refusing to write to a drive root: %s" % absolute)
     probe = lowered + "\\"
     for part in _BLOCKED_PARTS:
         if part in probe:
             raise ValueError(
-                "[QG-tools] 导出图像：拒绝写入系统目录 %s；请换一个普通文件夹" % absolute
+                "[QG-tools] Export Image: refusing to write into a system directory: %s; pick an ordinary folder instead" % absolute
             )
     return absolute
 
@@ -155,19 +155,19 @@ def _resolve_directory(save_path, moment, index, total):
     leftover = re.search(r"%[A-Za-z_][A-Za-z0-9_()]*%", expanded)
     if leftover:
         raise ValueError(
-            "[QG-tools] 导出图像：找不到环境变量 %s；请写完整路径，或改用 ~ 开头的用户目录"
+            "[QG-tools] Export Image: environment variable not found: %s; write a full path, or use a ~ path into your user folder"
             % leftover.group(0)
         )
 
     # "D:" 是盘符相对路径，"D:foo" 更是语义混乱 —— 拦住，别让它静默落进 output
     if re.fullmatch(r"[A-Za-z]:", expanded):
         raise ValueError(
-            "[QG-tools] 导出图像：%r 只是盘符，请写成带反斜杠的完整路径，例如 %s\\出图"
+            "[QG-tools] Export Image: %r is only a drive letter; write a full path such as %s\\output"
             % (expanded, expanded.upper())
         )
     if re.match(r"^[A-Za-z]:[^\\/]", expanded):
         raise ValueError(
-            "[QG-tools] 导出图像：%r 少了分隔符，请写成 %s\\..."
+            "[QG-tools] Export Image: %r is missing a separator; write %s\\..."
             % (expanded, expanded[:2].upper())
         )
 
@@ -178,7 +178,7 @@ def _resolve_directory(save_path, moment, index, total):
     target = os.path.abspath(os.path.join(base, expanded))
     if os.path.commonpath([base, target]) != base:
         raise ValueError(
-            "[QG-tools] 导出图像：相对路径不能跳出 output 目录（%s）" % template
+            "[QG-tools] Export Image: a relative path cannot escape the output folder (%s)" % template
         )
     return target, True
 
@@ -423,10 +423,10 @@ class QGExportImage:
         elif isinstance(images, (list, tuple)):
             batch = [item for item in images if item is not None]
         else:
-            raise ValueError("[QG-tools] 导出图像：images 需要 IMAGE 批次或图像列表")
+            raise ValueError("[QG-tools] Export Image: images must be an IMAGE batch or a list of images")
 
         if not batch:
-            raise ValueError("[QG-tools] 导出图像：没有可保存的图像")
+            raise ValueError("[QG-tools] Export Image: there is no image to save")
 
         image_format = format if format in FORMATS else "JPEG"
         extension = FORMAT_EXT[image_format]

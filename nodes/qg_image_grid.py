@@ -60,14 +60,14 @@ from torch.nn.functional import interpolate
 import folder_paths
 
 from ._qg_combo_legacy import combo_legacy
+from ._qg_tensor_helpers import as_image_batch
 
 MAX_IMAGES = 16
 MAX_COLS = 4
 
-# IMAGE 的通道数只有 1 / 3 / 4 三种，所以 3 维张量的最后一维不超过它，就
-# 当通道维（(H,W,C) 一张图），否则当批次（(B,H,W) 灰度多帧）。搬运版看的是
-# 第 0 维，于是灰度图被当成批次、灰度批次被当成一张图，两头都错。
-MAX_CHANNELS = 4
+# 「(H,W,C) 一张图 还是 (B,H,W) 灰度多帧」的判据现在只有一处：
+# `_qg_tensor_helpers.MAX_CHANNELS`。这个文件原本自己也定义了一份，已合并 ——
+# 搬运版看的是第 0 维，于是灰度图被当成批次、灰度批次被当成一张图，两头都错。
 
 
 def _is_empty_frame(image):
@@ -90,18 +90,10 @@ def _norm_image(image):
     if isinstance(image, (list, tuple)):
         image = image[0] if image else None
     if not torch.is_tensor(image):
-        raise ValueError("[QG-tools] 宫格拼接：列表里混进了非张量的条目")
+        raise ValueError("[QG-tools] Image Grid: the list contains a non-tensor entry")
     image = image.detach().to(device="cpu").float()
 
-    if image.dim() == 2:                       # (H, W)
-        image = image.unsqueeze(0).unsqueeze(-1)
-    elif image.dim() == 3:
-        if image.shape[-1] <= MAX_CHANNELS:    # (H, W, C) - one picture
-            image = image.unsqueeze(0)
-        else:                                   # (B, H, W) - grey frames
-            image = image[0:1].unsqueeze(-1)
-    elif image.dim() == 1:
-        raise ValueError("[QG-tools] 宫格拼接：收到 1 维张量，图像至少要 2 维 (H,W)")
+    image, _ = as_image_batch(image, "Image Grid: image")
 
     if image.shape[0] > 1:                      # 4 维批次只取第一帧
         image = image[0:1]
@@ -251,28 +243,23 @@ class QGImageGrid:
 
     def execute(self, images, match_size=True, drop_black=True, gap=0, background="black"):
         if torch.is_tensor(images):
-            if images.ndim == 4:
-                items = [images[i] for i in range(images.shape[0])]
-            elif images.ndim == 3:
-                # 同一个判据：最后一维 ≤ 4 是 (H,W,C) 一张图，否则是灰度批次。
-                if images.shape[-1] <= MAX_CHANNELS:
-                    items = [images]
-                else:
-                    items = [images[i] for i in range(images.shape[0])]
-            else:
-                raise ValueError("[QG-tools] 宫格拼接：images 需要 3 维或 4 维张量，或张量列表")
+            # 3 维可能是「一张 (H,W,C)」也可能是「一批 (B,H,W) 灰度帧」，
+            # 拆法不同 —— 判据只在 `as_image_batch` 里写一次。
+            batch, _ = as_image_batch(images, "Image Grid: image")
+            items = [batch[i] for i in range(batch.shape[0])]
         elif isinstance(images, (list, tuple)):
             items = list(images)
         else:
-            raise ValueError("[QG-tools] 宫格拼接：images 需要 3 维或 4 维张量，或张量列表")
+            raise ValueError("[QG-tools] Image Grid: images must be a 3D or 4D tensor, or a list of tensors")
 
         items = [item for item in items if item is not None]
         if drop_black:
             items = [item for item in items if not _is_empty_frame(item)]
         if not items:
             raise ValueError(
-                "[QG-tools] 宫格拼接：没有可拼接的图像（列表为空，或全黑帧都被剔除了）"
-                "—— 如果输入本来就是全黑的，把「剔除全黑」关掉。"
+                "[QG-tools] Image Grid: no image to tile (the list is empty, or every "
+                "all-black frame was dropped) - if the input really is all black, turn off "
+                "Drop All-Black."
             )
         if len(items) > MAX_IMAGES:
             items = items[:MAX_IMAGES]

@@ -205,8 +205,8 @@ class QGTextSplit:
             split_results = [_split(item, delimiter, use_regex) for item in sources]
         except re.error as exc:
             raise ValueError(
-                "[QG-tools] 文本分割：开启了正则分隔符，但「分隔符」不是合法正则 —— "
-                "%r（%s）。想在字面模式下按普通字符切，就把「用正则」关掉。"
+                "[QG-tools] Text Split: regex delimiters are on but the delimiter is not "
+                "a valid regex - %r (%s). To split on plain characters, turn off Use Regex."
                 % (delimiter, exc)
             ) from None
 

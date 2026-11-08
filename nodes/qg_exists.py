@@ -114,7 +114,14 @@ class QGExists:
     RETURN_TYPES = (ANY, "BOOLEAN")
     RETURN_NAMES = ("any", "boolean")
     OUTPUT_TOOLTIPS = (
-        "The value passed through unchanged (empty when nothing is connected). "        "A value means true, nothing means false. Empty text, an empty list, an "        "all-black mask and an all-zero latent all count as nothing; 0 and "        "False count as something. Drives a branch, a switch, or any boolean "        "input.",
+        "The value passed through unchanged (empty when nothing is connected).",
+        # 🔴 一条 tooltip 对应一个输出槽。这两个输出各有各的说明，以前把两段
+        # 拼成一条（只有 1 项）→ /object_info 里 boolean 那槽没有说明，
+        # 而 any 那槽的悬停文字里混着 boolean 的解释。
+        "A value means true, nothing means false. Empty text, an empty list, an "
+        "all-black mask and an all-zero latent all count as nothing; 0 and "
+        "False count as something. Drives a branch, a switch, or any boolean "
+        "input.",
     )
     FUNCTION = "execute"
 
