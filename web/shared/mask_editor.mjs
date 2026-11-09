@@ -17,7 +17,7 @@
 // 2048 长边足够；不压的话 4000 × 3000 的图每笔都要在 1200 万像素上做模糊。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026110820";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=2026110902";
 import {
   brushAdjusts,
   brushCore,
@@ -32,10 +32,10 @@ import {
   steppedSoft,
   startAdjust,
   moveAdjust,
-} from "./brush.mjs?v=2026110820";
-import { defaultBrushSize } from "./compare_erase.mjs?v=2026110820";
-import { encodeRgbaPng } from "./png_encode.mjs?v=2026110820";
-import { zh, zhPair } from "./zh.mjs?v=2026110820";
+} from "./brush.mjs?v=2026110902";
+import { defaultBrushSize } from "./compare_erase.mjs?v=2026110902";
+import { encodeRgbaPng } from "./png_encode.mjs?v=2026110902";
+import { zh, zhPair } from "./zh.mjs?v=2026110902";
 
 const CSS_ID = "qgtools-mask-editor-css";
 

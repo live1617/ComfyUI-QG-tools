@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-qg-tools"
 description = "A ComfyUI custom node pack by QG: 55 nodes under QG-tools. Loaders (LoRA with searchable rows, drag strengths, trigger words and templates; a 3-in-1 Checkpoint/UNET + CLIP + VAE loader). Canvas editing (Image Crop + Rotate + Pad with a video timeline, Load Image with a mask editor, Image Compare in slide/A/B/erase modes, an outpainting board). Image and mask utilities (scale, normalize to model resolution buckets, watermark, blend, detect, analysis, concat, grid, crop for inpaint). Text tools (prompt line, split, replace, concat, Markdown reader, Google translate). Workflow helpers (note card, set/get point, switches, run timer, seed history, number slider, math). All answer to English search aliases."
-version = "0.9.13"
+version = "0.9.14"
 # PEP 639 写法：license 给 SPDX 标识符、license-files 单独列要随包分发的许可文件。
 # 以前是 `license = { file = "LICENSE" }`（PEP 621 的表形式），新版 setuptools 构建时会
 # 报「license as a TOML table is deprecated」，且 Registry 拿不到 SPDX 标识符。

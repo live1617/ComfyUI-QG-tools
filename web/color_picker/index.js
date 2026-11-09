@@ -24,7 +24,7 @@
  * 长相和交互差异很大，而且没法放常用预设色。
  */
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=2026110820";
+import { zhPair } from "../shared/zh.mjs?v=2026110902";
 
 const STYLE_ID = "qg-color-picker-style";
 const FALLBACK = "#364254";

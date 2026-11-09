@@ -64,7 +64,7 @@
 import { app } from "/scripts/app.js";
 // 界面文案：本包规范是 zhPair(英文, 中文)，按 ComfyUI 当前语言取值。
 // 源插件只做了中文，搬进来后英文界面会看到中文按钮 —— scan_frontend_zh.py 会拦。
-import { zhPair } from "../shared/zh.mjs?v=2026110820";
+import { zhPair } from "../shared/zh.mjs?v=2026110902";
 
 // ================== 可调参数（两个模块共用） ==================
 const LINE_COLOR = "#fb923c"; // 参考线/强调色（橙色），两个模块同一套视觉
@@ -81,6 +81,7 @@ const PANEL_CMD = "QG.Align.Panel";
 // 前缀换了以后老版本存的值读不到，等于把用户关掉的开关又打开，
 // 所以注册完设置后先把老键的值搬到新键。
 const SETTING_SNAPLINES = "QG.SnapLines.Enabled";
+const SETTING_WITH_GRID = "QG.SnapLines.WithGridSnap";
 const SETTING_TOOLBOX = "QG.Align.ToolboxButton";
 const LEGACY_SETTING_IDS = [
   ["QYH.SnapLines.Enabled", SETTING_SNAPLINES],
@@ -264,7 +265,11 @@ function insideAnyGroup(r, groupRects) {
 // ===============================================================
 
 let enabled = true;
-let down = null;      // pointerdown 快照：{ map: Map(item -> {pos,size}), anchor:[gx,gy] }
+// 「网格吸附开着时也显示参考线」——false 时保持原来的做法：网格吸附全权接管，
+// 参考线整段让位（静默，连日志都没有，用户只会觉得功能坏了）。true 时照常进来，
+// 但落点仍交给网格，本模块只画线（原因见 stepMove 里的注释）。
+let withGridSnap = false;
+let down = null;      // pointerdown 快照：{ map: Map(item -> {pos,size}), anchor:[gx,gy], gridSnap }
 let drag = null;      // { anchor, items:[{it,start,anchor?}], moving, targets } 或 { idle:true }
 let resizing = null;  // 缩放状态 { node, corner } —— corner 在首次见到 resizing_node 时懒读取
 let guides = [];      // 本帧参考线 [{axis, at, middle, from, to, marks}]
@@ -430,20 +435,29 @@ function targetsFor(canvas, moving) {
 function onPointerDown(e) {
   endDrag();
   if (e.button !== 0 || !enabled) return;
-  if (globalThis.LiteGraph?.alwaysSnapToGrid) return;  // 网格吸附全权接管
+  // 网格吸附开着时默认让位（两套都在改拖动落点）。设置里可以放开，
+  // 放开后照常进来看，但只画线、不改位置（见 stepMove 里 gridSnap 分支）。
+  const gridOn = globalThis.LiteGraph?.alwaysSnapToGrid === true;
+  if (gridOn && !withGridSnap) return;
   if (otherSnapperOn()) return;                        // 其他吸附扩展开启时让位
   const canvas = app.canvas;
   const graph = app.graph;
   if (!canvas?.graph || !canvas.canvas || !canvas.ds) return;
-  if (!e.target || e.target.tagName !== "CANVAS") return;
+  // 只认「指针落在画布区域内」。原来只看 e.target.tagName === "CANVAS" 太脆：
+  // 同一位置换个渲染层、或者开着网格吸附时，目标会变成 DIV，整个模块就静默失效。
+  // 真正判定「有没有在拖东西」的是 startMove（比对位置是否真的变了），这里放宽没有副作用。
+  const box = canvas.canvas.getBoundingClientRect();
+  if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) return;
+  const tag = (e.target?.tagName || "").toUpperCase();
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || tag === "BUTTON") return;
   const snap = new Map();
   for (const it of itemsOf(graph)) {
     if (it.pinned) continue;
     snap.set(it, { pos: [it.pos[0], it.pos[1]], size: [it.size[0], it.size[1]] });
   }
   // anchor 记在按下时刻：travel = 指针相对按下的位移，与快照同基准，零滞后
-  down = { map: snap, anchor: graphPoint(canvas, e) };
-  dbg("pointerdown 快照:", snap.size, "个对象");
+  down = { map: snap, anchor: graphPoint(canvas, e), gridSnap: gridOn && withGridSnap };
+  dbg("pointerdown 快照:", snap.size, "个对象", down.gridSnap ? "(网格模式，只画线)" : "");
 }
 
 // 第一次移动：对比快照找出真正在动的对象，建立拖动状态
@@ -487,6 +501,7 @@ function startMove(canvas, e) {
     items,
     moving,
     targets,
+    gridSnap: down.gridSnap,   // true 时落点归网格，本模块只画线
   };
 }
 
@@ -496,7 +511,19 @@ function stepMove(canvas, e) {
   const dx = point[0] - drag.anchor[0];
   const dy = point[1] - drag.anchor[1];
 
-  // 第一步：绝对定位到“起点 + 位移”（覆盖 litegraph 的写入，吸附量永不累积）
+  // 网格吸附同时开着（用户放开了叠加）：落点完全交给网格，本模块只画线。
+  // 为什么不在这里做节点吸附：对齐位移多半不是网格倍数（节点宽度不是网格的整数倍，
+  // 中线必然落在半格上），写入后松开鼠标时 litegraph 会再吸一次把它拽走 ——
+  // 实测 305 被拽到 310，参考线画的位置和最终位置对不上，比不吸更糟。
+  if (drag.gridSnap) {
+    const liveBox = unionRects(drag.items.map(({ it }) => rectOf(it)));
+    setGuides(liveBox ? buildGuides(liveBox, drag.targets, placedLines(liveBox, null)) : []);
+    canvas.setDirty?.(true, true);
+    dbgOnce("网格模式：只画线（落点由网格决定）");
+    return;
+  }
+
+  // 第一步：绝对定位到"起点 + 位移"（覆盖 litegraph 的写入，吸附量永不累积）
   for (const item of drag.items) {
     const a = item.anchor || drag.anchor;
     const nx = item.start[0] + (point[0] - a[0]);
@@ -1251,6 +1278,31 @@ app.registerExtension({
           if (!enabled) endDrag();
         },
       });
+
+      app.ui.settings.addSetting({
+        id: SETTING_WITH_GRID,
+        category: ["QG-tools", "Canvas", "Snap into line"],
+        name: zhPair(
+          "Show alignment guides while grid snapping is on (QG)",
+          "网格吸附开启时也显示参考线（QG）",
+        ),
+        tooltip: zhPair(
+          "ComfyUI-Custom-Scripts' \"Always snap to grid\" otherwise takes over dragging " +
+            "completely and the guides never appear, with no warning. Turn this on to keep " +
+            "the guides visible in that mode. Note the landing position stays grid-controlled: " +
+            "snapping to node edges would land off-grid and get pulled back when you release, " +
+            "so this mode only shows the lines.",
+          "默认情况下，ComfyUI-Custom-Scripts 的「始终对齐网格」会完全接管拖动，参考线不会出现，" +
+            "而且不给任何提示。打开本项后该模式下也照常显示参考线。" +
+            "注意落点仍由网格决定：节点边缘对齐多半会落在网格之外，松开鼠标时又会被网格拽回去，" +
+            "所以这个模式只画线、不改位置。",
+        ),
+        type: "boolean",
+        defaultValue: false,
+        onChange: (v) => {
+          withGridSnap = !!v;
+        },
+      });
     } catch (err) {
       console.warn("[QG-tools] 注册设置失败:", err);
     }
@@ -1264,6 +1316,7 @@ app.registerExtension({
     // 注意第二个参数（默认值）在前端 1.5x 已弃用，传了会被 console 警告并
     // 直接忽略，所以默认值只写在设置定义里，这里只读、只判 false。
     enabled = app.ui?.settings?.getSettingValue?.(SETTING_SNAPLINES) !== false;
+    withGridSnap = app.ui?.settings?.getSettingValue?.(SETTING_WITH_GRID) === true;
 
     // pointerdown/up 用捕获阶段（litegraph 在 canvas 上 stopPropagation），
     // pointermove 用冒泡阶段（排在 litegraph 移动节点之后）

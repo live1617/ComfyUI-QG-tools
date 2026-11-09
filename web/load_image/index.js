@@ -22,15 +22,15 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026110820";
-import { createMediaPicker } from "../shared/media_picker.mjs?v=2026110820";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026110820";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026110820";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110820";
-import { commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026110820";
-import { vueNodesEnabled } from "../shared/vue_mode.mjs?v=2026110820";
-import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "../shared/widget_visibility.mjs?v=2026110820";
-import { zh, zhPair } from "../shared/zh.mjs?v=2026110820";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "../shared/index.mjs?v=2026110902";
+import { createMediaPicker } from "../shared/media_picker.mjs?v=2026110902";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026110902";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026110902";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110902";
+import { commitWidgetValue } from "../shared/widget_card_math.mjs?v=2026110902";
+import { vueNodesEnabled } from "../shared/vue_mode.mjs?v=2026110902";
+import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "../shared/widget_visibility.mjs?v=2026110902";
+import { zh, zhPair } from "../shared/zh.mjs?v=2026110902";
 
 const NODE_CLASS = "QG_LoadImage";
 const CSS_ID = "qgtools-load-image-css";
@@ -62,7 +62,7 @@ const FONT = `-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`;
 let maskEditor = null;
 function loadMaskEditor() {
   if (maskEditor) return Promise.resolve(maskEditor);
-  return import("../shared/mask_editor.mjs?v=2026110820").then(
+  return import("../shared/mask_editor.mjs?v=2026110902").then(
     (module) => (maskEditor = module),
     (error) => {
       console.error("[QG-tools] mask editor failed to load", error);

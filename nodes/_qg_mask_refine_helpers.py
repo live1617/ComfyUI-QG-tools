@@ -450,7 +450,6 @@ def refine_mask(
 __all__ = [
     "EDGE_REFINE_MODES",
     "NO_MASK_PAINTED",
-    "UNPAINTED_MASK_SIZE",
     "blur_mask",
     "fill_mask_holes",
     "grow_shrink_mask",

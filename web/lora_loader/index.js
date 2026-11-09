@@ -1,26 +1,25 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026110820";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026110820";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026110820";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026110820";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110902";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026110902";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026110902";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026110902";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026110820";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026110820";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026110820";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026110820";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026110820";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110820";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026110820";
+} from "../shared/settings_menu.mjs?v=2026110902";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026110902";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026110902";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026110902";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026110902";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110902";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026110902";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
   FINE_STEP,
-  MAX_ROWS,
   MUTE_MODE,
   STRENGTH_MAX,
   STRENGTH_MIN,
@@ -72,8 +71,8 @@ import {
   loraFolders,
   loraPickerEntries,
   loraStackKeyAction,
-} from "../shared/lora_stack.mjs?v=2026110820";
-import { civitaiButtonLabel, civitaiByHashUrl, civitaiFailureText, isCivitaiAddress, MAX_PICTURE_BYTES, parseCivitaiBody, pickCivitaiPicture, pictureError, pictureErrorText, smallPictureUrl } from "../shared/civitai_lookup.mjs?v=2026110820";
+} from "../shared/lora_stack.mjs?v=2026110902";
+import { civitaiButtonLabel, civitaiByHashUrl, civitaiFailureText, isCivitaiAddress, MAX_PICTURE_BYTES, parseCivitaiBody, pickCivitaiPicture, pictureError, pictureErrorText, smallPictureUrl } from "../shared/civitai_lookup.mjs?v=2026110902";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -298,10 +297,16 @@ function installStyles() {
     border-radius: 5px; background: #23272c; color: #9ba2aa; cursor: pointer;
     display: grid; place-items: center; flex: none; padding: 0; }
   .qgtools-lora-gear:hover { border-color: ${BRAND}; color: ${BRAND}; }
-  .qgtools-lora-stack { flex: 1 1 auto; min-height: 0; overflow: hidden;
+  /* 高度封顶之后（panelCap），多的行不裁掉而是滚动。滚轮归属交给
+     canvas_passthrough 判：这个盒子还能朝那个方向滚就归它，滚到头才把滚轮
+     交还画布 —— 所以底下不用再自己 stopPropagation。 */
+  .qgtools-lora-stack { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto;
     display: flex; flex-direction: column; gap: ${ROW_GAP}px;
     padding: ${STACK_PADDING}px; border: 1px solid rgba(0,180,170,.22); border-radius: 6px;
-    background: rgba(0,0,0,.38); }
+    background: rgba(0,0,0,.38); scrollbar-width: thin; }
+  .qgtools-lora-stack::-webkit-scrollbar { width: 8px; }
+  .qgtools-lora-stack::-webkit-scrollbar-thumb { background: #3a4047; border-radius: 4px; }
+  .qgtools-lora-stack::-webkit-scrollbar-thumb:hover { background: #4a525a; }
   .qgtools-lora-blank { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
     width: 100%; min-height: ${BLANK_HEIGHT}px; border: 1px dashed #3a4047;
     border-radius: 5px; background: transparent; color: #9ba2aa; font: italic 12px system-ui;
@@ -821,17 +826,27 @@ function refreshAvailable(state) {
     .catch(() => {});
 }
 
-// CSS pixels the panel needs to show every row with no scrolling. The add
-// button lives inside the stack now, so its height (plus the gap above it)
-// counts inside the stack box.
+// 行数没有上限以后，面板高度是「行数 × 行高」的线性累加：400 行算出
+// 一万四千像素，画布上根本摆不下。到这里就不再长高，多出来的行交给栈自己
+// 滚动（滚轮归属由 canvas_passthrough 判定 —— 栈还能滚就归它，滚到头才把
+// 滚轮交还画布，与别处的约定一致）。取视口的七成，窗口大小变了跟着变 ——
+// 1000px 高的窗口约合 20 行，二十行以内的栈还是整块看全，不用滚。
+function panelCap() {
+  const viewport = typeof window !== "undefined" ? window.innerHeight || 0 : 0;
+  return Math.max(320, Math.round((viewport || 800) * 0.7));
+}
+
+// CSS pixels the panel needs to show every row with no scrolling. The stack box
+// now holds only the rows; the add button sits below it as its own row.
 function panelHeight(state) {
   const inner = state.rows.length
     ? state.rows.length * (ROW_HEIGHT + ROW_GAP) - ROW_GAP
     : BLANK_HEIGHT;
-  const stack = inner + ROW_GAP + ACTIONS_HEIGHT + STACK_PADDING * 2 + 2; // +2 border
+  const stack = inner + STACK_PADDING * 2 + 2; // +2 border
+  const actions = ROW_GAP + ACTIONS_HEIGHT;
   const note = state.note ? NOTE_HEIGHT + ROW_GAP : 0;
   const broken = state.parseError ? BROKEN_HEIGHT : 0;
-  return PANEL_PADDING * 2 + GROUP_HEIGHT + ROW_GAP + note + broken + stack;
+  return Math.min(PANEL_PADDING * 2 + GROUP_HEIGHT + ROW_GAP + note + broken + stack + actions, panelCap());
 }
 
 function panelMinWidth(state) {
@@ -1209,12 +1224,8 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
   function addTicked({ pointer = false } = {}) {
     const result = appendFolderRows(state.rows, ticked, state.settings?.default_strength ?? 1);
     if (!result.added) {
-      loraToast(result.needed > result.room
-        ? zhPair(
-          `You ticked ${result.needed} new LoRA${result.needed === 1 ? "" : "s"}, but only ${result.room} of ${MAX_ROWS} rows are free. Nothing was added. Untick some or remove rows.`,
-          `你勾了 ${result.needed} 个新 LoRA，但 ${MAX_ROWS} 行里只剩 ${result.room} 行空位，什么都没加。少勾几个，或先删几行。`)
-        : zhPair("Every ticked LoRA is already in this stack. Nothing was added.",
-          "勾的这些都已在栈里，什么都没加。"));
+      loraToast(zhPair("Every ticked LoRA is already in this stack. Nothing was added.",
+        "勾的这些都已在栈里，什么都没加。"));
       return;
     }
     const firstAdded = state.rows.length;
@@ -1282,13 +1293,6 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
     const { name, kind } = entry;
     if (kind === "folder") {
       const result = appendFolderRows(state.rows, folders.get(name) ?? [], state.settings?.default_strength ?? 1);
-      if (result.needed > result.room) {
-        loraToast(zhCount("This folder has {n} new LoRA", "This folder has {n} new LoRAs", result.needed)
-          + zhSep()
-          + zh("but only {room} of {max} rows are free. Nothing was added. Remove rows or choose a smaller folder.")
-            .replace("{room}", result.room).replace("{max}", MAX_ROWS));
-        return;
-      }
       if (!result.added) {
         loraToast(zh("Every LoRA in this folder is already in this stack. Nothing was added."));
         return;
@@ -1303,10 +1307,6 @@ function openPicker(state, index, anchor, { keyboard = false } = {}) {
           ? zhSep() + zhCount("Skipped {n} already in this stack.", "Skipped {n} already in this stack.", result.skipped)
           : ""));
       if (!pointer) backToStack(firstAdded);
-      return;
-    }
-    if (adding && state.rows.length >= MAX_ROWS) {
-      loraToast(zh("This stack already has {max} rows. Remove a row before adding another LoRA.").replace("{max}", MAX_ROWS));
       return;
     }
     const strength = roundStrength(state.settings?.default_strength ?? 1);
@@ -1575,7 +1575,6 @@ function installStackKeyboard(state) {
     if (action.kind === "focus") {
       focusStackRow(state, action.index);
     } else if (action.kind === "pick") {
-      if (atAdd && state.rows.length >= MAX_ROWS) return;
       openPicker(state, atAdd ? null : index,
         atAdd ? state.panel.querySelector(".qgtools-lora-add") : rowElement.querySelector(".qgtools-lora-name"),
         { keyboard: true });
@@ -2155,16 +2154,14 @@ function openRowMenu(state, index, event) {
     return button;
   };
   const insertEmpty = (position) => {
-    if (state.rows.length >= MAX_ROWS) return;
     const strength = roundStrength(state.settings?.default_strength ?? 1);
     const rows = state.rows.slice();
     rows.splice(position, 0, { ...newRow(), strength, strength_clip: strength });
     commitRows(state, rows, { structural: true });
     fitNode(state);
   };
-  const full = state.rows.length >= MAX_ROWS;
-  item("Insert empty LoRA above", (at) => insertEmpty(at), full);
-  item("Insert empty LoRA below", (at) => insertEmpty(at + 1), full);
+  item("Insert empty LoRA above", (at) => insertEmpty(at));
+  item("Insert empty LoRA below", (at) => insertEmpty(at + 1));
   // 上移 / 下移的禁用态是打开时的判断，执行时再按活下标守一次：中间栈变过
   // 的话，一次「移不动」的移动也会写一遍 widget、多记一条撤销。
   item("Move up", (at) => {
@@ -2176,13 +2173,12 @@ function openRowMenu(state, index, event) {
     }
   }, index === state.rows.length - 1);
   item("Duplicate", (at) => {
-    if (state.rows.length >= MAX_ROWS) return;
     const copy = { ...state.rows[at], id: newRow().id };
     const rows = state.rows.slice();
     rows.splice(at + 1, 0, copy);
     commitRows(state, rows, { structural: true });
     fitNode(state);
-  }, full);
+  });
   item("Remove this LoRA", (at) => {
     const rows = state.rows.slice();
     rows.splice(at, 1);
@@ -2545,14 +2541,6 @@ async function absorbChain(state) {
     { position: "before", deduplicate: false });
   const downMerge = mergeImportedRows(upMerge.rows, downResolved,
     { position: "after", deduplicate: false });
-  // Never bypass a source if any of its rows would be lost to the stack limit.
-  if (state.rows.length + upMerge.added + downMerge.added > MAX_ROWS) {
-    loraToast(zhPair(
-      `Absorb needs more than ${MAX_ROWS} rows. Free some stack rows first; source loaders remain active.`,
-      `吸收需要超过 ${MAX_ROWS} 行。先腾出一些栈行；来源加载器仍然生效。`,
-    ));
-    return;
-  }
   // Imported rows keep whatever strength mode the node is already in: new
   // nodes start unified, so the CLIP box stays hidden unless the user turns
   // on "Separate model / CLIP strength" in Settings (2026-10-12 user request:
@@ -2705,9 +2693,6 @@ function renderRows(state) {
       ));
       return;
     }
-    // 两个入口（空栈时的大按钮、底下的 + LoRA）走同一个守卫：+ LoRA 到上限
-    // 会变灰，但空栈那个大按钮不会，键盘在 add 上按 Enter 也另有入口。
-    if (state.rows.length >= MAX_ROWS) return;
     // detail is 0 for a click made with Enter or Space.
     openPicker(state, null, event.currentTarget, { keyboard: event.detail === 0 });
   };
@@ -2971,25 +2956,19 @@ function renderRows(state) {
     });
     stack.append(rowElement);
   });
-  // The add button lives INSIDE the stack container and pins to its bottom
-  // edge (margin-top: auto), so it stays put however tall the node is
-  // dragged - the stack absorbs the free height above it.
+  // The add button sits BELOW the stack, not inside it: once the rows outgrow
+  // panelCap the stack scrolls, and a button living inside would scroll away
+  // with them. The stack keeps flex: 1 1 auto, so it still absorbs the free
+  // height and the button stays pinned to the bottom edge however tall the
+  // node is dragged.
   const actions = el("div", "qgtools-lora-actions");
   const add = el("button", "qgtools-lora-add", "+ LoRA");
   add.type = "button";
-  // 到上限时按钮变灰，但原来还挂着「选一个 LoRA」的提示 —— 按不动又不说
-  // 为什么，只能猜是不是坏了。
-  add.disabled = state.rows.length >= MAX_ROWS;
-  add.title = add.disabled
-    ? zhPair(
-      `This stack is full: ${MAX_ROWS} rows is the most one loader takes. Remove a row to add another.`,
-      `这一栈满了：一个加载器最多 ${MAX_ROWS} 行。删掉一行才能再加。`,
-    )
-    : zh("Pick one LoRA, or click a folder name to add all its LoRAs.");
+  add.title = zh("Pick one LoRA, or click a folder name to add all its LoRAs.");
   add.addEventListener("click", addRowAndPick);
   actions.append(add);
-  stack.append(actions);
   body.append(stack);
+  body.append(actions);
   if (focusedRowId) {
     const index = state.rows.findIndex((row) => row.id === focusedRowId);
     focusStackRow(state, index >= 0 ? index : Math.min(focusedIndex, state.rows.length));

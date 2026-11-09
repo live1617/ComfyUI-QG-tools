@@ -59,7 +59,6 @@ def _register_font_route() -> bool:
     注意用 web.Response 显式声明 Content-Type: font/ttf——aiohttp 的 FileResponse
     对 .ttf 会回 application/octet-stream，部分浏览器在严格模式下会拒绝加载。
     """
-    global _FONT_BYTES
     # instance 用 getattr 取：服务未启动的进程（单测/纯导入）里该属性不存在
     server = getattr(PromptServer, "instance", None) if PromptServer is not None else None
     if web is None or server is None:

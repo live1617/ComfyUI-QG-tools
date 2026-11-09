@@ -30,7 +30,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026110820";
+import { chainCallback } from "./index.mjs?v=2026110902";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════

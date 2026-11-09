@@ -3,7 +3,7 @@
 // DOM 接线全在 web/lora_loader/index.js；这个文件零 DOM、零 ComfyUI 依赖，
 // 所以 tools/_check_lora_stack.mjs 能直接跑它。
 
-import { zhCount, zhPair, zhSep, zhEnd } from "./zh.mjs?v=2026110820";
+import { zhCount, zhPair, zhSep, zhEnd } from "./zh.mjs?v=2026110902";
 
 export const STRENGTH_MIN = -10;
 export const STRENGTH_MAX = 10;
@@ -12,7 +12,6 @@ export const FINE_STEP = 0.01;
 // 拖一个强度步长要横移多少像素：小到不费力，大到手抖点一下不会改值。
 export const SCRUB_PIXELS_PER_STEP = 4;
 export const SCRUB_DEAD_ZONE = 3;
-export const MAX_ROWS = 64;
 
 let rowSerial = 0;
 
@@ -72,7 +71,7 @@ export function rowRuns(row) {
 
 export function normalizeRows(parsed) {
   if (!Array.isArray(parsed)) return [];
-  return parsed.slice(0, MAX_ROWS).map((entry) => {
+  return parsed.map((entry) => {
     const fresh = newRow();
     if (!entry || typeof entry !== "object") return fresh;
     // 🔴 未知字段原样带过。从别的插件转来的栈里带着 group / group_off，
@@ -427,9 +426,9 @@ export function loraPickerEntries(names, query = "", collapsedFolders = new Set(
   return visit(tree);
 }
 
-// 加一整个文件夹是一次追加，装不下就一点都不改。已有的行（包括重复的、
-// 关掉的和空槽）原样留着。按完整路径去重，绝不按主干名或「可能是移动过的
-// 文件」去猜。
+// 加一整个文件夹是一次追加，不再有行数上限。已有的行（包括重复的、关掉的
+// 和空槽）原样留着。按完整路径去重，绝不按主干名或「可能是移动过的文件」
+// 去猜。
 export function appendFolderRows(rows, names, defaultStrength = 1) {
   const seen = new Set(rows.map((row) => loraPath(row.name)));
   const pending = [];
@@ -440,12 +439,10 @@ export function appendFolderRows(rows, names, defaultStrength = 1) {
     seen.add(key);
     pending.push(name);
   }
-  const room = Math.max(0, MAX_ROWS - rows.length);
-  const needed = pending.length;
-  if (needed > room || !needed) return { rows, added: 0, skipped, needed, room };
+  if (!pending.length) return { rows, added: 0, skipped };
   const strength = roundStrength(defaultStrength);
   const addedRows = pending.map((name) => ({ ...newRow(), name, strength, strength_clip: strength }));
-  return { rows: [...rows, ...addedRows], added: needed, skipped, needed, room };
+  return { rows: [...rows, ...addedRows], added: addedRows.length, skipped };
 }
 
 // ---------- 模板 ----------
@@ -841,9 +838,9 @@ export function mergeImportedRows(existing, imported,
     have.add(key);
     added.push({ ...makeRow(), ...item });
   }
-  const rows = (position === "after"
+  const rows = position === "after"
     ? [...(existing ?? []), ...added]
-    : [...added, ...(existing ?? [])]).slice(0, MAX_ROWS);
+    : [...added, ...(existing ?? [])];
   return { rows, added: added.length, skipped };
 }
 

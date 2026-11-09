@@ -26,6 +26,15 @@ try:
 except ImportError:  # pragma: no cover - 只有脱离 ComfyUI 运行时才会走到
     folder_paths = None
 
+# 中断检查：几百行的栈逐行 load_lora_for_models 要几十秒，用户点取消得能停下。
+# 检查脚本有两种是直接按文件读这个模块（spec_from_file_location），没有包上下文，
+# 相对导入会抛 ImportError —— 兜底成空函数，行为跟没有这一层时完全一样。
+try:
+    from ._qg_execution_helpers import raise_if_interrupted
+except ImportError:  # pragma: no cover
+    def raise_if_interrupted() -> None:
+        return
+
 
 STRENGTH_LIMIT = 10.0
 MISSING_MODES = ("skip", "error")
@@ -579,6 +588,7 @@ def apply_lora_stack(
 
     has_clip = clip is not None
     for row in loaded_rows(rows, has_clip):
+        raise_if_interrupted()
         try:
             path = resolve_lora_path(row["name"])
         except ValueError as exc:
