@@ -3,7 +3,7 @@
 // DOM 接线全在 web/lora_loader/index.js；这个文件零 DOM、零 ComfyUI 依赖，
 // 所以 tools/_check_lora_stack.mjs 能直接跑它。
 
-import { zhCount, zhPair, zhSep, zhEnd } from "./zh.mjs?v=2026110902";
+import { zhCount, zhPair, zhSep, zhEnd } from "./zh.mjs?v=2026110904";
 
 export const STRENGTH_MIN = -10;
 export const STRENGTH_MAX = 10;

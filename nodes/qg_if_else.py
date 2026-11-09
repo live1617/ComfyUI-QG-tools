@@ -72,6 +72,10 @@ class QGIfElse:
 
     RETURN_TYPES = (ANY,)
     RETURN_NAMES = ("any",)
+    OUTPUT_TOOLTIPS = (
+        "The value from the branch the condition picked, passed through "
+        "unchanged; the other branch is never executed.",
+    )
     FUNCTION = "execute"
     CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (

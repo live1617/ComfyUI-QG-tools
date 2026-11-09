@@ -303,6 +303,10 @@ class QGAddWatermark:
     FUNCTION = "execute"
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image",)
+    OUTPUT_TOOLTIPS = (
+        "The watermarked image: a single frame with the stamp composited onto "
+        "the first input frame.",
+    )
 
     @classmethod
     def VALIDATE_INPUTS(cls, font=None, h_position=None, v_position=None):

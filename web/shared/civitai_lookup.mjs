@@ -1,7 +1,7 @@
 // Pure helpers for the LoRA Loader's one-click Civitai lookup. The browser
 // asks Civitai about one file by its SHA256; the server never contacts anyone.
 
-import { zhPair } from "./zh.mjs?v=2026110902";
+import { zhPair } from "./zh.mjs?v=2026110904";
 
 export const CIVITAI_BY_HASH_URL = "https://civitai.com/api/v1/model-versions/by-hash/";
 

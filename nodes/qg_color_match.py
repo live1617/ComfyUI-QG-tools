@@ -40,6 +40,14 @@ import torch.nn.functional as F
 from ._qg_combo_legacy import combo_legacy
 from ._qg_tensor_helpers import as_image_batch, as_mask_batch
 
+# 逐帧配色匹配（直方图 / MMD / 小波…）是纯 CPU 的重活，长批次点取消要能停。
+# 部分离线检查脚本按文件路径加载本模块，没有包上下文，兜底成空函数。
+try:
+    from ._qg_execution_helpers import raise_if_interrupted
+except ImportError:  # pragma: no cover
+    def raise_if_interrupted() -> None:
+        return
+
 # sRGB <-> XYZ (D65) —— IEC 61966-2-1 的标准矩阵
 RGB_TO_XYZ = (
     (0.4124564, 0.3575761, 0.1804375),
@@ -1022,6 +1030,7 @@ class QGColorMatch:
 
         out = []
         for i in range(batch):
+            raise_if_interrupted()
             frame = src[i]
             origin = frame.reshape(-1, 3)
             if chain[0] in IMAGE_STEPS:
@@ -1043,6 +1052,7 @@ class QGColorMatch:
                     # 就是用错基准：全批统一时第 2 个 hist 会把已经变成参考分布的
                     # 像素再查一次表，越界部分全被压到 ys[-1]，整幅拍成参考最大值。
                     # 后续步骤交给 _apply 现算（等价于逐帧口径），这是能用且可解释的。
+                    raise_if_interrupted()
                     base = base_for(step, i) if position == 0 else None
                     flat = self._apply(flat, prep_for(step, i, flat), step, base)
 

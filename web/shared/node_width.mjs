@@ -5,7 +5,7 @@
  * （带多行文本框的节点会被撑到 400，普通节点是 270，某些只有两个控件的算出来只有 159）。
  * Python 侧 grep 不到宽度，也没法声明。所以统一在这里钉一遍。
  *
- * 规模：**55 个节点全部在表里**，一个都不漏（`tools/verify_node_sizes.py` 会核对
+ * 规模：**57 个节点全部在表里**，一个都不漏（`tools/verify_node_sizes.py` 会核对
  * 表里的条目与 `nodes/*.py` 注册的 QG_ 节点一一对应，漏一个、多一个都报红）。
  * 改尺寸只改这一处，别再往节点文件里写数字。
  *
@@ -30,7 +30,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026110902";
+import { chainCallback } from "./index.mjs?v=2026110904";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════
@@ -108,8 +108,9 @@ export const SIZES = {
     QG_LoraLoader: { w: 430, minW: 320, h: 202, minH: 160, own: true },  // LoRA 面板
     QG_MDReader: { w: 400, minW: 140, h: 360, minH: 360, own: true },  // 文档预览（最小宽不额外限制）
     // 画板 + 底栏。预览面板是画布，压到 220 以下不能操作（见 index.js 的 PANEL_MIN_H），
-    // 所以节点地板 = 面板地板 + 标题/底栏，由面板自报，表里只给新建时的 780。
-    QG_OutpaintBoard: { w: 430, minW: 380, h: 780, minH: 470, own: true },
+    // 所以节点地板 = 面板地板 + 标题/底栏，由面板自报，表里只给新建时的高度。
+    // 默认 430x645，与「加载图像」同尺寸，并排摆时上下边对得上。
+    QG_OutpaintBoard: { w: 430, minW: 380, h: 645, minH: 470, own: true },
     QG_RunTimer: { w: 510, minW: 510, h: 140, minH: 140, own: true },  // 计时器深色面板（Capture it 字体）
     QG_Seed: { w: 320, minW: 300, h: 216, minH: 120, own: true },  // 种子卡片
     QG_TripleLoader: { w: 430, minW: 140, h: 210, minH: 210, own: true },  // 三联加载器，与 LoRA 加载器等宽
@@ -122,6 +123,11 @@ export const SIZES = {
     // 一登记这两块小方块就会被拉宽。own 不加 —— 它们没有自己的布局逻辑。
     QG_SetPoint: { w: 210, minW: 140, h: 60, minH: 60 },
     QG_GetPoint: { w: 210, minW: 140, h: 60, minH: 60 },
+    // 双式数学运算：两个单行表达式 + 5 个输入槽 + 5 个输出槽，纯后端原生控件。
+    // h 为真机 computeSize 实测值，见 tools/_probe_sizes_vs_table.cjs。
+    QG_DualMath: { w: 270, minW: 220, h: 162, minH: 60 },
+    // 长短边：3 个输入槽 + 3 个输出槽、无控件，纯后端。h 为真机 computeSize 实测值。
+    QG_LongShortSide: { w: 270, minW: 220, h: 66, minH: 60 },
 };
 
 /** 不在表里的节点用这个（新节点忘了登记也有兜底）。 */

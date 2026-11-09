@@ -224,7 +224,17 @@ export const NODE_ALIASES = {
         "补洞", "填洞", "遮罩补洞", "遮罩平滑", "平滑遮罩", "去锯齿", "边缘精修", "导向滤波",
         "抠像", "色阶", "黑白场", "修遮罩", "遮罩修边",
     ],
+    QG_DualMath: [
+        "dual math", "two expressions", "double expression", "math expression",
+        "calculate", "formula", "variables", "expression", "dualmath",
+        "双式数学", "双表达式", "数学运算", "表达式", "计算", "公式", "变量", "运算", "qg",
+    ],
 
+    QG_LongShortSide: [
+        "long short side", "long side", "short side", "aspect ratio",
+        "image size", "width height", "dimension", "measure", "ratio",
+        "长边", "短边", "长短边", "宽高比", "比值", "图像尺寸", "尺寸", "qg",
+    ],
 };
 
 export const NODE_ALIAS_COUNT = Object.keys(NODE_ALIASES).length;

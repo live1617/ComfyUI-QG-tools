@@ -50,7 +50,7 @@ ComfyUI-QG-tools/
 
 ComfyUI 的节点默认宽度**不在 Python 里**，是前端按控件类型算的（带多行文本框的会被撑到
 400，普通节点 270，只有两个控件的甚至算成 159），`INPUT_TYPES` 里没法声明，grep 也 grep 不到。
-所以全部 55 个节点在一张表里登记，**改尺寸只改这一处**：
+所以全部 57 个节点在一张表里登记，**改尺寸只改这一处**：
 
 ```js
 export const SIZES = {
@@ -1689,10 +1689,17 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
 
 ### 高度归尺寸表
 
-节点高度不写死：`fillNodeHeight` 的地板取 `panelHeight()`，面板地板 `PANEL_MIN_H = 220`，
-节点地板 470 从 `sizeFor("QG_OutpaintBoard").minH` 读。**新建默认高 780 只能写在
-`node_width.mjs` 的 `SIZES` 里** —— 少了那条登记时 `pinNodeSize` 会按 `DEFAULT_WIDTH`
+节点高度不写死：`fillNodeHeight` 只报一个**常量**地板 `PANEL_MIN_H = 220`，
+节点地板 470 从 `sizeFor("QG_OutpaintBoard").minH` 读。**新建默认高 645（与「加载图像」同尺寸）
+只能写在 `node_width.mjs` 的 `SIZES` 里** —— 少了那条登记，`pinNodeSize` 会按 `DEFAULT_WIDTH`
 把宽度钉成 270、高度留给控件自己算，节点只有 266 高、预览区挤成一条（本轮踩过）。
+
+🔴 **地板绝不能由 `node.size` 反推**。别写 `minHeight: () => panelHeight()` ——
+前端拖动右下角时每一帧都会把尺寸抬到 `computeSize()[1]`，而这个地板又等于
+「当前高度 − 已用高度」，于是 computeSize 恒比当前高度多 8px，每帧再抬一次：
+实测只把宽度拖宽 200px，高度自己从 780 长到 908，而且越长把手越靠下，最后拖不动。
+填满剩余空间不用声明 —— `computeLayoutSize` 只报下限不报上限，`distributeSpace`
+会把节点剩下的高度全给面板。
 
 ## 导出图像（`QG_ExportImage`）：JPEG 参数到底怎么选
 
@@ -1779,7 +1786,7 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.14  |  55 nodes loaded  |  8 categories
+  QG-tools v0.9.15  |  57 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

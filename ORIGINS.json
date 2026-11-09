@@ -7,8 +7,8 @@
     "ported": "搬运 —— 整段照抄上游代码，只改类名 / 节点 ID / 分类 / 显示名 / 中文文案，逻辑一行没动"
   },
   "counts": {
-    "total": 55,
-    "original": 49,
+    "total": 57,
+    "original": 51,
     "ported": 6
   },
   "upstreams": {
@@ -630,6 +630,20 @@
       "note": "一行表达式，白名单求值"
     },
     {
+      "id": "QG_DualMath",
+      "display": "双式数学运算",
+      "file": "nodes/qg_dual_math.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "孤海工具箱 Goohaitools-comfyui",
+        "node": "数学运算 孤海",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      },
+      "note": "自写。只借用「两行表达式 + 五个变量」的用法形态，代码零复用：源包用 eval 且键名/输出名全中文，本节点走包内 _qg_math_engine 的白名单 AST 求值器，键名、说明、报错全英文。变量故意取 a b c d f（跳开 e），让 math.e / pi / tau 常量不被未连线的输入盖掉；两路结果各自四舍五入并 clamp 到 INT32，文本结果在数值槽给 0。第五路输出为英文语法速查。自带 tools/_check_dual_math.py（25 项，含 9 条危险表达式拒绝测试）收进 regress。"
+    },
+    {
       "id": "QG_Exists",
       "display": "存在判断",
       "file": "nodes/qg_exists.py",
@@ -806,6 +820,20 @@
         "relation": "own"
       },
       "note": "2026-11-08 从作者自有插件 1:1 搬入（web/qg_setget.js，1286 行，两个节点共用一个文件）。绘制/解析/菜单/转换逻辑一行未改；搬入只动四类：① import 改本包约定的绝对路径；② 界面文案英化 + zhPair（右键菜单 14 项、连接菜单两项、toast、两个节点定义）；③ 显示名 \"QG 设置点 / QG 获取点\" -> \"Set Point / Get Point\"，标题前缀 设置_ / 获取_ 改成按语言取（zh 仍显示「设置_xxx」，标题要写进工作流）；④ 分类 \"QG 工具\" -> \"QG-tools/Workflow\" 并改调 pinCategory()。节点 ID 与 widgets_values 结构没动，老工作流照常打开。🔴 与 KJNodes 共存时让位：连线菜单（Convert to Set/Get）与连接菜单（Add SetNode）都做了运行时探测，发现 KJ 的补丁在场就不再追加自己的条目。本节点：下拉里列同图所有设置点的名字，右口输出等于同名设置点左口那条线的值；类型跟随设置点，类型变了以后把已经不兼容的右口连线断开（不留看着能跑实际错配的线）；找不到同名设置点时 toast 提示并标红节点。与 QG_SetPoint 必须成对搬/装。空壳 Python 类的原因同 QG_SetPoint。"
+    },
+    {
+      "id": "QG_LongShortSide",
+      "display": "长短边",
+      "file": "nodes/qg_long_short_side.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "孤海工具箱 Goohaitools-comfyui",
+        "node": "长边短边",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      },
+      "note": "自写。只借用「图像优先、否则宽高输入，输出长边 / 短边 / 比值」的用法形态，代码零复用：源节点键名与输出名全中文且用裸 except 吞异常，本节点全英文键、3 条输出说明、SEARCH_ALIASES，非法输入打英文提示后返回稳定零值。与 QG_ImageOrLatentSize（宽 / 高 / 帧数）、QG_RatioResolution（比例串 + 目标尺寸）不重复：只量已有尺寸、不产生新尺寸。自带 tools/_check_long_short_side.py（30 项，含图像优先级、单边输入、除零兜底）收进 regress。"
     }
   ],
   "sections": [
@@ -940,6 +968,12 @@
       "anchor": "## 数学运算",
       "nodes": [
         "QG_Math"
+      ]
+    },
+    {
+      "anchor": "## 双式数学运算",
+      "nodes": [
+        "QG_DualMath"
       ]
     },
     {
@@ -1122,6 +1156,12 @@
       "anchor": "## 提示词行（多行文本拆成列表）",
       "nodes": [
         "QG_PromptLine"
+      ]
+    },
+    {
+      "anchor": "## 长短边",
+      "nodes": [
+        "QG_LongShortSide"
       ]
     }
   ]

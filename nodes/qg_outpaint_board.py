@@ -251,6 +251,13 @@ class QGOutpaintBoard:
 
     RETURN_TYPES = ("IMAGE", "MASK", "BOOLEAN")
     RETURN_NAMES = ("image", "mask", "has_padding")
+    OUTPUT_TOOLTIPS = (
+        "The padded image; the original pixels are copied in untouched, "
+        "never resampled.",
+        "A mask that is 1 over the newly added area and keeps the input mask "
+        "inside the original frame.",
+        "True when padding was added on at least one side.",
+    )
     FUNCTION = "run"
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (

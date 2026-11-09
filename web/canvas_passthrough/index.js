@@ -21,7 +21,7 @@ import {
     panelHost,
     panelKeepsWheel,
     panelRoot,
-} from "../shared/canvas_passthrough.mjs?v=2026110902";
+} from "../shared/canvas_passthrough.mjs?v=2026110904";
 
 const MARK = "__QG_PANEL_WHEEL__";
 

@@ -54,6 +54,10 @@ class QGStringSwitch:
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("string",)
+    OUTPUT_TOOLTIPS = (
+        "The text of the branch the condition selected; the other branch is "
+        "never evaluated.",
+    )
     FUNCTION = "execute"
 
     @classmethod

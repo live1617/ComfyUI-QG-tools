@@ -72,6 +72,10 @@ class QGNumber:
 
     RETURN_TYPES = ("*",)
     RETURN_NAMES = ("value",)
+    OUTPUT_TOOLTIPS = (
+        "The number on the card: an integer in integer mode, a decimal "
+        "otherwise.",
+    )
     FUNCTION = "execute"
 
     def execute(self, kind=KIND_INT, value=0.0):

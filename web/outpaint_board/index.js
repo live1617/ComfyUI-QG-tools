@@ -1,9 +1,9 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { chainCallback, keepDomWidgetWidthAuto, zhPair } from "../shared/index.mjs?v=2026110902";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026110902";
-import { sizeFor } from "../shared/node_width.mjs?v=2026110902";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110902";
+import { chainCallback, keepDomWidgetWidthAuto, zhPair } from "../shared/index.mjs?v=2026110904";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026110904";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110904";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110904";
 
 /* ============================================================
  * QG_OutpaintBoard —— 前端面板
@@ -26,7 +26,7 @@ const PANEL_MIN_H = 220;
 const SIZE_ENTRY = sizeFor("QG_OutpaintBoard");
 const PANEL_MIN_W = SIZE_ENTRY?.minW ?? 380;
 const NODE_MIN_H = SIZE_ENTRY?.minH ?? 470;
-const NODE_DEFAULT_H = SIZE_ENTRY?.h ?? 780;
+const NODE_DEFAULT_H = SIZE_ENTRY?.h ?? 645;
 
 // 这些 widget 由面板接管显示
 const MANAGED = [
@@ -1610,9 +1610,12 @@ const VIEW_MARGIN = 30;
   });
 
   /* ---------- 挂到节点 ---------- */
-  // 面板高度 = 节点高度 - 已用高度：节点拉多高，预览区就有多高。
-  // 别去覆盖 widget.computeSize —— 覆盖过之后框架就不再按 getHeight 走，
-  // 反而会自己把节点撑高（曾出现"拉一下节点，面板疯长"）。
+  // 面板高度 = 节点高度 - 已用高度。这是「现在量出来多高」，只给读数用，
+  // 绝不能拿去当 floor —— 那是一条自反馈：floor 报给前端后，拖动缩放时
+  // 每一帧都会拿 computeSize() 把尺寸往上抬，而 computeSize 又由这个 floor
+  // 算出「当前高度 - 已用高度」，于是每帧恒定多出几像素，拖着不放就一路长高。
+  // 填满剩余空间本来不需要声明：computeLayoutSize 只报下限不报上限，
+  // distributeSpace 会把节点剩下的高度全给面板（见 panel_layout.mjs 顶部）。
   function panelHeight() {
     const total = Number(node.size?.[1]) || NODE_DEFAULT_H;
     const used = panel && typeof panel.y === "number" && panel.y > 0 ? panel.y : CHROME_H;
@@ -1627,13 +1630,13 @@ const VIEW_MARGIN = 30;
   keepDomWidgetWidthAuto(panel);
   // The preview carries a floor (a canvas squeezed to a sliver cannot be worked
   // in), so this panel cannot be clamped the pinPanelToNodeHeight way: a
-  // min-height beats max-height, and the clamp silently does nothing. Go the
-  // other way - let node.size follow the measured shell. When the floor is what
-  // holds the shell open, size converges; when the user drags it taller, panel
-  // and size grow together.
+  // min-height beats max-height, and the clamp silently does nothing. Declaring
+  // only a floor and no ceiling is enough - distributeSpace then hands the panel
+  // every pixel the node has left, so the preview grows with the node and this
+  // node never has to touch node.size on the classic renderer.
   fillNodeHeight(panel, {
     minWidth: PANEL_MIN_W,
-    minHeight: () => panelHeight(),
+    minHeight: PANEL_MIN_H,
     minNodeSize: [PANEL_MIN_W, NODE_MIN_H],
     exactMinWidth: true,
   });

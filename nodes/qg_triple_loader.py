@@ -169,6 +169,11 @@ class QGTripleLoader:
 
     RETURN_TYPES = ("MODEL", "CLIP", "VAE")
     RETURN_NAMES = ("MODEL", "CLIP", "VAE")
+    OUTPUT_TOOLTIPS = (
+        "The loaded diffusion model, ready for a sampler or a LoRA stack.",
+        "The loaded text encoder, ready for a CLIP Text Encode node.",
+        "The loaded VAE, ready for a VAE Encode or VAE Decode node.",
+    )
     FUNCTION = "load_all"
 
     # Parameter order must match INPUT_TYPES exactly (positional arguments).

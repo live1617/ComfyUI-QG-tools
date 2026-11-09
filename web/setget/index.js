@@ -40,8 +40,8 @@
  * 工作流 JSON 里保存的只有节点 type / 位置 / 名称（serialize_widgets）。
  */
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=2026110902";
-import { pinCategory } from "../shared/category_zh.mjs?v=2026110902";
+import { zhPair } from "../shared/zh.mjs?v=2026110904";
+import { pinCategory } from "../shared/category_zh.mjs?v=2026110904";
 
 const SET_TYPE = "QG_SetPoint";
 const GET_TYPE = "QG_GetPoint";

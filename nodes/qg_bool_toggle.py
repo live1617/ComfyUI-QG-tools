@@ -48,6 +48,9 @@ class QGBoolToggle:
 
     RETURN_TYPES = ("BOOLEAN",)
     RETURN_NAMES = ("boolean",)
+    OUTPUT_TOOLTIPS = (
+        "The switch state, ready for any boolean condition downstream.",
+    )
     FUNCTION = "execute"
 
     def execute(self, boolean=False, label=""):

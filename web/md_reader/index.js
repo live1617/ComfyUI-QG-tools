@@ -3,8 +3,8 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { zh } from "../shared/zh.mjs?v=2026110902";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026110902";
+import { zh } from "../shared/zh.mjs?v=2026110904";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026110904";
 
 const NODE_NAME = "QG_MDReader";
 const NODE_WIDTH = sizeFor(NODE_NAME).w;

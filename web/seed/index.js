@@ -15,20 +15,20 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026110902";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110904";
 import {
   BRAND,
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
   zhPair,
-} from "../shared/index.mjs?v=2026110902";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026110902";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=2026110902";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026110902";
-import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026110902";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110902";
-import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026110902";
+} from "../shared/index.mjs?v=2026110904";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026110904";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=2026110904";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=2026110904";
+import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=2026110904";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110904";
+import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=2026110904";
 
 const NODE_CLASS = "QG_Seed";
 const CSS_ID = "qgtools-seed-css";
@@ -148,11 +148,14 @@ function render(state) {
   if (document.activeElement !== state.input) state.input.value = formatSeed(Number(value));
   state.input.disabled = linked;
   state.field.classList.toggle("linked", linked);
-  state.field.title = linked ? "种子来自输入连线" : "点一下直接输入种子";
+  state.field.title = linked
+    ? zhPair("Seed comes from the connected input", "种子来自输入连线")
+    : zhPair("Click to type a seed", "点一下直接输入种子");
   const stepping = control === "increment" || control === "decrement";
-  state.tag.textContent = control === "randomize" ? "下一枚"
-    : control === "fixed" ? "种子"
-      : control === "decrement" ? "递减" : "递增";
+  state.tag.textContent = control === "randomize" ? zhPair("Next", "下一枚")
+    : control === "fixed" ? zhPair("Seed", "种子")
+      : control === "decrement" ? zhPair("Decrement", "递减")
+        : zhPair("Increment", "递增");
   state.segRandom.classList.toggle("on", control === "randomize");
   state.segFixed.classList.toggle("on", control === "fixed");
   state.segStep.classList.toggle("on", stepping);

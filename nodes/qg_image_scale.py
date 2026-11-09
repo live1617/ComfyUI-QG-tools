@@ -73,6 +73,15 @@ from PIL import Image
 
 from ._qg_combo_legacy import combo_legacy
 
+# 逐帧缩放是纯 CPU 的重活：视频 batch 一大，用户点取消得能立刻停下。
+# 部分离线检查脚本按文件路径加载本模块（没有包上下文），相对导入会抛
+# ImportError，这时兜底成空函数，行为与没有这一层时完全一样。
+try:
+    from ._qg_execution_helpers import raise_if_interrupted
+except ImportError:  # pragma: no cover
+    def raise_if_interrupted() -> None:
+        return
+
 # ---------------------------------------------------------------------------
 # 控件取值：顺序、默认值、边界都与参考节点一致，参数可直接搬用
 # ---------------------------------------------------------------------------
@@ -633,6 +642,7 @@ def scale_image(image=None, mask=None, width=512, height=512,
     out_images, out_masks = [], []
     final_w = final_h = 0
     for index in range(batch):
+        raise_if_interrupted()
         frame = _process_one(image[index].unsqueeze(0),
                              mask[index].unsqueeze(0), params)
         out_images.append(frame[0])
@@ -669,6 +679,12 @@ class QGImageScale:
     FUNCTION = "execute"
     RETURN_TYPES = ("IMAGE", "INT", "INT", "MASK")
     RETURN_NAMES = ("image", "width", "height", "mask")
+    OUTPUT_TOOLTIPS = (
+        "The scaled image, one frame per input frame.",
+        "Width of the output image in pixels, ready for a size input.",
+        "Height of the output image in pixels, ready for a size input.",
+        "The mask scaled together with the image, matching its output size.",
+    )
 
     @classmethod
     def VALIDATE_INPUTS(cls, scale_method=None, interpolation=None,

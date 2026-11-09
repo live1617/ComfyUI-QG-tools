@@ -107,6 +107,10 @@ class QGMaskDetect:
     FUNCTION = "execute"
     RETURN_TYPES = ("BOOLEAN",)
     RETURN_NAMES = ("has_mask",)
+    OUTPUT_TOOLTIPS = (
+        "True when the active area reaches the minimum ratio; an empty mask "
+        "is always False.",
+    )
 
     @classmethod
     def INPUT_TYPES(cls):

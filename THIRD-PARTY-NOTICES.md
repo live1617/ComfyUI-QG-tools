@@ -8,7 +8,7 @@
 
 - 本插件：ComfyUI-QG-tools · GPL-3.0-or-later · https://github.com/live1617/ComfyUI-QG-tools
 - 依据：`ORIGINS.json`（更新于 2026-11-08）
-- 规模：55 个节点 = **6 个搬运** + **49 个原创**
+- 规模：57 个节点 = **6 个搬运** + **51 个原创**
 
 ## 口径
 
@@ -91,6 +91,7 @@
 | `QG_MDReader` | 加载文档 | ComfyUI-MD-Reader「MarkdownFileReader」 | MIT | 作者自有插件，合并进来 |
 | `QG_TripleLoader` | 模型加载器 | ComfyUI-TripleLoader「TripleLoader」 | MIT | 作者自有插件，合并进来 |
 | `QG_StringSwitch` | 字符串切换 | ComfyUI-Crystools「Switch string [Crystools]」 | GPL-3.0 | 参考思路，代码自行实现 |
+| `QG_DualMath` | 双式数学运算 | 孤海工具箱 Goohaitools-comfyui「数学运算 孤海」 | GPL-3.0 | 参考思路，代码自行实现 |
 | `QG_LoadImage` | 加载图像 | Goohaitools-comfyui「加载图像」 | GPL-3.0 | 参考思路，代码自行实现 |
 | `QG_MaskCrop` | 遮罩裁剪 | 孤海工具箱 Goohaitools-comfyui「GH_MaskCropV2」 | GPL-3.0 | 参考思路，代码自行实现 |
 | `QG_CropRestore` | 裁剪恢复 | 孤海工具箱 Goohaitools-comfyui「GH_CropRestore」 | GPL-3.0 | 参考思路，代码自行实现 |
@@ -102,6 +103,7 @@
 | `QG_Note` | 注释 | ComfyUI-QG-Multipack v0.1.0「QG_Note」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
 | `QG_SetPoint` | 设置点 | ComfyUI-QG-Multipack v0.1.0「QG_SetPoint」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
 | `QG_GetPoint` | 获取点 | ComfyUI-QG-Multipack v0.1.0「QG_GetPoint」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
+| `QG_LongShortSide` | 长短边 | 孤海工具箱 Goohaitools-comfyui「长边短边」 | GPL-3.0 | 参考思路，代码自行实现 |
 
 ## 完全原创（无上游参考）
 

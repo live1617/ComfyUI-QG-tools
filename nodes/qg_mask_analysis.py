@@ -215,6 +215,18 @@ class QGMaskAnalysis:
         "mask", "canvas_width", "canvas_height",
         "mask_width", "mask_height", "center_x", "center_y",
     )
+    OUTPUT_TOOLTIPS = (
+        "A mask with the measured rectangle painted solid white on the "
+        "original canvas.",
+        "Width of the canvas in pixels.",
+        "Height of the canvas in pixels.",
+        "Width of the rectangle in pixels after the four side adjustments; "
+        "0 when the mask is empty.",
+        "Height of the rectangle in pixels after the four side adjustments; "
+        "0 when the mask is empty.",
+        "Horizontal centre of the rectangle in pixels.",
+        "Vertical centre of the rectangle in pixels.",
+    )
 
     @classmethod
     def INPUT_TYPES(cls):

@@ -268,6 +268,14 @@ class QGMaskBlend:
     FUNCTION = "execute"
     RETURN_TYPES = ("MASK", "INT", "INT")
     RETURN_NAMES = ("mask", "width", "height")
+    OUTPUT_TOOLTIPS = (
+        "The blended mask, with the solid rectangle applied when a BBOX "
+        "rule was chosen.",
+        "Width of the reported rectangle in pixels; 0 when no rectangle "
+        "was applied.",
+        "Height of the reported rectangle in pixels; 0 when no rectangle "
+        "was applied.",
+    )
 
     @classmethod
     def VALIDATE_INPUTS(cls, blend_mode=None, bbox=None, align=None):

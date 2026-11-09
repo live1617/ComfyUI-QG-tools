@@ -33,22 +33,22 @@
 // 滑条顶在右端、输出却是 80，看着就像坏了。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026110902";
-import { roundHalfAway } from "../shared/scrub_input.mjs?v=2026110902";
-import { BRAND, chainCallback, chainHandler, notifyQgChange, zhPair } from "../shared/index.mjs?v=2026110902";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026110902";
-import { hideWidget } from "../shared/widget_visibility.mjs?v=2026110902";
+import { sizeFor } from "../shared/node_width.mjs?v=2026110904";
+import { roundHalfAway } from "../shared/scrub_input.mjs?v=2026110904";
+import { BRAND, chainCallback, chainHandler, notifyQgChange, zhPair } from "../shared/index.mjs?v=2026110904";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026110904";
+import { hideWidget } from "../shared/widget_visibility.mjs?v=2026110904";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
   vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=2026110902";
+} from "../shared/vue_mode.mjs?v=2026110904";
 import {
   closeSettingsMenu,
   gearIconSvg,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026110902";
+} from "../shared/settings_menu.mjs?v=2026110904";
 
 const NODE_CLASS = "QG_Slider";
 // kind 的取值，必须和 nodes/qg_slider.py 的 KINDS 逐字一致。

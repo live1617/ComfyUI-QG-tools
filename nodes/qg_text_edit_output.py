@@ -61,6 +61,10 @@ class QGTextEditOutput:
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("text",)
+    OUTPUT_TOOLTIPS = (
+        "The text as a one-item STRING list; the whole box is one item and "
+        "is never split.",
+    )
     OUTPUT_IS_LIST = (True,)
     OUTPUT_NODE = True
     FUNCTION = "execute"

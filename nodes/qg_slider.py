@@ -126,6 +126,10 @@ class QGSlider:
 
     RETURN_TYPES = ("*",)
     RETURN_NAMES = ("value",)
+    OUTPUT_TOOLTIPS = (
+        "The value on the slider, clamped to its range: a decimal by default, "
+        "an integer in integer mode.",
+    )
     FUNCTION = "execute"
 
     def execute(self, kind=KIND_FLOAT, value=0.0, min_value=0.0, max_value=1.0, step=0.1):
