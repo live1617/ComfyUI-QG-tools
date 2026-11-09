@@ -59,14 +59,18 @@ const RATIO_OPTIONS = [
 
 const ZOOM_OPTIONS = [
   { en: "Fit", cn: "适应", value: "fit" },
+  { label: "1%", value: "1" },
+  { label: "2%", value: "2" },
+  { label: "5%", value: "5" },
   { label: "12.5%", value: "12.5" },
   { label: "25%", value: "25" },
   { label: "50%", value: "50" },
   { label: "100%", value: "100" },
 ];
 
-// 滚轮缩放的边界（倍数）
-const ZOOM_MIN = 0.05;
+// 滚轮缩放的边界（倍数）。下限放到 1%：5% 看一张两万像素的长图还是只能看到一小块，
+// 想纵览整体布局就够不着了。再小只剩像素噪点，没有意义。
+const ZOOM_MIN = 0.01;
 const ZOOM_MAX = 8;
 
 const CSS = `
@@ -389,6 +393,8 @@ function buildPanel(node) {
     imgW: 0,
     imgH: 0,
     fileName: "",
+    loading: false,             // 读图中：防止上游换图时连开好几个请求
+    failedFile: "",             // 上次读失败的文件，别每帧重试；点「加载」清空
     zoomPct: 0,                 // 0 = 适应（按画板自动缩放），其它值为绝对比例
     pan: { x: 0, y: 0 },        // 手动平移（只在非适应时生效）
     canvas: null,
@@ -560,14 +566,17 @@ function buildPanel(node) {
   const btnLoad = el("button", "qgtools-obp-btn", zhPair("Load", "加载"));
   const btnReset = el("button", "qgtools-obp-btn", zhPair("Reset", "复位"));
   const ratioSel = el("select", "qgtools-obp-sel");
+  // 数组项有两种写法：要翻译的给 en/cn，比例这类中英同形的只给 label。
+  // 早先一律读 o.en/o.cn，没有这两个字段的项就成了空字符串 —— 下拉里一片空白。
+  const optionText = (o) => (o.cn ? zhPair(o.en, o.cn) : o.label ?? String(o.value));
   RATIO_OPTIONS.forEach((o) => {
-    const opt = el("option", null, zhPair(o.en, o.cn));
+    const opt = el("option", null, optionText(o));
     opt.value = o.value;
     ratioSel.appendChild(opt);
   });
   const zoomSel = el("select", "qgtools-obp-sel qgtools-obp-sel-narrow");
   ZOOM_OPTIONS.forEach((o) => {
-    const opt = el("option", null, zhPair(o.en, o.cn));
+    const opt = el("option", null, optionText(o));
     opt.value = o.value;
     zoomSel.appendChild(opt);
   });
@@ -599,7 +608,9 @@ function buildPanel(node) {
     const v = zoomSel.value;
     if (v === "custom") return;          // 占位项，不代表任何操作
     if (v === "fit") setZoom(0);
-    else setZoom(parseFloat(v));
+    // 选项里写的是百分数（"25" = 25%），setZoom 收的是倍数 —— 之前直接
+    // parseFloat 传进去，选 25% 会变成 2500%。
+    else setZoom(parseFloat(v) / 100);
   });
   root.appendChild(tools);
 
@@ -982,20 +993,60 @@ const VIEW_MARGIN = 30;
   }
 
   /* ---------- 取上游图像 ---------- */
-  function pickSourceFile(srcNode) {
+  // 找到「上游把图片文件名存在哪个控件里」。返回控件本身（要挂 callback 监听换图），
+  // 不只是值 —— 早先只返回值，所以上游换图后画板一直停在旧图上。
+  function pickSourceWidget(srcNode) {
     const keys = ["image", "image_name", "file", "filename"];
     for (const k of keys) {
       const w = (srcNode.widgets || []).find(
         (x) => x.name === k && typeof x.value === "string" && x.value.trim()
       );
-      if (w) return w.value.trim();
+      if (w) return w;
     }
-    const any = (srcNode.widgets || []).find(
-      (x) =>
-        typeof x.value === "string" &&
-        /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(x.value)
+    return (
+      (srcNode.widgets || []).find(
+        (x) =>
+          typeof x.value === "string" &&
+          /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i.test(x.value)
+      ) || null
     );
-    return any ? any.value.trim() : null;
+  }
+
+  // 监听上游控件的后续变化。上游可能是任意节点，所以每次换连线都要重挂；
+  // 原 callback 必须原样转出去，不然会顶掉上游自己的行为。
+  const bind = { srcNode: null, widget: null, original: null };
+
+  function unbindSource() {
+    if (bind.widget) {
+      try {
+        bind.widget.callback = bind.original;
+      } catch (err) {
+        /* 控件已被重建，改不回去也无所谓 */
+      }
+    }
+    bind.srcNode = null;
+    bind.widget = null;
+    bind.original = null;
+  }
+
+  function bindSource(srcNode, widget) {
+    if (!widget) {
+      unbindSource();
+      return;
+    }
+    if (bind.widget === widget && bind.srcNode === srcNode) return;
+    unbindSource();
+    const prev = widget.callback;
+    bind.srcNode = srcNode;
+    bind.widget = widget;
+    bind.original = prev;
+    widget.callback = function () {
+      const out = prev?.apply(this, arguments);
+      state.fileName = "";
+      state.failedFile = "";
+      loadSource(false);
+      return out;
+    };
   }
 
   function upstreamNode() {
@@ -1034,15 +1085,22 @@ const VIEW_MARGIN = 30;
   function loadSource(manual) {
     const src = upstreamNode();
     if (!src) {
+      unbindSource();
       status.textContent = zhPair("Waiting for image", "等待图像");
       if (manual) draw();
       return;
     }
-    const file = pickSourceFile(src);
+    // 每次读都顺手把监听挂到「当前」那个控件上：上游换节点、控件被重建都能自愈。
+    const widget = pickSourceWidget(src);
+    bindSource(src, widget);
+    const file = widget ? widget.value.trim() : null;
     if (!file) {
       status.textContent = zhPair("No image files upstream", "上游无图像文件");
       return;
     }
+    if (manual) state.failedFile = "";   // 点「加载」＝ 明确要求重试
+    if (state.loading) return;
+    if (file === state.failedFile) return;   // 读失败过的，别每帧重试
     if (file === state.fileName && state.img) {
       // 这里以前只写百分比，会把底栏里的"宽 × 高"顶掉
       status.textContent = footprintText() || zhPair("Loaded", "已加载");
@@ -1061,9 +1119,11 @@ const VIEW_MARGIN = 30;
         Date.now()
     );
 
+    state.loading = true;
     status.textContent = zhPair("Reading...", "读取中…");
     const img = new Image();
     img.onload = () => {
+      state.loading = false;
       // 只留一份长边 1600 的副本：拖边时每帧都要重绘，直接用原图会明显发涩
       const thumb = makeThumb(img, 1600);
       state.img = thumb.el;
@@ -1073,6 +1133,8 @@ const VIEW_MARGIN = 30;
       schedule();
     };
     img.onerror = () => {
+      state.loading = false;
+      state.failedFile = file;
       status.textContent = zhPair("Read failed", "读取失败");
       schedule();
     };
@@ -1680,15 +1742,42 @@ const VIEW_MARGIN = 30;
   const prevConn = node.onConnectionsChange;
   node.onConnectionsChange = function (type, index, connected) {
     prevConn?.apply(this, arguments);
+    // 连线变了：上游可能整个换成另一个节点，旧监听先摘掉再按需重挂。
+    unbindSource();
     if (connected) {
       state.fileName = "";
+      state.failedFile = "";
       setTimeout(() => loadSource(false), 120);
+    }
+  };
+
+  // 兜底：有的上游（Vue 渲染器重建控件、上传组件直接改 widgets_values）不走我们
+  // 包住的那个 callback。每帧比一次「控件引用 + 值」，不一样就重读 —— 只做字符串
+  // 比较，开销可忽略，但能保证换图一定会跟上。
+  const prevForeground = node.onDrawForeground;
+  node.onDrawForeground = function (ctx) {
+    prevForeground?.apply(this, arguments);
+    const src = upstreamNode();
+    if (!src) return;
+    const widget = pickSourceWidget(src);
+    if (!widget) return;
+    if (widget !== bind.widget || src !== bind.srcNode) {
+      bindSource(src, widget);
+      state.fileName = "";
+      loadSource(false);
+      return;
+    }
+    const now = widget.value.trim();
+    if (now && now !== state.fileName && now !== state.failedFile) {
+      state.fileName = "";
+      loadSource(false);
     }
   };
 
   const prevRemoved = node.onRemoved;
   node.onRemoved = function () {
     try {
+      unbindSource();
       if (state.navGuard) {
         for (const t of state.navEvents || []) {
           document.removeEventListener(t, state.navGuard, { capture: true });
