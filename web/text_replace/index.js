@@ -20,7 +20,7 @@
  */
 
 import { app } from "/scripts/app.js";
-import { chainCallback, zhPair } from "../shared/index.mjs?v=2026111208";
+import { chainCallback, zhPair } from "../shared/index.mjs?v=202611132008";
 
 const NODE_CLASS = "QG_TextReplace";
 const TEXT_SOURCE = "PrimitiveStringMultiline"; // comfy_extras 内置的多行文本

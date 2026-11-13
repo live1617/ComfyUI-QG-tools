@@ -6,7 +6,7 @@
 //
 // 移植自 ComfyUI-AusBoss（MIT，js/shared/brush.mjs）。
 
-import { zhPair } from "./zh.mjs?v=2026111208";
+import { zhPair } from "./zh.mjs?v=202611132008";
 
 // 笔宽能到的最大范围。范围更窄的节点传自己的进来。
 export const BRUSH_SIZE = [2, 2000];

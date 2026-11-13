@@ -259,7 +259,7 @@ class QGOutpaintBoard:
         "True when padding was added on at least one side.",
     )
     FUNCTION = "run"
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     DESCRIPTION = (
         "Grow the canvas outwards and hand back both the padded picture and a "
         "mask of the new area. Input pixels are copied, never resampled, so "

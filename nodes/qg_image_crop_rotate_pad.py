@@ -35,7 +35,7 @@ from ._qg_transform_inputs import resize_inputs, spec_from_values, transform_inp
 
 
 class QGImageCropRotatePad:
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     DESCRIPTION = (
         "Loads an image and applies one visual rotate, crop, and pad transform. "
         "The mask marks what to paint: new padding, the corners a turn leaves "

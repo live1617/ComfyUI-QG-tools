@@ -1002,7 +1002,7 @@ CPU、64×64）确认这三条路径都会出预览：
 
 **改名带来的后果**：节点 ID 变了，含 `AUSBOSS_NODES_LoraLoader` 的工作流需要重新放一次节点。
 
-### LoRA Switch Stack：开关长在行上（v0.9.17）
+### LoRA Switch Stack：开关长在行上（v0.9.18）
 
 `QG_LoraSwitchStack` 是 QG_LoraLoader 的第二种形态：每行一个 `on_N` 布尔输入，
 槽就画在那一行上。两边的加载逻辑是同一套 `_qg_lora_helpers`，区别只在界面。
@@ -2359,7 +2359,7 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.17  |  65 nodes loaded  |  8 categories
+  QG-tools v0.9.18  |  65 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

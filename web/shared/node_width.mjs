@@ -30,7 +30,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026111208";
+import { chainCallback } from "./index.mjs?v=202611132008";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════
@@ -125,7 +125,7 @@ export const SIZES = {
     QG_GetPoint: { w: 210, minW: 140, h: 60, minH: 60 },
     // 双式数学运算：两个单行表达式 + 5 个输入槽 + 5 个输出槽，纯后端原生控件。
     // h 为真机 computeSize 实测值，见 tools/_probe_sizes_vs_table.cjs。
-    QG_DualMath: { w: 270, minW: 220, h: 162, minH: 60 },
+    QG_DualMath: { w: 270, minW: 220, h: 187, minH: 60 },
     // 长短边：3 个输入槽 + 3 个输出槽、无控件，纯后端。h 为真机 computeSize 实测值。
     QG_LongShortSide: { w: 270, minW: 220, h: 66, minH: 60 },
     // QG LoRA堆：动态高度节点（行数 = SLOT_COUNT = 24，可零行）。

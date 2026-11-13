@@ -6,8 +6,8 @@
 比接三个节点省地方，也不会因为中间结果被四舍五入掉两次。
 
 卡片上只有一行：表达式。变量 a、b、c… 是节点左侧的输入槽，只从上游连线取，
-默认露 3 个空槽、接满一个就自己长出下一个（最多到 z），没连线按 0 算，
-所以常数直接写进表达式，不用另开一排数字框。
+默认露 3 个空槽、接满一个就自己长出下一个（最多到 z，跳过 e —— e 是常量），
+没连线按 0 算，所以常数直接写进表达式，不用另开一排数字框。
 表达式里能用的东西写在节点 ``?`` 的帮助卡里，也在这份文件的 DESCRIPTION。
 
 安全性由 ``_qg_math_engine`` 负责：表达式先解析成语法树，再按白名单逐节点算，
@@ -30,7 +30,6 @@ ValueError，ComfyUI 的红框里带着原始表达式和原因，比静默返�
 import string
 
 from ._qg_math_engine import (
-    CONSTANTS,
     MathError,
     evaluate,
     format_number,
@@ -38,10 +37,10 @@ from ._qg_math_engine import (
     to_value,
 )
 
-# 变量名跟官方「数学表达式」一样：a–z，接满一个就自己长下一个。
-# 前端只把前面几个放出来（默认 3 个空槽），剩下的一律隐藏 ——
-# 所以这里声明全部 26 个，界面上并不长。
-VARIABLES = tuple(string.ascii_lowercase)
+# 变量名 a–z，但 **e 除外**：e 是数学常量 math.e。露成输入槽会有两头错——
+# 没接线时它按 0 算，`2 * e` 静默变 0；接了线常量 e 又消失。
+# 与其让人对着一个「接了也没用」的槽发懵，干脆不露（双式数学运算同一套规则）。
+VARIABLES = tuple(c for c in string.ascii_lowercase if c != "e")
 
 INT32_MIN = -2147483648
 INT32_MAX = 2147483647
@@ -67,12 +66,14 @@ _EXPRESSION_HELP = (
 class QGMath:
     CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
-        "One expression over variables a to z, for numbers or for text. Type a "
+        "One expression over variables a to z (every letter except e), for numbers "
+        "or for text. Type a "
         "formula such as round(a / b * 2, 2) or a + \", best quality\" on the card. "
         "Variables a, b, c\u2026 are wire-only inputs: three slots show up first and "
         "the next one appears as soon as the last is connected (up to z); they take "
         "integers, floats, booleans or text, and an unwired slot counts as 0, so any "
-        "constant goes straight into the expression. A variable that arrives as text "
+        "constant goes straight into the expression. There is no e slot: e stays the "
+        "constant 2.718\u2026 so 2 * e keeps working. A variable that arrives as text "
         "counts as a number when the whole string is a number, otherwise it stays "
         "text. "
         "Outputs the result four ways: as a decimal, as an integer rounded to the "
@@ -131,12 +132,11 @@ class QGMath:
 
     def execute(self, expr="", **variables):
         # 变量不再一律压成数字：接进来的文本要能原样传给表达式。
-        # 与常量同名的变量不进 scope：a–z 里有个 e，未连线时它是 0.0，会把
-        # math.e 覆盖掉 —— 帮助卡写着可以写 e，实际「2 * e」静默算成 0。
+        # VARIABLES 里已经没有与常量同名的名字（e / pi / tau / inf），
+        # 所以这里可以直接铺进 scope，常量由 evaluate() 自己兜底。
         scope = {
             name: to_value(variables.get(name, 0.0))
             for name in VARIABLES
-            if name not in CONSTANTS
         }
         try:
             result = evaluate(expr, scope)

@@ -1,9 +1,9 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { chainCallback, keepDomWidgetWidthAuto, zhPair } from "../shared/index.mjs?v=2026111208";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=2026111208";
-import { sizeFor } from "../shared/node_width.mjs?v=2026111208";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026111208";
+import { chainCallback, keepDomWidgetWidthAuto, zhPair } from "../shared/index.mjs?v=202611132008";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=202611132008";
+import { sizeFor } from "../shared/node_width.mjs?v=202611132008";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611132008";
 
 /* ============================================================
  * QG_OutpaintBoard —— 前端面板
@@ -402,6 +402,7 @@ function buildPanel(node) {
     geo: null,
     drag: null,
     hover: null,
+    hoverHandle: null,
     pending: null,
     moving: null,
     panning: null,
@@ -910,7 +911,16 @@ const VIEW_MARGIN = 30;
       ...geo, x, y, scale,
       box: { x0: x, y0: y, x1: x + bw, y1: y + bh },
     };
-    const plan = (!drag && state.hover) ? planAt(cur, state.hover.x, state.hover.y) : null;
+    let plan = (!drag && state.hover) ? planAt(cur, state.hover.x, state.hover.y) : null;
+    // 悬停 + Shift：对侧也画出虚线（孤海的交互）。鼠标在边框上时用 handle 推对侧，
+    // 在条带/外侧时按"plan 改了哪侧"推对侧；补边为 0 导致 planAt 无结果时也用 handle 兜底。
+    if (!drag && state.shiftHeld) {
+      if (plan) {
+        plan = symmetricPlan(plan, state.hoverHandle, geo);
+      } else if (state.hoverHandle) {
+        plan = symmetricPlan({ l: geo.l, r: geo.r, t: geo.t, b: geo.b }, state.hoverHandle, geo);
+      }
+    }
     if (plan) {
       const nx = x + (geo.l - plan.l) * scale;
       const ny = y + (geo.t - plan.t) * scale;
@@ -1147,6 +1157,7 @@ const VIEW_MARGIN = 30;
     );
     setValue(node, "unit", "pixels");
     state.hover = null;
+    state.hoverHandle = null;
     setZoom(0);      // 复位也把视野恢复到"适应"
     schedule();
   }
@@ -1194,23 +1205,31 @@ const VIEW_MARGIN = 30;
   // 画板不许长到预览区外面去。
   // 这条是照孤海的实测行为定的：扩到画布边缘就停住，再点也不会更大。
   // 源图在扩展时位置固定，所以上限直接用内容框的屏幕坐标反推。
-  function clampPlan(plan, g) {
-    if (!g || !g.cbox) return plan;
+  // 每侧还能扩多少（图像像素）：画板不许长到预览区外面去。
+  // 上限不能低于当前值——画板已经超出预览区时（比如手动调过大补边），
+  // 上限反而比现值小，一刀切下去会变成"点一下就猛缩"，很难受。
+  function planCaps(g) {
+    if (!g || !g.cbox) return null;
     const s = g.scale || 1;
     const cw = Math.max(60, canvas.clientWidth || 0);
     const ch = Math.max(60, canvas.clientHeight || 0);
     const pad = 3;
-    const maxL = Math.max(0, Math.floor((g.cbox.x0 - pad) / s));
-    const maxT = Math.max(0, Math.floor((g.cbox.y0 - pad) / s));
-    const maxR = Math.max(0, Math.floor((cw - pad - g.cbox.x1) / s));
-    const maxB = Math.max(0, Math.floor((ch - pad - g.cbox.y1) / s));
-    // 上限不能低于当前值：画板已经超出预览区时（比如手动调过大补边），
-    // 上限反而比现值小，一刀切下去会变成"点一下就猛缩"，很难受。
     return {
-      l: Math.min(plan.l, Math.max(maxL, g.l)),
-      t: Math.min(plan.t, Math.max(maxT, g.t)),
-      r: Math.min(plan.r, Math.max(maxR, g.r)),
-      b: Math.min(plan.b, Math.max(maxB, g.b)),
+      l: Math.max(g.l, Math.max(0, Math.floor((g.cbox.x0 - pad) / s))),
+      t: Math.max(g.t, Math.max(0, Math.floor((g.cbox.y0 - pad) / s))),
+      r: Math.max(g.r, Math.max(0, Math.floor((cw - pad - g.cbox.x1) / s))),
+      b: Math.max(g.b, Math.max(0, Math.floor((ch - pad - g.cbox.y1) / s))),
+    };
+  }
+
+  function clampPlan(plan, g) {
+    const caps = planCaps(g);
+    if (!caps) return plan;
+    return {
+      l: Math.min(plan.l, caps.l),
+      t: Math.min(plan.t, caps.t),
+      r: Math.min(plan.r, caps.r),
+      b: Math.min(plan.b, caps.b),
     };
   }
 
@@ -1241,6 +1260,40 @@ const VIEW_MARGIN = 30;
     }
     // 点哪吸哪：点在画板外侧就是把补边扩到鼠标，点在补边条带里就是把补边收回来。
     return clampPlan(plan, g);
+  }
+
+  // Shift 对称预览：把"被操作的那一侧"复制到对边（拖左→右等量），
+  // 与拖拽时的 applyDrag 同一套口径。handle 为空时按 plan 相对当前值的变化判断哪侧在动。
+  function symmetricPlan(plan, handle, g) {
+    const out = { ...plan };
+    const caps = planCaps(g) || {};
+    const capOf = (key) => (typeof caps[key] === "number" ? caps[key] : Infinity);
+    const pairs = [
+      ["left", "l", "right", "r"],
+      ["top", "t", "bottom", "b"],
+    ];
+    for (const [startName, startKey, endName, endKey] of pairs) {
+      const onStart = handle ? handle.indexOf(startName) >= 0 : out[startKey] !== g[startKey];
+      const onEnd = handle ? handle.indexOf(endName) >= 0 : out[endKey] !== g[endKey];
+      if (onStart === onEnd) continue;      // 两侧都在动（角拖）或都不动：不用复制
+      const base = onStart ? out[startKey] : out[endKey];
+      // 共同值必须落在两侧都能容下的范围里。只压对侧（clampPlan 的老行为）会出现
+      // 「被拖那侧 72、对侧被压回 32」——看着就是没对称（percent 下尤其明显）。
+      const v = Math.max(0, Math.round(Math.min(base, capOf(startKey), capOf(endKey))));
+      out[startKey] = v;
+      out[endKey] = v;
+    }
+    return clampPlan(out, g);
+  }
+
+  // 「点哪吸哪」的统一出口：悬停预览、画板外侧按住拖、单击抬起三处都走这里，
+  // 保证"看得见的虚线"和"松手/拖动后的真实结果"完全一致（含 Shift 对称）。
+  // 之前外侧拖动只调 planAt，没走对称，于是出现"有预览但对侧不动、只扩一侧"。
+  function placePlan(g, x, y, shiftKey) {
+    const plan = planAt(g, x, y);
+    if (!plan) return null;
+    if (!shiftKey) return plan;
+    return symmetricPlan(plan, null, g);
   }
 
   function applyPlan(plan) {
@@ -1324,12 +1377,14 @@ const VIEW_MARGIN = 30;
 
   // 调试口：把内部判定函数挂出来，探针（_probe_*.js / .py）可以直接调，
   // 不用靠猜事件有没有到。只读，不参与逻辑。
+  state.shiftHeld = false;
   state.debug = { planAt, applyPlan, hitHandle, localPos, computeLayout };
 
   canvas.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0) return;      // 中键平移在 document 捕获阶段处理
     const p = localPos(ev);
     state.pointer = p;
+    state.shiftHeld = !!ev.shiftKey;
     const gg = state.geo;
     // 画板外侧一律按"点击吸附"处理，不能让边框容差抢走：
     // 某方向补边为 0 时画板框和图像边界重合，hitHandle 的 ±9px 会把
@@ -1388,6 +1443,73 @@ const VIEW_MARGIN = 30;
     schedule();
   });
 
+  // 拖边框：pointermove 与「拖拽中按/松 Shift」共用同一段计算。
+  // 按住 Shift 时，被拖的那条边会把对边一起带成相同的值 —— 对称扩图。
+  // 这是孤海「外补画板（可视化）」里 shiftKey 的行为（对边等量）；
+  // 本节点把「比例约束」交给比例下拉框，Shift 只负责两侧等量。
+  function applyDrag(p, shiftKey) {
+    const drag = state.drag;
+    const g = state.geo;
+    if (!drag || !g) return;
+    // 可见反馈：对称模式给画布描一圈青色，用户一眼能确认 Shift 是否被识别
+    canvas.style.boxShadow = shiftKey ? "inset 0 0 0 2px #35d0c0" : "";
+    placeCursor(null);              // 拖边框时不显示准星
+
+    const s = drag.anchor.scale || 1;
+    const dxImg = (p.x - drag.down.x) / s;
+    const dyImg = (p.y - drag.down.y) / s;
+
+    const h = drag.handle;
+    // 画板不能拖出预览区：源图在这次拖动里是钉住的，直接反推每侧上限
+    const cwPx = Math.max(60, canvas.clientWidth || 0);
+    const chPx = Math.max(60, canvas.clientHeight || 0);
+    const cboxX1 = drag.anchor.cx + g.iw * s;
+    const cboxY1 = drag.anchor.cy + g.ih * s;
+    // 上限是"扩到预览区边缘"，但它不能低于按下时的手里值——
+    // 画板本来就贴边时，上限会小于当前值，一拖就把补边打到 0，
+    // 看起来就是"想缩一点，结果整块塌了 / 拖不动"。
+    const capL = Math.max(drag.start.left, toUnit((drag.anchor.cx - 3) / s, g.iw));
+    const capT = Math.max(drag.start.top, toUnit((drag.anchor.cy - 3) / s, g.ih));
+    const capR = Math.max(drag.start.right, toUnit((cwPx - 3 - cboxX1) / s, g.iw));
+    const capB = Math.max(drag.start.bottom, toUnit((chPx - 3 - cboxY1) / s, g.ih));
+
+    // 先按"只动被拖的那条边"算（普通拖拽的老行为），再决定要不要对称。
+    const next = {
+      left: drag.start.left,
+      right: drag.start.right,
+      top: drag.start.top,
+      bottom: drag.start.bottom,
+    };
+    const clampTo = (v, cap) => Math.max(0, Math.min(Math.round(v), cap));
+    if (h.indexOf("left") >= 0) next.left = clampTo(drag.start.left + toUnit(-dxImg, g.iw), capL);
+    if (h.indexOf("right") >= 0) next.right = clampTo(drag.start.right + toUnit(dxImg, g.iw), capR);
+    if (h.indexOf("top") >= 0) next.top = clampTo(drag.start.top + toUnit(-dyImg, g.ih), capT);
+    if (h.indexOf("bottom") >= 0) next.bottom = clampTo(drag.start.bottom + toUnit(dyImg, g.ih), capB);
+
+    // 按住 Shift：拖哪边，对边跟着走同样的量（两侧取同一个值）。
+    // 角拖（topleft 等）同时命中水平+垂直两对，于是四边各自成对。
+    // 取 min 时把两侧各自的上限都算进去，对称后不会有一侧顶出预览区。
+    if (shiftKey) {
+      const equalize = (startName, endName, capStart, capEnd) => {
+        const onStart = h.indexOf(startName) >= 0;
+        const onEnd = h.indexOf(endName) >= 0;
+        if (!onStart && !onEnd) return;
+        const base = onStart ? next[startName] : next[endName];
+        const v = Math.max(0, Math.min(base, capStart, capEnd));
+        next[startName] = v;
+        next[endName] = v;
+      };
+      equalize("left", "right", capL, capR);
+      equalize("top", "bottom", capT, capB);
+    }
+
+    setValue(node, "left", next.left);
+    setValue(node, "right", next.right);
+    setValue(node, "top", next.top);
+    setValue(node, "bottom", next.bottom);
+    schedule();
+  }
+
   canvas.addEventListener("pointermove", (ev) => {
     const p = localPos(ev);
     state.pointer = p;
@@ -1433,7 +1555,8 @@ const VIEW_MARGIN = 30;
       if (state.pending && state.pending.kind === "place" &&
           Math.hypot(p.x - state.pending.down.x, p.y - state.pending.down.y) > 3) {
         const gStart = state.pending.geo || g0;
-        const p2 = planAt(gStart, p.x, p.y);
+        // 按住 Shift 时和拖边框同一套对称口径：对侧跟着等量走
+        const p2 = placePlan(gStart, p.x, p.y, ev.shiftKey || state.shiftHeld);
         if (p2) {
           applyPlan(p2);
           return;
@@ -1441,11 +1564,15 @@ const VIEW_MARGIN = 30;
       }
 
       const handle = hitHandle(p.x, p.y);
-      const plan = g0 && !handle ? planAt(g0, p.x, p.y) : null;
+      // 边框上也给预览：孤海是"鼠标移到边框按住 Shift，对侧虚线跟着走"，
+      // 所以这里不再用 !handle 把边框排掉。
+      const plan = g0 ? planAt(g0, p.x, p.y) : null;
       const next = plan ? { x: p.x, y: p.y } : null;
       const changed = (!!next !== !!state.hover) ||
-        (next && state.hover && (next.x !== state.hover.x || next.y !== state.hover.y));
+        (next && state.hover && (next.x !== state.hover.x || next.y !== state.hover.y)) ||
+        handle !== state.hoverHandle;
       state.hover = next;
+      state.hoverHandle = handle;
       const inImage = !!(g0 && !plan && !handle &&
         p.x >= g0.cbox.x0 && p.x <= g0.cbox.x1 &&
         p.y >= g0.cbox.y0 && p.y <= g0.cbox.y1 &&
@@ -1461,42 +1588,7 @@ const VIEW_MARGIN = 30;
       return;
     }
 
-    const g = state.geo;
-    if (!g) return;
-    placeCursor(null);              // 拖边框时不显示准星
-
-    const unit = valueOf(node, "unit", "pixels") || "pixels";
-    const s = drag.anchor.scale || 1;
-    const dxImg = (p.x - drag.down.x) / s;
-    const dyImg = (p.y - drag.down.y) / s;
-    // 不要在这里再声明 toUnit：同一函数作用域内的 const 会形成暂时性死区，
-    // 让上面"移动图像"分支里的同名调用直接抛 ReferenceError（异常被事件系统吞掉）。
-    const put = (name, value) => {
-      let v = Math.max(0, Math.round(value));
-      if (ev.shiftKey) v = Math.round(v / 8) * 8;
-      setValue(node, name, v);
-    };
-
-    const h = drag.handle;
-    // 画板不能拖出预览区：源图在这次拖动里是钉住的，直接反推每侧上限
-    const cwPx = Math.max(60, canvas.clientWidth || 0);
-    const chPx = Math.max(60, canvas.clientHeight || 0);
-    const cboxX1 = drag.anchor.cx + g.iw * s;
-    const cboxY1 = drag.anchor.cy + g.ih * s;
-    // 上限是"扩到预览区边缘"，但它不能低于按下时的手里值——
-    // 画板本来就贴边时，上限会小于当前值，一拖就把补边打到 0，
-    // 看起来就是"想缩一点，结果整块塌了 / 拖不动"。
-    const capL = Math.max(drag.start.left, toUnit((drag.anchor.cx - 3) / s, g.iw));
-    const capT = Math.max(drag.start.top, toUnit((drag.anchor.cy - 3) / s, g.ih));
-    const capR = Math.max(drag.start.right, toUnit((cwPx - 3 - cboxX1) / s, g.iw));
-    const capB = Math.max(drag.start.bottom, toUnit((chPx - 3 - cboxY1) / s, g.ih));
-
-    if (h.indexOf("left") >= 0) put("left", Math.min(drag.start.left + toUnit(-dxImg, g.iw), capL));
-    if (h.indexOf("right") >= 0) put("right", Math.min(drag.start.right + toUnit(dxImg, g.iw), capR));
-    if (h.indexOf("top") >= 0) put("top", Math.min(drag.start.top + toUnit(-dyImg, g.ih), capT));
-    if (h.indexOf("bottom") >= 0) put("bottom", Math.min(drag.start.bottom + toUnit(dyImg, g.ih), capB));
-
-    schedule();
+    applyDrag(p, ev.shiftKey || state.shiftHeld);
   });
 
   const endDrag = (ev) => {
@@ -1504,6 +1596,7 @@ const VIEW_MARGIN = 30;
     const g = state.geo;
     state.drag = null;
     canvas.style.cursor = "default";
+    canvas.style.boxShadow = "";
     try {
       canvas.releasePointerCapture?.(ev.pointerId);
     } catch (err) {
@@ -1532,7 +1625,7 @@ const VIEW_MARGIN = 30;
       const moved = Math.hypot(pNow.x - dd.x, pNow.y - dd.y);
       endDrag(ev);
       if (moved <= 4) {
-        const plan = planAt(state.geo, pNow.x, pNow.y);
+        const plan = placePlan(state.geo, pNow.x, pNow.y, ev.shiftKey || state.shiftHeld);
         if (plan) applyPlan(plan);
       }
       return;
@@ -1550,7 +1643,7 @@ const VIEW_MARGIN = 30;
     const p = localPos(ev);
     // 位移超过 4px 算拖拽，不当点击，避免手抖就挪图
     if (Math.hypot(p.x - pend.down.x, p.y - pend.down.y) > 4) return;
-    const plan = planAt(state.geo, p.x, p.y);
+    const plan = placePlan(state.geo, p.x, p.y, ev.shiftKey || state.shiftHeld);
     if (plan) applyPlan(plan);
   });
 
@@ -1663,9 +1756,30 @@ const VIEW_MARGIN = 30;
   state.navGuard = navGuard;
   state.navEvents = NAV_EVENTS;
 
+  // 拖拽过程中按/松 Shift 要立刻重算：只靠 pointermove 的 ev.shiftKey 得等鼠标
+  // 动一下才生效；想"按住 Shift 对边立刻跟上"，就得监听键盘（孤海也是这么做的）。
+  function onShiftKey(ev) {
+    if (ev.key !== "Shift") return;
+    state.shiftHeld = ev.type === "keydown";
+    if (state.drag && state.pointer) {
+      applyDrag(state.pointer, state.shiftHeld);
+      return;
+    }
+    // 悬停阶段：Shift 只影响预览虚线，重绘一帧即可
+    schedule();
+  }
+  function onShiftBlur() {
+    if (state.drag && state.pointer) applyDrag(state.pointer, false);
+  }
+  window.addEventListener("keydown", onShiftKey);
+  window.addEventListener("keyup", onShiftKey);
+  window.addEventListener("blur", onShiftBlur);
+  state.onShiftKey = onShiftKey;
+  state.onShiftBlur = onShiftBlur;
+
   canvas.addEventListener("pointerleave", () => {
     let dirty = false;
-    if (state.hover) { state.hover = null; dirty = true; }
+    if (state.hover) { state.hover = null; state.hoverHandle = null; dirty = true; }
     if (state.pointer && !state.panning) { state.pointer = null; dirty = true; }
     placeCursor(null);
     if (dirty) schedule();
@@ -1782,6 +1896,11 @@ const VIEW_MARGIN = 30;
         for (const t of state.navEvents || []) {
           document.removeEventListener(t, state.navGuard, { capture: true });
         }
+      }
+      if (state.onShiftKey) {
+        window.removeEventListener("keydown", state.onShiftKey);
+        window.removeEventListener("keyup", state.onShiftKey);
+        window.removeEventListener("blur", state.onShiftBlur);
       }
       state.ro?.disconnect?.();
       unwatchVueShell(node);

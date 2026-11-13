@@ -30,21 +30,21 @@
 // Pure decisions (which rows show, how tall the card is, how a number
 // scrubs, where a socket sits) live in widget_card_math.mjs for node:test;
 // this file is the DOM.
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, zhPair } from "./index.mjs?v=2026111208";
-import { zh } from "./zh.mjs?v=2026111208";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=2026111208";
-import { createMediaPicker } from "./media_picker.mjs?v=2026111208";
-import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=2026111208";
-import { makeScrubInput, roundHalfAway } from "./scrub_input.mjs?v=2026111208";
-import { hideWidget } from "./widget_visibility.mjs?v=2026111208";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "./vue_panel_fit.mjs?v=2026111208";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, zhPair } from "./index.mjs?v=202611132008";
+import { zh } from "./zh.mjs?v=202611132008";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=202611132008";
+import { createMediaPicker } from "./media_picker.mjs?v=202611132008";
+import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=202611132008";
+import { makeScrubInput, roundHalfAway } from "./scrub_input.mjs?v=202611132008";
+import { hideWidget } from "./widget_visibility.mjs?v=202611132008";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "./vue_panel_fit.mjs?v=202611132008";
 import {
   CARD_PADDING, GROUP_HEIGHT, ROW_GAP, ROW_HEIGHT, SECTION_HEIGHT, SLOT_OFFSET, UNIT_SLOT_WIDTH,
   cardHeight, commitWidgetValue, comboValues, rowHeight, rowKind, rowMuted, rowTops, scrubSteps, socketWidgetY, visibleRows,
   widgetTooltip,
-} from "./widget_card_math.mjs?v=2026111208";
+} from "./widget_card_math.mjs?v=202611132008";
 
-export * from "./widget_card_math.mjs?v=2026111208";
+export * from "./widget_card_math.mjs?v=202611132008";
 
 const CSS_ID = "qgtools-widget-card-css";
 export const CARD_WIDGET = "qg_widget_card";
@@ -69,6 +69,9 @@ export function ensureCardCss() {
 .qgtools-card{position:relative;box-sizing:border-box;width:100%;height:100%;display:flex;flex-direction:column;gap:${ROW_GAP}px;padding:${CARD_PADDING}px 8px;overflow:hidden;border:1px solid rgba(0,180,170,.22);border-radius:8px;background:rgba(0,0,0,.28);font:12px/1.3 ${FONT};color:#c8dddd;pointer-events:none}
 .qgtools-card-row{display:grid;grid-template-columns:minmax(56px,30%) 1fr;align-items:center;gap:8px;height:${ROW_HEIGHT}px;flex:none;pointer-events:auto}
 .qgtools-card-row.hidden{display:none}
+/* 文本行的标签只要放下三四个字，按 30% 分列会让输入框无谓地右移。
+   tightLabel 把标签列钉成 56px（"表达式 1" 也放得下），输入框整体左移。 */
+.qgtools-card-row.tight-label{grid-template-columns:56px 1fr}
 .qgtools-card-row.linked{opacity:.5}
 .qgtools-card-row.linked .qgtools-card-control{pointer-events:none}
 .qgtools-card-row.muted .qgtools-card-control{opacity:.35;pointer-events:none}
@@ -571,6 +574,9 @@ export function mountWidgetCard(node, { rows, minWidth = 300, first = false, hid
     const names = row.pair ?? [row.widget];
     for (const name of names) { const widget = findWidget(node, name); if (widget) { hideWidget(widget); managed.push(name); } }
     const line = el("div", "qgtools-card-row");
+    // 标签短的行（表达式之类）用固定窄列，输入框能多占二十来像素；
+    // 默认的 minmax(56px,30%) 是给「强度 / 步数」这类 2~4 字标签留的余量。
+    if (row.tightLabel) line.classList.add("tight-label");
     const control = el("div", "qgtools-card-control");
     const syncs = [];
     const isArea = row.kind === "textarea";

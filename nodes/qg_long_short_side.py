@@ -31,7 +31,7 @@ def _as_int(value):
 
 
 class QGLongShortSide:
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     DESCRIPTION = (
         "Report the long side, the short side and the width / height ratio of "
         "a picture. A connected IMAGE wins over the width and height inputs, "

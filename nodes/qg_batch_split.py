@@ -32,7 +32,7 @@ def _require_batch(frames, source):
 class QGBatchSplit:
     """按 1 起算的帧号把批次切成两段：1..index 出 a，其余出 b。"""
 
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Batch"
     DESCRIPTION = (
         "Split an IMAGE batch in two after a one-based frame index: frames 1 "
         "through index come out of a, the rest out of b. Send a clip's halves "

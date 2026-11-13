@@ -32,7 +32,7 @@ _UNSET_SEAM = ("", None)
 
 
 class QGStitchInpaint:
-    CATEGORY = "QG-tools/Retouch"
+    CATEGORY = "QG-tools/Inpaint"
     DESCRIPTION = (
         "Pastes an inpainted crop back into the picture it came from. Wire the "
         "stitcher from Crop For Inpaint, or from Crop + Rotate + Pad when "

@@ -67,6 +67,12 @@ except ImportError:  # pragma: no cover - 只在旧版 ComfyUI 上走到
     Types = None
 from comfy.model_management import InterruptProcessingException
 from comfy_execution.graph_utils import is_link
+# 未激活分支信号（RouteBlocker 的 cut 等）：下游节点收到它表示这条链路被跳过。
+# 旧版 ComfyUI 没有这个类，降级成 None —— 那样 cut 退回 None，不再有「未激活」语义。
+try:
+    from comfy_execution.graph import ExecutionBlocker
+except Exception:  # pragma: no cover
+    ExecutionBlocker = None
 from server import PromptServer
 
 from ._qg_any_type import ANY, WILDCARD_NAMES
@@ -82,6 +88,8 @@ NOTICE_NO_INPUT = "no_input"
 NOTICE_PREVIEW_FAILED = "preview_failed"
 NOTICE_VIDEO_UNSUPPORTED = "video_unsupported"
 NOTICE_TEXT_TRUNCATED = "text_truncated"
+# 上游分支未激活（被阻断/未被选中）：展示节点不渲染、不显示旧图，只出占位提示。
+NOTICE_INACTIVE = "inactive"
 
 # 只认「像类型名」的声明：全大写字母 / 数字 / 下划线。上游把 RETURN_TYPES 写成
 # 选项列表（["a", "b"]）时，str() 出来是 "['A', 'B']"，那不是类型。
@@ -352,6 +360,23 @@ class QGDisplayAny:
         wired = False
         if prompt and unique_id in prompt:
             wired = is_link(prompt[unique_id].get("inputs", {}).get("Any"))
+        # 未激活分支：上游（如 RouteBlocker 的 cut）传来 ComfyUI 的 ExecutionBlocker，
+        # 表示这条链路被跳过。展示节点不该把它当普通值渲染成一串类名，也不该
+        # 显示旧图 —— 前端出「未激活分支」占位即可，值仍原样透传给更下游（让
+        # 下游也一起跳过，等价于「false 分支不运行」）。
+        if ExecutionBlocker is not None and isinstance(Any, ExecutionBlocker):
+            return {
+                "ui": {"qg_display": [{
+                    "type": "ANY",
+                    "text": "",
+                    "images": [],
+                    "audio": [],
+                    "video": [],
+                    "notice": {"code": NOTICE_INACTIVE},
+                }]},
+                "result": (Any,),
+            }
+
         # 没接线时 Any 是 None，接了线但上游返回 None 时也是 None。前者该说
         # 「没接输入」，后者该说「值就是 None」—— 靠 prompt 里有没有 link 分开。
         if not wired and Any is None:

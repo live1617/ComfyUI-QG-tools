@@ -130,7 +130,7 @@ class QGExists:
     FUNCTION = "execute"
 
     @classmethod
-    def VALIDATE_INPUTS(cls, input_types):
+    def VALIDATE_INPUTS(cls, input_types=None):
         # 输入声明成 ANY，前端按 * 校验；这里放行一切具体类型，否则接 IMAGE /
         # 模型之类的端口会被后端判成类型不符。
         return True

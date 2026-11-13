@@ -15,7 +15,7 @@ from ._qg_tile_image_helpers import STITCHER_KIND, _join, _rgb
 class QGTiledUpscaleStitch:
     """把采样器重绘的 tiles 拼回成品图：渐变融合 + LAB 保色。"""
 
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Upscale"
     DESCRIPTION = (
         "Puts the tiles from Tiled Upscale back together after your model has "
         "redrawn them, blends the joins and brings the picture to the size you "

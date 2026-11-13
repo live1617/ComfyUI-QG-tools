@@ -66,7 +66,7 @@ def _stitcher_canvas(stitcher):
 class QGRealignToSource:
     """测出编辑模型加的 zoom / shift，把编辑图变回原图的框架。"""
 
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     DESCRIPTION = (
         "EXPERIMENTAL. Lines an edited picture back up with the original. "
         "Edit models often draw an edit slightly zoomed in or shifted, "

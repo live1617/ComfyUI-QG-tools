@@ -5,12 +5,12 @@
 // pass-through output, gallery mode, text style settings and clipboard actions.
 
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026111208";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=202611132008";
 import { api } from "/scripts/api.js";
-import { zhPair } from "../shared/zh.mjs?v=2026111208";
-import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026111208";
-import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026111208";
-import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026111208";
+import { zhPair } from "../shared/zh.mjs?v=202611132008";
+import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=202611132008";
+import { installModeWatcher } from "../shared/vue_mode.mjs?v=202611132008";
+import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=202611132008";
 
 const NODE_TYPE = "QG_DisplayAny";
 // 拖线到空白处时弹出的候选菜单里，这一项的显示名。原来写死中文，英文界面也显示
@@ -43,7 +43,10 @@ const NOTICE_TEXT = {
     text_truncated: (notice) => zhPair(
         `Showing the first ${notice?.shown ?? ""} of ${notice?.total ?? ""} characters`,
         `共 ${notice?.total ?? ""} 个字符，这里只显示前 ${notice?.shown ?? ""} 个`),
-};
+    inactive: () => zhPair(
+        "This branch is not active (skipped) — nothing to show here",
+        "此分支未激活（已跳过），这里没有内容可显示"),
+    };
 function noticeText(notice) {
     const build = notice?.code && NOTICE_TEXT[notice.code];
     return build ? build(notice) : "";
@@ -122,6 +125,10 @@ function addStyles() {
         .qgtools-display-any.qgtools-has-batch .qgtools-display-batch{flex:0 0 auto;}
         .qgtools-display-any.qgtools-has-batch .qgtools-display-batch:last-child{flex:1 1 auto;}
         .qgtools-display-any.qgtools-has-batch .qgtools-display-batch+.qgtools-display-batch{border-top:1px solid rgba(255,255,255,.05);}
+        /* 未激活分支：上游链路被阻断/未选中，没有内容可显示。灰态斜纹占位，明显区别于「等待执行」 */
+        .qgtools-display-any.qgtools-display-inactive{background:repeating-linear-gradient(45deg,#1b1b1f,#1b1b1f 9px,#212126 9px,#212126 18px);opacity:.72;}
+        .qgtools-display-any.qgtools-display-inactive .qgtools-display-text{color:#9a9aa2;}
+        .qgtools-display-any.qgtools-display-inactive .qgtools-display-body{padding:6px 8px 8px;}
     `;
     document.head.appendChild(style);
 }
@@ -651,15 +658,19 @@ function renderPreview(node, payload) {
     const hasMedia = ["images", "audio", "video"].some(key => payload?.[key]?.some(reference => reference?.filename));
     const isText = !hasMedia && ["STRING", "TEXT"].includes(payload?.type);
     const notice = noticeText(payload?.notice);
+    const isInactive = payload?.notice?.code === "inactive";
     let batchTexts = (Array.isArray(payload?.texts) && payload.texts.length ? payload.texts : [payload?.text ?? ""])
         .map(value => String(value ?? ""));
     // ⚠️ 后端只说「出了什么事」，句子在 noticeText 里按语言拼。
     // 有内容的把那句接在最后一条后面；没内容的（比如空节点）直接用它顶上。
-    if (notice && batchTexts.length) {
+    if (!isInactive && notice && batchTexts.length) {
         const last = batchTexts.length - 1;
         batchTexts[last] = batchTexts[last].trim() ? `${batchTexts[last]}\n\n${notice}` : notice;
     }
-    if (!batchTexts.some(value => value.trim())) {
+    if (isInactive) {
+        // 未激活分支：不要叠「等待执行」，直接用未激活文案占位。
+        batchTexts = [notice || zhPair("Branch not active (skipped)", "此分支未激活（已跳过）")];
+    } else if (!batchTexts.some(value => value.trim())) {
         batchTexts = [zhPair("Waiting for a run…", "等待执行…")];
     }
     if (payload?.type === "BOOLEAN") {
@@ -696,6 +707,7 @@ function renderPreview(node, payload) {
     state.text.hidden = hasMedia;
     state.toolbar.hidden = !isText || batchTexts.length > 1;
     state.root.classList.toggle("qgtools-copy-visible", isText && batchTexts.length === 1);
+    state.root.classList.toggle("qgtools-display-inactive", isInactive);
     state.root.classList.toggle("qgtools-has-batch", batchTexts.length > 1);
     state.root.classList.toggle("qgtools-has-media", hasMedia);
     for (const [key, tag] of [["images", "img"], ["audio", "audio"], ["video", "video"]]) {

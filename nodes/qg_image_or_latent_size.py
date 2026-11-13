@@ -158,7 +158,7 @@ def _measure_latent(samples):
 
 
 class QGImageOrLatentSize:
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     DESCRIPTION = (
         "Read the width, height and count of whatever you connect: an IMAGE, a "
         "MASK or a LATENT. A Latent stores dimensions divided by 8, so they are "

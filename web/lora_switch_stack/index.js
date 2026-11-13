@@ -15,14 +15,14 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=2026111208";
-import { zhPair } from "../shared/zh.mjs?v=2026111208";
-import { showToast } from "../shared/index.mjs?v=2026111208";
-import { widthFor } from "../shared/node_width.mjs?v=2026111208";
+import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611132008";
+import { zhPair } from "../shared/zh.mjs?v=202611132008";
+import { showToast } from "../shared/index.mjs?v=202611132008";
+import { widthFor } from "../shared/node_width.mjs?v=202611132008";
 import {
     civitaiFailureText,
     pictureErrorText,
-} from "../shared/civitai_lookup.mjs?v=2026111208";
+} from "../shared/civitai_lookup.mjs?v=202611132008";
 // 强度手感 / 触发词 / 选择器过滤 / 读 LoRA 信息只有一份真相源：加载器也在用
 // 同一个 shared 模块，改一次两边同步。🔴 别在这里另写 ±10 / 0.05 或切词正则。
 import {
@@ -41,9 +41,9 @@ import {
     STRENGTH_MIN,
     toggleTrigger,
     triggerGroups,
-} from "../shared/lora_stack.mjs?v=2026111208";
+} from "../shared/lora_stack.mjs?v=202611132008";
 // Civitai 查询编排与加载器共用；卡片 note / 缩略图版本由回调注入。
-import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=2026111208";
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611132008";
 
 const NODE_CLASS = "QG_LoraSwitchStack";
 const SLOT_COUNT = 24;

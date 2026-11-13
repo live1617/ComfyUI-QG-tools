@@ -230,7 +230,7 @@ def _register_save_route() -> None:
 
 
 class QGImageCompare:
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Output"
     DESCRIPTION = (
         "A/B compare: two images in one panel. Slide to see the difference, or hold A "
         "or B to view one alone; the eraser paints away part of the top image to "

@@ -91,7 +91,7 @@ def make_latent(width, height, batch_size=1):
 
 @combo_legacy("QG_EmptyLatentResolution")
 class QG_EmptyLatentResolution:
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     DESCRIPTION = (
         "Turns an aspect ratio and a megapixel target into an empty latent that is "
         "ready to sample, and returns the final pixel width and height too. The size "

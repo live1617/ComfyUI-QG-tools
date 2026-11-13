@@ -15,7 +15,7 @@ import {
     pickCivitaiPicture,
     pictureError,
     smallPictureUrl,
-} from "./civitai_lookup.mjs?v=2026111208";
+} from "./civitai_lookup.mjs?v=202611132008";
 
 const defaultFetch = (...args) => fetch(...args);
 

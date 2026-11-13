@@ -281,7 +281,7 @@ class QGMaskCrop:
 
 
 class QGCropRestore:
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     DESCRIPTION = (
         "Pastes a processed crop back where Mask Crop took it from. The crop is "
         "resized back to the rectangle it was cut at, then blended over the "

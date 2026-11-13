@@ -34,7 +34,7 @@ from ._qg_mask_helpers import is_unpainted_mask
 
 
 class QGCropForInpaint:
-    CATEGORY = "QG-tools/Retouch"
+    CATEGORY = "QG-tools/Inpaint"
     DESCRIPTION = (
         "Cuts the painted area out with room around it, at a size the sampler "
         "accepts, and emits a stitcher that Stitch Inpaint uses to paste the "

@@ -197,7 +197,7 @@ def install_handler():
 class QGStepPreview:
     """Per-workflow sampler previews."""
 
-    CATEGORY = "QG-tools/Workflow"
+    CATEGORY = "QG-tools/Display"
     OUTPUT_NODE = True
     DESCRIPTION = (
         "Turns sampler previews on for this one workflow, without touching the "

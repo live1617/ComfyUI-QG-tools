@@ -15,16 +15,20 @@
 // （来自 Python 的 DESCRIPTION，这里是同一个信息源，不用再维护一份说明）。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026111208";
-import { chainCallback, zhPair } from "../shared/index.mjs?v=2026111208";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=2026111208";
+import { sizeFor } from "../shared/node_width.mjs?v=202611132008";
+import { chainCallback, zhPair } from "../shared/index.mjs?v=202611132008";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611132008";
 
 const NODE_CLASS = "QG_Math";
 // 卡片下限宽度：表达式那行要能一眼看下十来个字符。
 const MIN_WIDTH = sizeFor("QG_Math").minW;
 
-// 变量名跟官方「数学表达式」一致：a–z，接满就自己长下一个。
-const VARIABLES = "abcdefghijklmnopqrstuvwxyz".split("");
+// 变量名 a–z，但 **e 除外**：e 是数学常量 math.e。露成槽会出现「接了没用、
+// 不接又挡常量」的两头错，所以干脆不露（后端 VARIABLES 同一套规则）。
+const VARIABLES = "abcdfghijklmnopqrstuvwxyz".split("");
+// 旧版本把 e 也当成变量槽。老存档 / 粘贴进来的节点身上可能还挂着它，
+// 这张表专门收掉这类遗留槽（e 现在只当常量，留着就是个「接了也不生效」的坑）。
+const LEGACY_SLOTS = ["e"];
 // 至少留出这么多个空槽（用户要的是 abc 三个起步）。
 const MIN_SLOTS = 3;
 
@@ -36,6 +40,8 @@ const mathRows = () => [
     widget: "expr",
     label: zhPair("Expression", "表达式"),
     placeholder: "a * b / 2",
+    // 标签只有三个字，用窄列让输入框多往左占一点（用户要求「向左扩宽」）
+    tightLabel: true,
     // 变量怎么接只写在节点说明里（帮助卡第一段），这里不再重复一遍
     title: zhPair(
       "The expression, e.g. round(a / b * 2, 2). Click ? in the title bar for the syntax and function table.",
@@ -62,6 +68,22 @@ const slotIndexes = (node, name) => {
   return out;
 };
 const hasDuplicate = (node) => VARIABLES.some((name) => slotIndexes(node, name).length > 1);
+const hasLegacy = (node) => LEGACY_SLOTS.some((name) => slotOf(node, name));
+
+// 旧版本的 e 槽：连进线也不生效（后端把 e 当常量），所以连根拔掉。
+// 从后往前删，删的同时 ComfyUI 会把该槽上的连线一并移除。
+function dropLegacySlots(node) {
+  let dropped = false;
+  for (const name of LEGACY_SLOTS) {
+    for (let i = (node.inputs ?? []).length - 1; i >= 0; i -= 1) {
+      if (node.inputs[i]?.name === name) {
+        node.removeInput?.(i);
+        dropped = true;
+      }
+    }
+  }
+  return dropped;
+}
 
 // 🔴 控件一旦 hideWidget，前端就会把对应的 input 当成普通槽来画（`input.widget`
 //    被摘掉），所以「藏了控件」等于「露出槽」。反过来，想让后面的字母默认不出现，
@@ -155,7 +177,7 @@ function targetSlots(node) {
 
 // 跟目标对不上就是「该收/该长」了。只比名字和个数，很便宜，可以每帧调。
 function needsFix(node) {
-  if (hasDuplicate(node)) return true;
+  if (hasDuplicate(node) || hasLegacy(node)) return true;
   const target = targetSlots(node);
   const present = VARIABLES.filter((name) => slotOf(node, name));
   return !isPrefix(present, target) || present.length !== target.length;
@@ -188,7 +210,9 @@ function syncSlotCount(node) {
   try {
     const target = targetSlots(node);
     const present = VARIABLES.filter((name) => slotOf(node, name));
-    let changed = false;
+    // 老存档的 e 槽先清掉：它既不在 VARIABLES 里，也不是任何目标槽，
+    // 留着会变成「看得见、接了也没用」的孤立输入。
+    let changed = dropLegacySlots(node);
     if (hasDuplicate(node)) {
       // 有重名槽 → 只有整块重建能清干净
       rebuildSlots(node, present, target);

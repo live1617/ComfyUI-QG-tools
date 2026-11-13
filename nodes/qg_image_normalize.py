@@ -171,7 +171,7 @@ def match_bucket(source_ratio: float, model: str) -> tuple[str, int, int]:
 class QGImageNormalize:
     """Scale onto the nearest standard bucket, center-crop, report the fit."""
 
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     DESCRIPTION = (
         "Scale an image onto the resolution bucket a model was trained on "
         "(Qwen-Image 1K / 2K, SDXL 1K, SD 1.5 512 / 768, Flux 1MP / 2MP) and "

@@ -94,7 +94,7 @@ class QGRatioResolution:
         "aspect", "latent size", "比例", "分辨率", "比例与分辨率",
         "宽高", "百万像素", "尺寸", "倍数取整", "qg",
     ]
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     OUTPUT_NODE = False
     FUNCTION = "calculate"
     RETURN_TYPES = ("STRING", "INT", "INT")

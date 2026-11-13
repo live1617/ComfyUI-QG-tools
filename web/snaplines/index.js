@@ -64,7 +64,7 @@
 import { app } from "/scripts/app.js";
 // 界面文案：本包规范是 zhPair(英文, 中文)，按 ComfyUI 当前语言取值。
 // 源插件只做了中文，搬进来后英文界面会看到中文按钮 —— scan_frontend_zh.py 会拦。
-import { zhPair } from "../shared/zh.mjs?v=2026111208";
+import { zhPair } from "../shared/zh.mjs?v=202611132008";
 
 // ================== 可调参数（两个模块共用） ==================
 const LINE_COLOR = "#fb923c"; // 参考线/强调色（橙色），两个模块同一套视觉

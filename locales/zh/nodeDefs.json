@@ -480,7 +480,7 @@
   },
   "QG_Math": {
     "display_name": "数学运算",
-    "description": "一行表达式，算数字也行、拼文本也行：卡片上写算式（如 round(a / b * 2, 2) 或 a + \"，最好画质\"）。变量是左侧的 a、b、c…，只从上游连线取：默认露出 3 个空槽，接满一个就自己长出下一个（最多到 z），整数、小数、布尔、文本都能接，没连线时按 0 算，所以常数直接写进表达式。接进来的文本整串是个数字（如 1024）就当数字用，否则当文字。同一个结果给四个输出：数值（小数）、整数（四舍五入，正好 .5 时远离零）、布尔（非零为真）、文本（数字按人写的样子，1024 而不是 1024.0）。结果是文本时，前三个数字输出一律给 0、0、假，免得下游把文字当尺寸。算式只解析不执行，别人分享的工作流带不进代码；写错时节点会直接告诉你哪一段不对。每个函数的用法见 docs/math.md。写法：a + b * 2。运算符 + - * / // % **；比较 == != > < >= <= 以及 in / not in；逻辑 and or not；三元 a if a > b else b；常量 pi、e、tau。函数：abs round min max sum pow int float bool；sqrt exp log log2 log10；sin cos tan asin acos atan atan2 sinh cosh tanh；floor ceil trunc；hypot degrees radians；factorial gcd lcm sign fmod fabs copysign dist prod fsum isnan isinf isfinite。文本：写在引号里，用 + 拼接、* 重复，用 [ ] 取字或切片（a[0]、a[1:4]）；函数 str len upper lower title capitalize swapcase strip lstrip rstrip replace split join find rfind count startswith endswith zfill。注意 ^ 是按位异或，乘方要用 **。",
+    "description": "一行表达式，算数字也行、拼文本也行：卡片上写算式（如 round(a / b * 2, 2) 或 a + \"，最好画质\"）。变量是左侧的 a、b、c…，只从上游连线取：默认露出 3 个空槽，接满一个就自己长出下一个（最多到 z，跳过 e —— e 是常量 2.718…），整数、小数、布尔、文本都能接，没连线时按 0 算，所以常数直接写进表达式。接进来的文本整串是个数字（如 1024）就当数字用，否则当文字。同一个结果给四个输出：数值（小数）、整数（四舍五入，正好 .5 时远离零）、布尔（非零为真）、文本（数字按人写的样子，1024 而不是 1024.0）。结果是文本时，前三个数字输出一律给 0、0、假，免得下游把文字当尺寸。算式只解析不执行，别人分享的工作流带不进代码；写错时节点会直接告诉你哪一段不对。每个函数的用法见 docs/math.md。写法：a + b * 2。运算符 + - * / // % **；比较 == != > < >= <= 以及 in / not in；逻辑 and or not；三元 a if a > b else b；常量 pi、e、tau。函数：abs round min max sum pow int float bool；sqrt exp log log2 log10；sin cos tan asin acos atan atan2 sinh cosh tanh；floor ceil trunc；hypot degrees radians；factorial gcd lcm sign fmod fabs copysign dist prod fsum isnan isinf isfinite。文本：写在引号里，用 + 拼接、* 重复，用 [ ] 取字或切片（a[0]、a[1:4]）；函数 str len upper lower title capitalize swapcase strip lstrip rstrip replace split join find rfind count startswith endswith zfill。注意 ^ 是按位异或，乘方要用 **。",
     "inputs": {
       "expr": {
         "name": "表达式",
@@ -501,10 +501,6 @@
       "d": {
         "name": "d",
         "tooltip": "变量 d：数字或文本，没接线按 0 算"
-      },
-      "e": {
-        "name": "e",
-        "tooltip": "变量 e：数字或文本，没接线按 0 算"
       },
       "f": {
         "name": "f",
@@ -2220,11 +2216,11 @@
   },
   "QG_DualMath": {
     "display_name": "双式数学运算",
-    "description": "两行表达式共用同一组变量 a、b、c、d、f，各自算出一路小数和一路整数，一个节点就能同时喂两个尺寸、种子或强度输入。表达式留空就是 0；第五路输出是一份英文语法速查。求值走白名单，只允许数字、这五个变量、列出的数学函数与字面量，属性访问和任意代码都会被拒绝；常量 pi、e、tau 仍可用，所以变量里特意没有 e。",
+    "description": "两行表达式共用同一组变量 a 到 z（跳过 e），各自算出一路小数和一路整数，一个节点就能同时喂两个尺寸、种子或强度输入。表达式留空就是 0。求值走白名单，只允许数字、这些变量、列出的数学函数与字面量，属性访问和任意代码都会被拒绝；常量 pi、e、tau 仍可用，所以变量里特意没有 e。变量槽默认露四个，接满一个才长下一个（最多 25 个）。",
     "inputs": {
       "expr1": {
         "name": "表达式 1",
-        "tooltip": "第一行算式，留空得 0。可以写 a、b、c、d、f 或直接写数字。"
+        "tooltip": "第一行算式，留空得 0。可以写 a 到 z（跳过 e）或直接写数字。"
       },
       "expr2": {
         "name": "表达式 2",
@@ -2249,6 +2245,86 @@
       "f": {
         "name": "f",
         "tooltip": "变量 f，两行表达式共用；没接线按 0 算。"
+      },
+      "g": {
+        "name": "g",
+        "tooltip": "变量 g，两行表达式共用；没接线按 0 算。"
+      },
+      "h": {
+        "name": "h",
+        "tooltip": "变量 h，两行表达式共用；没接线按 0 算。"
+      },
+      "i": {
+        "name": "i",
+        "tooltip": "变量 i，两行表达式共用；没接线按 0 算。"
+      },
+      "j": {
+        "name": "j",
+        "tooltip": "变量 j，两行表达式共用；没接线按 0 算。"
+      },
+      "k": {
+        "name": "k",
+        "tooltip": "变量 k，两行表达式共用；没接线按 0 算。"
+      },
+      "l": {
+        "name": "l",
+        "tooltip": "变量 l，两行表达式共用；没接线按 0 算。"
+      },
+      "m": {
+        "name": "m",
+        "tooltip": "变量 m，两行表达式共用；没接线按 0 算。"
+      },
+      "n": {
+        "name": "n",
+        "tooltip": "变量 n，两行表达式共用；没接线按 0 算。"
+      },
+      "o": {
+        "name": "o",
+        "tooltip": "变量 o，两行表达式共用；没接线按 0 算。"
+      },
+      "p": {
+        "name": "p",
+        "tooltip": "变量 p，两行表达式共用；没接线按 0 算。"
+      },
+      "q": {
+        "name": "q",
+        "tooltip": "变量 q，两行表达式共用；没接线按 0 算。"
+      },
+      "r": {
+        "name": "r",
+        "tooltip": "变量 r，两行表达式共用；没接线按 0 算。"
+      },
+      "s": {
+        "name": "s",
+        "tooltip": "变量 s，两行表达式共用；没接线按 0 算。"
+      },
+      "t": {
+        "name": "t",
+        "tooltip": "变量 t，两行表达式共用；没接线按 0 算。"
+      },
+      "u": {
+        "name": "u",
+        "tooltip": "变量 u，两行表达式共用；没接线按 0 算。"
+      },
+      "v": {
+        "name": "v",
+        "tooltip": "变量 v，两行表达式共用；没接线按 0 算。"
+      },
+      "w": {
+        "name": "w",
+        "tooltip": "变量 w，两行表达式共用；没接线按 0 算。"
+      },
+      "x": {
+        "name": "x",
+        "tooltip": "变量 x，两行表达式共用；没接线按 0 算。"
+      },
+      "y": {
+        "name": "y",
+        "tooltip": "变量 y，两行表达式共用；没接线按 0 算。"
+      },
+      "z": {
+        "name": "z",
+        "tooltip": "变量 z，两行表达式共用；没接线按 0 算。"
       }
     },
     "outputs": {
@@ -2267,10 +2343,6 @@
       "3": {
         "name": "整数 2",
         "tooltip": "同一结果四舍五入（.5 远离零）并限制在 INT32 范围内的整数。"
-      },
-      "4": {
-        "name": "语法速查",
-        "tooltip": "表达式解析器的英文语法速查文本，可以接到任何显示文本的地方。"
       }
     }
   },

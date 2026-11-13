@@ -641,7 +641,7 @@
         "license": "GPL-3.0",
         "relation": "idea"
       },
-      "note": "自写。只借用「两行表达式 + 五个变量」的用法形态，代码零复用：源包用 eval 且键名/输出名全中文，本节点走包内 _qg_math_engine 的白名单 AST 求值器，键名、说明、报错全英文。变量故意取 a b c d f（跳开 e），让 math.e / pi / tau 常量不被未连线的输入盖掉；两路结果各自四舍五入并 clamp 到 INT32，文本结果在数值槽给 0。第五路输出为英文语法速查。自带 tools/_check_dual_math.py（25 项，含 9 条危险表达式拒绝测试）收进 regress。"
+      "note": "自写。只借用「两行表达式 + 五个变量」的用法形态，代码零复用：源包用 eval 且键名/输出名全中文，本节点走包内 _qg_math_engine 的白名单 AST 求值器，键名、说明、报错全英文。变量故意取 a b c d f（跳开 e），让 math.e / pi / tau 常量不被未连线的输入盖掉；两路结果各自四舍五入并 clamp 到 INT32，文本结果在数值槽给 0。变量槽默认露 4 个、接满一个才长下一个（最多 5 个）。自带 tools/_check_dual_math.py（25 项，含 9 条危险表达式拒绝测试）收进 regress。"
     },
     {
       "id": "QG_Exists",

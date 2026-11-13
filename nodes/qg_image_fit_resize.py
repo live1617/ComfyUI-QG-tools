@@ -294,7 +294,7 @@ def _pad_to(output, left, top, right, bottom, rgb):
 class QGImageFitResize:
     """图像 + 遮罩一起缩放到目标预算/边长/宽高，输出缩放图、遮罩与最终宽高。"""
 
-    CATEGORY = "QG-tools/Image"
+    CATEGORY = "QG-tools/Image/Transform"
     DESCRIPTION = (
         "Resize an image and an optional mask together to a pixel budget, an edge length, "
         "a width+height box or a scale factor. Pick how to meet a mismatched box: stretch, "
