@@ -26,8 +26,8 @@
  * 后端节点：nodes/qg_note.py。改本文件只需 F5 刷新页面。
  */
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=2026110904";
-import { pinCategory } from "../shared/category_zh.mjs?v=2026110904";
+import { zhPair } from "../shared/zh.mjs?v=2026111208";
+import { pinCategory } from "../shared/category_zh.mjs?v=2026111208";
 
 const NODE_TYPE = "QG_Note";
 const FONT_STACK = 'Inter, "Microsoft YaHei", "PingFang SC", Arial, sans-serif';
@@ -635,7 +635,10 @@ class QGNoteNode extends LGraphNode {
     onDblClick() { this.openEditor(); }
 
     onResize(size) {
-        if (Array.isArray(size)) {
+        // 🔴 1.58.5 的 size 参数可能是 Float64Array，也可能是 Rectangle 类数组，
+        // 两种都过不了 Array.isArray；只要能按下标读到两个有限数就按尺寸处理。
+        if (size && typeof size.length === "number" && size.length >= 2
+            && Number.isFinite(size[0]) && Number.isFinite(size[1])) {
             this.size[0] = Math.max(120, size[0]);
             this.size[1] = Math.max(60, size[1]);
             this.repaint();

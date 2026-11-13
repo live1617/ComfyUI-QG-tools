@@ -2,10 +2,10 @@
 # 把「改过的图」量回「原图」的位置：测出编辑模型加的缩放和位移，再反变换回去。
 #
 # 搬自 ComfyUI-AusBoss v2.14.0 的 nodes/_realign_helpers.py（MIT）。
-# 本插件只用到其中三个函数 —— measure / crop_if_shift / warp_to_source ——
-# 给「图像对比」擦除模式的 ALIGN（把 B 对齐到 A）用。ComfyUI-AusBoss 那个完整的
-# 「Realign to Source」节点没搬，所以 frame_matrix / overshoot / describe
-# 三个只服务它的函数也一并省掉了。
+# 2026-11-11：新节点 QG_RealignToSource 需要全套，把当初省掉的
+# frame_matrix / overshoot / describe（含 MARGIN_HEADROOM 常量）也搬齐了 ——
+# 之前只搬 measure / crop_if_shift / warp_to_source 三个，给「图像对比」的
+# ALIGN 用。
 #
 # 纯 torch：相位相关 + 分块匹配 + 最小二乘拟合，没有第三方依赖。
 # 坐标用像素中心（0..W-1, 0..H-1），x 向右、y 向下。
@@ -600,16 +600,78 @@ def crop_if_shift(edit: torch.Tensor, matrix: torch.Tensor, width: int, height: 
     return edit[ty:ty + height, tx:tx + width].float().clone()
 
 
+def frame_matrix(out_w, out_h, box):
+    """Output px -> source-canvas px, for an out_w x out_h output that covers
+    box (x0, y0, x1, y1, pixel edges) of the canvas. A box the output's own
+    size is a plain whole-pixel offset."""
+    x0, y0, x1, y1 = (float(v) for v in box)
+    sx, sy = (x1 - x0) / out_w, (y1 - y0) / out_h
+    return torch.tensor([[sx, 0.0, x0 + 0.5 * sx - 0.5], [0.0, sy, y0 + 0.5 * sy - 0.5], [0.0, 0.0, 1.0]],
+                        dtype=torch.float64)
+
+
+def overshoot(matrix, width, height, frame=None, canvas=None):
+    """How many px past each edge of the edit the realigned frame reaches:
+    the margin that side would have needed."""
+    canvas_w, canvas_h = canvas if canvas is not None else (width, height)
+    total = matrix.double() if frame is None else matrix.double() @ frame.double()
+    corners = torch.tensor([[0.0, 0.0, 1.0], [width - 1.0, 0.0, 1.0],
+                            [0.0, height - 1.0, 1.0], [width - 1.0, height - 1.0, 1.0]], dtype=torch.float64)
+    q = (corners @ total.t())[:, :2]
+    return {
+        "left": max(0.0, -0.5 - float(q[:, 0].min())),
+        "top": max(0.0, -0.5 - float(q[:, 1].min())),
+        "right": max(0.0, float(q[:, 0].max()) - (canvas_w - 0.5)),
+        "bottom": max(0.0, float(q[:, 1].max()) - (canvas_h - 0.5)),
+    }
+
+
+# Extra margin suggested past what a frame actually needed: drift changes
+# with the seed and the prompt, so size the margin for the next frame too.
+MARGIN_HEADROOM = 16
+
+
+def describe(result, empty_fraction, applied, cropped=False, short=None, padded=False):
+    """One line a person can read, with the numbers that matter.
+
+    cropped: the frame was cut out whole, with no resampling. short: how
+    far past each edge of the edit the frame reached (see overshoot), named
+    when the edit left an empty strip. padded: the edit was made on a padded
+    canvas, so the advice is a bigger margin rather than a first one."""
+    if not result.reliable:
+        return f"left as is: {result.reason}"
+    sx, sy = result.centre_shift
+    numbers = (f"zoom x {result.zoom_x:+.2%}, y {result.zoom_y:+.2%}; shift x {sx:+.1f}, y {sy:+.1f} px; "
+               f"worst corner {result.worst_corner:.1f} px")
+    agreement = f"{result.inliers} of {result.blocks} areas agree, fit error {result.fit_error:.1f} px"
+    if not applied:
+        return f"measured only: {numbers} ({agreement})"
+    how = "cut out whole, no resampling" if cropped else "warped once"
+    line = f"realigned: {numbers} ({agreement}); {how}; empty strip {empty_fraction:.1%} of the frame"
+    sides = {side: px for side, px in (short or {}).items() if px >= 0.5}
+    if empty_fraction > 0 and sides:
+        need = ", ".join(f"{side} {int(math.ceil(px)) + MARGIN_HEADROOM} px" for side, px in sides.items())
+        if padded:
+            line += f"; the margin was too small: add {need}"
+        else:
+            line += f"; to keep real picture there, pad the source before editing: {need}"
+    return line
+
+
 __all__ = [
     "CROP_TOLERANCE",
     "EMPTY_FILLS",
     "FIT_MODES",
+    "MARGIN_HEADROOM",
     "Measurement",
     "crop_if_shift",
+    "describe",
     "edge_map",
     "fit_model",
+    "frame_matrix",
     "match_blocks",
     "measure",
+    "overshoot",
     "phase_correlate",
     "to_gray",
     "warp_to_source",

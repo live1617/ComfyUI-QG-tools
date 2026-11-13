@@ -64,7 +64,7 @@
 import { app } from "/scripts/app.js";
 // 界面文案：本包规范是 zhPair(英文, 中文)，按 ComfyUI 当前语言取值。
 // 源插件只做了中文，搬进来后英文界面会看到中文按钮 —— scan_frontend_zh.py 会拦。
-import { zhPair } from "../shared/zh.mjs?v=2026110904";
+import { zhPair } from "../shared/zh.mjs?v=2026111208";
 
 // ================== 可调参数（两个模块共用） ==================
 const LINE_COLOR = "#fb923c"; // 参考线/强调色（橙色），两个模块同一套视觉
@@ -734,7 +734,11 @@ function hookDraw(canvas) {
 function outlineOf(it) {
   if (!isGroup(it)) it.updateArea?.(app.canvas?.ctx);
   const b = it.boundingRect;
-  if (Array.isArray(b) && b.length >= 4 && b[2] > 0 && b[3] > 0) {
+  // 🔴 1.58.5 的 boundingRect 是 Rectangle 类数组（有 [0..3] 下标但不是 Array），
+  // Array.isArray 判不到 → 排列/对齐退回按 pos+size 算，Vue 下 DOM 外壳高度与
+  // size 不一致时轮廓画错。只要能读到四个有限数就按真实外形用。
+  if (b && typeof b.length === "number" && b.length >= 4
+      && Number.isFinite(b[0]) && Number.isFinite(b[1]) && b[2] > 0 && b[3] > 0) {
     return { x: b[0], y: b[1], w: b[2], h: b[3] };
   }
   const t = titleOffset(it);
@@ -1060,7 +1064,7 @@ function styleSheet() {
 `;
 }
 
-// ---------- 入口一：画布右键菜单 ----------
+// ---------- 入口一：右键菜单（官方 Context Menu API） ----------
 
 // 选中两个以上节点/分组时，在右键菜单插入「QG 对齐」子菜单。
 function extraMenuOptions(canvas) {
@@ -1084,19 +1088,6 @@ function extraMenuOptions(canvas) {
     if (count >= 3) options.push({ content: toolLabel(t), callback: () => runTool(t) });
   }
   return options;
-}
-
-function hookContextMenu() {
-  const canvas = app.canvas;
-  if (!canvas || canvas.__qyhAlignMenu) return;
-  canvas.__qyhAlignMenu = true;
-  const prev = canvas.getExtraMenuOptions;
-  canvas.getExtraMenuOptions = function (node, options) {
-    const prevResult = prev ? prev.call(this, node, options) : undefined;
-    const extra = extraMenuOptions(this);
-    if (Array.isArray(options)) options.push(...extra);
-    return Array.isArray(prevResult) ? [...prevResult, ...extra] : extra;
-  };
 }
 
 // ---------- 入口二：选区工具栏按钮 + 图形化浮动面板 ----------
@@ -1256,56 +1247,55 @@ function toolboxCommands() {
 // 模块一注册：参考线吸附（设置项 + 指针事件 + 绘制钩子）
 app.registerExtension({
   name: "QG.SnapLines",
+  // 官方已弃用 app.ui.settings.addSetting({defaultValue}) 的 defaultValue 参数
+  // （console 警告「The default value in settings definition will be used instead」
+  // 且直接忽略该值）→ 默认值改挂在扩展的 settings 定义数组里，与 QG.Align 同款写法。
+  settings: [
+    {
+      id: SETTING_SNAPLINES,
+      category: ["QG-tools", "Canvas", "Snap into line"],
+      name: zhPair("Snap into line while dragging (QG)", "拖动时对齐参考线（QG）"),
+      tooltip: zhPair(
+        "Show orange alignment guides while dragging or resizing nodes and groups, " +
+          "and snap to them (centre lines are dashed). Hold Shift to disable it for one " +
+          "drag; Alt-dragged copies take part as well.",
+        "拖动或缩放节点/分组时显示橙色对齐参考线并自动吸附（中线为虚线）；" +
+          "按住 Shift 拖动可临时关闭；Alt 拖动复制出的副本同样参与吸附。",
+      ),
+      type: "boolean",
+      defaultValue: true,
+      onChange: (v) => {
+        enabled = !!v;
+        if (!enabled) endDrag();
+      },
+    },
+    {
+      id: SETTING_WITH_GRID,
+      category: ["QG-tools", "Canvas", "Snap into line"],
+      name: zhPair(
+        "Show alignment guides while grid snapping is on (QG)",
+        "网格吸附开启时也显示参考线（QG）",
+      ),
+      tooltip: zhPair(
+        "ComfyUI-Custom-Scripts' \"Always snap to grid\" otherwise takes over dragging " +
+          "completely and the guides never appear, with no warning. Turn this on to keep " +
+          "the guides visible in that mode. Note the landing position stays grid-controlled: " +
+          "snapping to node edges would land off-grid and get pulled back when you release, " +
+          "so this mode only shows the lines.",
+        "默认情况下，ComfyUI-Custom-Scripts 的「始终对齐网格」会完全接管拖动，参考线不会出现，" +
+          "而且不给任何提示。打开本项后该模式下也照常显示参考线。" +
+          "注意落点仍由网格决定：节点边缘对齐多半会落在网格之外，松开鼠标时又会被网格拽回去，" +
+          "所以这个模式只画线、不改位置。",
+      ),
+      type: "boolean",
+      defaultValue: false,
+      onChange: (v) => {
+        withGridSnap = !!v;
+      },
+    },
+  ],
   setup() {
     console.log("[QG-tools] v8 已加载（参考线 + 排列 二合一）");
-
-    try {
-      app.ui.settings.addSetting({
-        id: SETTING_SNAPLINES,
-        category: ["QG-tools", "Canvas", "Snap into line"],
-        name: zhPair("Snap into line while dragging (QG)", "拖动时对齐参考线（QG）"),
-        tooltip: zhPair(
-          "Show orange alignment guides while dragging or resizing nodes and groups, " +
-            "and snap to them (centre lines are dashed). Hold Shift to disable it for one " +
-            "drag; Alt-dragged copies take part as well.",
-          "拖动或缩放节点/分组时显示橙色对齐参考线并自动吸附（中线为虚线）；" +
-            "按住 Shift 拖动可临时关闭；Alt 拖动复制出的副本同样参与吸附。",
-        ),
-        type: "boolean",
-        defaultValue: true,
-        onChange: (v) => {
-          enabled = !!v;
-          if (!enabled) endDrag();
-        },
-      });
-
-      app.ui.settings.addSetting({
-        id: SETTING_WITH_GRID,
-        category: ["QG-tools", "Canvas", "Snap into line"],
-        name: zhPair(
-          "Show alignment guides while grid snapping is on (QG)",
-          "网格吸附开启时也显示参考线（QG）",
-        ),
-        tooltip: zhPair(
-          "ComfyUI-Custom-Scripts' \"Always snap to grid\" otherwise takes over dragging " +
-            "completely and the guides never appear, with no warning. Turn this on to keep " +
-            "the guides visible in that mode. Note the landing position stays grid-controlled: " +
-            "snapping to node edges would land off-grid and get pulled back when you release, " +
-            "so this mode only shows the lines.",
-          "默认情况下，ComfyUI-Custom-Scripts 的「始终对齐网格」会完全接管拖动，参考线不会出现，" +
-            "而且不给任何提示。打开本项后该模式下也照常显示参考线。" +
-            "注意落点仍由网格决定：节点边缘对齐多半会落在网格之外，松开鼠标时又会被网格拽回去，" +
-            "所以这个模式只画线、不改位置。",
-        ),
-        type: "boolean",
-        defaultValue: false,
-        onChange: (v) => {
-          withGridSnap = !!v;
-        },
-      });
-    } catch (err) {
-      console.warn("[QG-tools] 注册设置失败:", err);
-    }
 
     // 老版本存的是 QYH.*，注册完设置就把老值搬过来，否则用户关掉的开关会被重置。
     // 下一帧再补一次：万一排列模块的设置这轮还没注册完，那次会补上。
@@ -1374,7 +1364,15 @@ app.registerExtension({
     style.id = "qyh-align-style";
     style.textContent = styleSheet();
     document.head.append(style);
-    hookContextMenu();
+  },
+  // 官方 Context Menu API（替代旧 litegraph 的 canvas 实例 getExtraMenuOptions 劫持——
+  // 该机制在 1.53 前端已无调用点，此前只有空白画布右键能弹出对齐菜单，选中节点
+  // 右键反而拿不到；迁到官方钩子后两条路径都能出）。
+  getCanvasMenuItems(canvas) {
+    return extraMenuOptions(canvas);
+  },
+  getNodeMenuItems(node) {
+    return extraMenuOptions(app.canvas);
   },
 });
 

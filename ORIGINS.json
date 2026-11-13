@@ -7,8 +7,8 @@
     "ported": "搬运 —— 整段照抄上游代码，只改类名 / 节点 ID / 分类 / 显示名 / 中文文案，逻辑一行没动"
   },
   "counts": {
-    "total": 57,
-    "original": 51,
+    "total": 65,
+    "original": 59,
     "ported": 6
   },
   "upstreams": {
@@ -834,6 +834,117 @@
         "relation": "idea"
       },
       "note": "自写。只借用「图像优先、否则宽高输入，输出长边 / 短边 / 比值」的用法形态，代码零复用：源节点键名与输出名全中文且用裸 except 吞异常，本节点全英文键、3 条输出说明、SEARCH_ALIASES，非法输入打英文提示后返回稳定零值。与 QG_ImageOrLatentSize（宽 / 高 / 帧数）、QG_RatioResolution（比例串 + 目标尺寸）不重复：只量已有尺寸、不产生新尺寸。自带 tools/_check_long_short_side.py（30 项，含图像优先级、单边输入、除零兜底）收进 regress。"
+    },
+    {
+      "id": "QG_LoraSwitchStack",
+      "display": "QG LoRA堆",
+      "file": "nodes/qg_lora_switch_stack.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。每行一个 BOOLEAN 输入口（on_1..on_24，行数 = 前后端同名常量 SLOT_COUNT，11-11 从 8 行放开到 24 行），输入槽直接绑在该行的原生 widget 上，由画布画在行里；加载逻辑复用本包 nodes/_qg_lora_helpers.py，与 QG_LoraLoader 同一套解析、缺失判定和缓存指纹。与 QG_LoraLoader 的分工：那个是「一栈到底、行内编辑」，这个是「每行可被图上的布尔控制」。",
+      "reference": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "LoRA Loader 🆎",
+        "license": "MIT",
+        "relation": "idea"
+      }
+    },
+    {
+      "id": "QG_ImageFitResize",
+      "display": "图像适配缩放",
+      "file": "nodes/qg_image_fit_resize.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。只借用「目标模式 × 适应策略」的用法形态，几何规划、采样、填色解析全部重写：全英文键、SEARCH_ALIASES、报错英文、非法颜色先报错不回退。与 QG_ImageScale（按长边/短边/自定义宽高 + 裁剪填充）分工：本节点补像素预算（megapixels）、倍数（scale_factor）两种目标与不留边的 fit 策略。自带 tools/_check_image_fit_resize.py 收进 regress。",
+      "reference": {
+        "plugin": "ComfyUI-AusBoss",
+        "node": "Image Resize",
+        "license": "MIT",
+        "relation": "idea"
+      }
+    },
+    {
+      "id": "QG_BatchSplit",
+      "display": "批次拆分",
+      "file": "nodes/qg_batch_split.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。只借用「按 1 起算帧号切两段、两段都必须非空」的语义边界，校验措辞、报错、检查脚本全部重写。与 QG_BatchMerge 是一对。",
+      "reference": {
+        "plugin": "ComfyUI-AusBoss",
+        "license": "MIT",
+        "relation": "idea",
+        "node": "Split Batch"
+      }
+    },
+    {
+      "id": "QG_BatchMerge",
+      "display": "批次合并",
+      "file": "nodes/qg_batch_merge.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。只借用「a 在前拼接 + 尺寸不一致三种策略 + 通道数必须一致」的语义边界，校验措辞、报错、检查脚本全部重写。",
+      "reference": {
+        "plugin": "ComfyUI-AusBoss",
+        "license": "MIT",
+        "relation": "idea",
+        "node": "Merge Batches"
+      }
+    },
+    {
+      "id": "QG_BatchEveryNth",
+      "display": "批次抽帧",
+      "file": "nodes/qg_batch_nth.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。只借用「先跳 offset 再每 n 取一 + fps 除以 n 保时长」的语义边界，校验措辞、报错、检查脚本全部重写。",
+      "reference": {
+        "plugin": "ComfyUI-AusBoss",
+        "license": "MIT",
+        "relation": "idea",
+        "node": "Select Every Nth"
+      }
+    },
+    {
+      "id": "QG_RealignToSource",
+      "display": "编辑对位回源",
+      "file": "nodes/qg_realign_to_source.py",
+      "origin": "original",
+      "note": "封装自写。算法层（相位相关 + 分块匹配 + warp）1:1 搬入 AusBoss 的 MIT nodes/_realign_helpers.py 全部六函数与本包 nodes/_qg_realign_helpers.py（MIT 版权注释保留，THIRD-PARTY-NOTICES 收录）；节点层编排（stitcher 解包 / 逐帧循环 / 报告拼接）本文件自写。与 AusBoss 同参数输出逐位一致（并排对比 20 项断言全过，含 stitcher 路径与三种填充）。",
+      "reference": {
+        "plugin": "ComfyUI-AusBoss",
+        "license": "MIT",
+        "relation": "idea",
+        "node": "Realign to Source (EXPERIMENTAL) 🆎"
+      }
+    },
+    {
+      "id": "QG_TiledUpscale",
+      "display": "切块超分",
+      "file": "nodes/qg_tiled_upscale.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "封装自写。切块规划 1:1 搬自 AusBoss 的 MIT nodes/_tile_helpers.py（本包 _qg_tile_helpers.py，逐字一致，MIT 头注释保留，NOTICES 收录）；LAB 保色与 lanczos 用本包同源函数（与上游逐位一致，已验证）；节点层（输入契约 / stitcher 打包 / 报告）自写。与 AusBoss 同参数 Split 输出逐位一致。",
+      "reference": {
+        "plugin": "ComfyUI-AusBoss",
+        "license": "MIT",
+        "relation": "idea",
+        "node": "Tiled Upscale 🆎"
+      }
+    },
+    {
+      "id": "QG_TiledUpscaleStitch",
+      "display": "切块超分拼回",
+      "file": "nodes/qg_tiled_upscale_stitch.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "封装自写。与 QG_TiledUpscale 各占一文件（本节点 nodes/qg_tiled_upscale_stitch.py，一节点一文件）；渐变权重 / LAB 保色的数学与 AusBoss 逐位一致（26 项并排断言全过，含三档 keep_colors 与单 batch 路径）；节点层自写。",
+      "reference": {
+        "plugin": "ComfyUI-AusBoss",
+        "license": "MIT",
+        "relation": "idea",
+        "node": "Tiled Upscale Stitch 🆎"
+      }
     }
   ],
   "sections": [
@@ -1162,6 +1273,54 @@
       "anchor": "## 长短边",
       "nodes": [
         "QG_LongShortSide"
+      ]
+    },
+    {
+      "anchor": "## LoRA Switch Stack",
+      "nodes": [
+        "QG_LoraSwitchStack"
+      ]
+    },
+    {
+      "anchor": "## 图像适配缩放",
+      "nodes": [
+        "QG_ImageFitResize"
+      ]
+    },
+    {
+      "anchor": "## 批次拆分",
+      "nodes": [
+        "QG_BatchSplit"
+      ]
+    },
+    {
+      "anchor": "## 批次合并",
+      "nodes": [
+        "QG_BatchMerge"
+      ]
+    },
+    {
+      "anchor": "## 批次抽帧",
+      "nodes": [
+        "QG_BatchEveryNth"
+      ]
+    },
+    {
+      "anchor": "## 编辑对位回源",
+      "nodes": [
+        "QG_RealignToSource"
+      ]
+    },
+    {
+      "anchor": "## 切块超分",
+      "nodes": [
+        "QG_TiledUpscale"
+      ]
+    },
+    {
+      "anchor": "## 切块超分拼回",
+      "nodes": [
+        "QG_TiledUpscaleStitch"
       ]
     }
   ]

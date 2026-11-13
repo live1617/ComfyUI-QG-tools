@@ -5,12 +5,12 @@
 // pass-through output, gallery mode, text style settings and clipboard actions.
 
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026110904";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=2026111208";
 import { api } from "/scripts/api.js";
-import { zhPair } from "../shared/zh.mjs?v=2026110904";
-import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026110904";
-import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026110904";
-import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026110904";
+import { zhPair } from "../shared/zh.mjs?v=2026111208";
+import { installNativeNodePointerBridge } from "../shared/dom_native_interaction.mjs?v=2026111208";
+import { installModeWatcher } from "../shared/vue_mode.mjs?v=2026111208";
+import { pinPanelToNodeHeight } from "../shared/vue_panel_fit.mjs?v=2026111208";
 
 const NODE_TYPE = "QG_DisplayAny";
 // 拖线到空白处时弹出的候选菜单里，这一项的显示名。原来写死中文，英文界面也显示
@@ -983,6 +983,27 @@ function createPreview(node) {
 
 app.registerExtension({
     name: "QG.DisplayAny",
+    // 官方 Context Menu API（替代已弃用的 prototype.getExtraMenuOptions 劫持）：
+    // 右键本节点时前端把返回项追加到菜单末尾；返回 null 表示分隔线。
+    getNodeMenuItems(node) {
+        if (String(node?.comfyClass ?? "") !== NODE_TYPE) return [];
+        const st = node._qgDisplay;
+        const items = [null, { content: zhPair("Text settings…", "展示文本设置…"), className: "qgtools-menu-text-settings", callback: () => showTextSettings(node) }];
+        if (st?.contextMedia) {
+            const kind = mediaKindOf(st.contextMedia);
+            const copyLabel = kind === "image" ? zhPair("Copy image", "复制图像")
+                : kind === "video" ? zhPair("Copy video URL", "复制视频地址")
+                : zhPair("Copy audio URL", "复制音频地址");
+            const saveLabel = kind === "image" ? zhPair("Save image", "保存图像")
+                : kind === "video" ? zhPair("Save video", "保存视频")
+                : zhPair("Save audio", "保存音频");
+            items.push(
+                { content: copyLabel, callback: () => copyMediaToClipboard(st) },
+                { content: saveLabel, callback: () => saveMediaToDisk(st) },
+            );
+        }
+        return items;
+    },
     async setup() {
         installConnectionMenuEntry(app.canvas);
         // 切到 / 切回 Nodes 2.0 时逐个节点重算面板上限，不重载工作流
@@ -1087,26 +1108,6 @@ app.registerExtension({
         nodeType.prototype.onMouseLeave = function () {
             this._qgDisplay?.root.classList.remove("qgtools-hover");
             return left?.apply(this, arguments);
-        };
-        const menu = nodeType.prototype.getExtraMenuOptions;
-        nodeType.prototype.getExtraMenuOptions = function (canvas, options) {
-            const result = menu?.apply(this, arguments);
-            const st = this._qgDisplay;
-            options.push(null, { content: zhPair("Text settings…", "展示文本设置…"), className: "qgtools-menu-text-settings", callback: () => showTextSettings(this) });
-            if (st?.contextMedia) {
-                const kind = mediaKindOf(st.contextMedia);
-                const copyLabel = kind === "image" ? zhPair("Copy image", "复制图像")
-                    : kind === "video" ? zhPair("Copy video URL", "复制视频地址")
-                    : zhPair("Copy audio URL", "复制音频地址");
-                const saveLabel = kind === "image" ? zhPair("Save image", "保存图像")
-                    : kind === "video" ? zhPair("Save video", "保存视频")
-                    : zhPair("Save audio", "保存音频");
-                options.push(
-                    { content: copyLabel, callback: () => copyMediaToClipboard(st) },
-                    { content: saveLabel, callback: () => saveMediaToDisk(st) },
-                );
-            }
-            return result;
         };
         const removed = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () {

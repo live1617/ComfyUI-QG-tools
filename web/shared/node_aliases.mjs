@@ -235,6 +235,32 @@ export const NODE_ALIASES = {
         "image size", "width height", "dimension", "measure", "ratio",
         "长边", "短边", "长短边", "宽高比", "比值", "图像尺寸", "尺寸", "qg",
     ],
+    QG_LoraSwitchStack: [
+        "lora switch stack", "switchable lora", "boolean lora", "lora 开关", "lora 开关堆", "qg",
+        // 11-11 改叫「QG LoRA堆」，新旧叫法都留着，老工作流/老习惯照样搜得到。
+        "qg lora", "qg lora堆", "lora堆", "lora stack",
+    ],
+    QG_ImageFitResize: [
+        "image fit resize", "fit resize", "megapixels", "budget resize", "图像适配缩放", "按预算缩放", "适配画布", "qg",
+    ],
+    QG_BatchSplit: [
+        "batch split", "split frames", "拆分", "批次拆分", "切分", "qg",
+    ],
+    QG_BatchMerge: [
+        "batch merge", "merge frames", "合并", "批次合并", "拼接", "qg",
+    ],
+    QG_BatchEveryNth: [
+        "select every nth", "batch nth", "抽帧", "批次抽帧", "间隔", "跳帧", "qg",
+    ],
+    QG_RealignToSource: [
+        "realign", "align to source", "register", "zoom drift", "shift", "对齐", "回贴", "对位", "漂移", "编辑对齐", "qg",
+    ],
+    QG_TiledUpscale: [
+        "tiled upscale", "tile upscale", "tiles", "split into tiles", "megapixels", "upscale", "切块", "分块", "放大", "超分", "qg",
+    ],
+    QG_TiledUpscaleStitch: [
+        "tiled upscale stitch", "join tiles", "merge tiles", "tiled upscale", "拼接", "拼回", "融合", "qg",
+    ],
 };
 
 export const NODE_ALIAS_COUNT = Object.keys(NODE_ALIASES).length;

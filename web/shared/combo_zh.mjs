@@ -12,8 +12,8 @@
 //
 // 数据源：nodes/_qg_combo_legacy.py 的 LEGACY 表（Python 侧执行期兜底用的是同一张表）。
 
-import { wantsChinese } from "./zh.mjs?v=2026110904";
-import { chainCallback } from "./index.mjs?v=2026110904";
+import { wantsChinese } from "./zh.mjs?v=2026111208";
+import { chainCallback } from "./index.mjs?v=2026111208";
 
 export const COMBO_ZH = {
     QG_AddWatermark: {
@@ -181,6 +181,53 @@ export const COMBO_ZH = {
             "latent2rgb": "快速",
             "taesd": "清晰",
             "none": "关闭",
+        },
+    },
+    QG_ImageFitResize: {
+        target_mode: {
+            "megapixels": "百万像素",
+            "longest_edge": "长边",
+            "shortest_edge": "短边",
+            "width_height": "宽高",
+            "scale_factor": "倍数",
+        },
+        keep_proportion: {
+            "stretch": "拉伸",
+            "fit": "适应画布",
+            "cover_crop": "裁剪",
+            "pad": "填充",
+        },
+        interpolation: {
+            "lanczos": "Lanczos 重采样（高质量抗锯齿）",
+            "bicubic": "双三次",
+            "bilinear": "双线性",
+            "nearest-exact": "邻近-精确",
+            "area": "区域",
+        },
+        anchor: {
+            "center": "居中",
+            "top": "上",
+            "bottom": "下",
+            "left": "左",
+            "right": "右",
+        },
+    },
+    QG_BatchMerge: {
+        on_mismatch: {
+            "resize_to_a": "缩到 A 的尺寸",
+            "resize_to_b": "缩到 B 的尺寸",
+            "error": "报错",
+        },
+    },
+    QG_RealignToSource: {
+        fit: {
+            "zoom + shift": "缩放 + 平移",
+            "affine": "仿射（含倾斜）",
+        },
+        empty_fill: {
+            "edge": "拉伸边缘",
+            "source": "从原图填",
+            "gray": "平灰（给重绘）",
         },
     },
     QG_ImageScale: {

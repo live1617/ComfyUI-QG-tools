@@ -30,7 +30,7 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026110904";
+import { sizeFor } from "../shared/node_width.mjs?v=2026111208";
 
 const NODE_CLASS = "QG_TripleLoader";
 const PRETTY_WIDGETS = new Set(["unet_name", "clip_name", "vae_name"]);
@@ -168,7 +168,9 @@ app.registerExtension({
 
             // 新建节点默认宽度（高度不变）；保存过 size 的工作流会在 configure() 时覆盖
             try {
-                const h = Array.isArray(this.size) ? this.size[1] : 60;
+                // 🔴 1.58.5 的 node.size 是 Float64Array，Array.isArray 判不到 →
+                // 新建时高度永远退回 60，而 Vue 外壳按 6 行控件撑到 296，节点几何与画面脱节。
+                const h = (Array.isArray(this.size) || ArrayBuffer.isView(this.size)) ? this.size[1] : 60;
                 this.size = [DEFAULT_WIDTH, h];
                 if (typeof this.setDirtyCanvas === "function") {
                     this.setDirtyCanvas(true, true);

@@ -5,7 +5,7 @@
  * （带多行文本框的节点会被撑到 400，普通节点是 270，某些只有两个控件的算出来只有 159）。
  * Python 侧 grep 不到宽度，也没法声明。所以统一在这里钉一遍。
  *
- * 规模：**57 个节点全部在表里**，一个都不漏（`tools/verify_node_sizes.py` 会核对
+ * 规模：**65 个节点全部在表里**，一个都不漏（`tools/verify_node_sizes.py` 会核对
  * 表里的条目与 `nodes/*.py` 注册的 QG_ 节点一一对应，漏一个、多一个都报红）。
  * 改尺寸只改这一处，别再往节点文件里写数字。
  *
@@ -30,7 +30,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=2026110904";
+import { chainCallback } from "./index.mjs?v=2026111208";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════
@@ -128,6 +128,29 @@ export const SIZES = {
     QG_DualMath: { w: 270, minW: 220, h: 162, minH: 60 },
     // 长短边：3 个输入槽 + 3 个输出槽、无控件，纯后端。h 为真机 computeSize 实测值。
     QG_LongShortSide: { w: 270, minW: 220, h: 66, minH: 60 },
+    // QG LoRA堆：动态高度节点（行数 = SLOT_COUNT = 24，可零行）。
+    // h 登记「24 行全填满」的实测高度 678（tmp 真机探针 _measure_slot24 实测：
+    // 零行 computeSize=102、24 行全展开 node.size[1]=678）。按最大登记才不会在
+    // 满栈时被裁掉底部输出槽；_probe_sizes_vs_table 测的是零行基准，678 也满足。
+    // 改 SLOT_COUNT / ROW_HEIGHT 后必须重测回填。
+    QG_LoraSwitchStack: { w: 380, minW: 380, h: 678, minH: 120 },
+    // 图像适配缩放：h 是占位值，必须用 tools/_probe_sizes_vs_table.cjs 实测后回填。
+    // h 是「全部 10 个控件都可见」时的实测高度（334）。这是动态显隐节点：
+    // 前端按目标模式收起无关控件，新建后实际停在 190/238/262 之一，但表里
+    // 必须按最大值登记，否则 _probe_sizes_vs_table 判「会被裁」。
+    QG_ImageFitResize: { w: 300, minW: 280, h: 358, minH: 120 },
+    // 批次拆分：h 是占位值，必须用 tools/_probe_sizes_vs_table.cjs 实测后回填。
+    QG_BatchSplit: { w: 300, minW: 280, h: 78, minH: 78 },
+    // 批次合并：h 是占位值，必须用 tools/_probe_sizes_vs_table.cjs 实测后回填。
+    QG_BatchMerge: { w: 300, minW: 280, h: 78, minH: 78 },
+    // 批次抽帧：h 是占位值，必须用 tools/_probe_sizes_vs_table.cjs 实测后回填。
+    QG_BatchEveryNth: { w: 300, minW: 280, h: 102, minH: 102 },
+    // 编辑对位回源：h 是占位值，必须用 tools/_probe_sizes_vs_table.cjs 实测后回填。
+    QG_RealignToSource: { w: 300, minW: 280, h: 146, minH: 146 },
+    // 切块超分：h 是占位值，必须用 tools/_probe_sizes_vs_table.cjs 实测后回填。
+    QG_TiledUpscale: { w: 300, minW: 280, h: 254, minH: 254 },
+    // 切块超分拼回：h 是占位值，必须用 tools/_probe_sizes_vs_table.cjs 实测后回填。
+    QG_TiledUpscaleStitch: { w: 300, minW: 280, h: 78, minH: 78 },
 };
 
 /** 不在表里的节点用这个（新节点忘了登记也有兜底）。 */
@@ -213,10 +236,12 @@ export function pinNodeSize(nodeType, nodeData) {
     // 所以既写属性给拖拽用，也在 setSize / onResize 之后直接把 size 夹回来。
     // 🔴 chainCallback 是**后置**执行（原函数跑完再跑我们的），所以这里改的是 this.size，不是参数。
     chainCallback(nodeType.prototype, "onResize", function () {
-        if (Array.isArray(this.size)) clamp(this);
+        // 🔴 1.58.5 起 node.size 是 Float64Array，Array.isArray 判不到 → 最小宽/高夹取整体失效。
+        if (Array.isArray(this.size) || ArrayBuffer.isView(this.size)) clamp(this);
     });
     chainCallback(nodeType.prototype, "setSize", function () {
-        if (Array.isArray(this.size)) clamp(this);
+        // 🔴 1.58.5 起 node.size 是 Float64Array，Array.isArray 判不到 → 最小宽/高夹取整体失效。
+        if (Array.isArray(this.size) || ArrayBuffer.isView(this.size)) clamp(this);
     });
 }
 

@@ -3,7 +3,7 @@
 // DOM 接线全在 web/lora_loader/index.js；这个文件零 DOM、零 ComfyUI 依赖，
 // 所以 tools/_check_lora_stack.mjs 能直接跑它。
 
-import { zhCount, zhPair, zhSep, zhEnd } from "./zh.mjs?v=2026110904";
+import { zhCount, zhPair, zhSep, zhEnd } from "./zh.mjs?v=2026111208";
 
 export const STRENGTH_MIN = -10;
 export const STRENGTH_MAX = 10;
@@ -193,10 +193,67 @@ export function isScrubbing(deltaX, deltaY) {
   return Math.abs(deltaX) > SCRUB_DEAD_ZONE && Math.abs(deltaX) >= Math.abs(deltaY);
 }
 
-export function filterLoras(names, query) {
+export function filterLoras(names, query, limit = 0) {
   const needle = String(query || "").trim().toLowerCase();
-  if (!needle) return names.slice();
-  return names.filter((name) => name.toLowerCase().includes(needle));
+  // 多个词是 AND，且不要求相邻 —— "wan detail" 能命中 wan/detail-v2.safetensors。
+  // 单关键词时与原来的 includes 完全等价，所以加载器换了不会变手感。
+  const tokens = needle ? needle.split(/\s+/) : [];
+  const out = [];
+  for (const name of names) {
+    if (tokens.length) {
+      const lower = name.toLowerCase();
+      if (!tokens.every((token) => lower.includes(token))) continue;
+    }
+    out.push(name);
+    // 上限是各节点自己的 UI 策略（开关堆 300，加载器不限），不是写死在节点里。
+    if (limit > 0 && out.length >= limit) break;
+  }
+  return out;
+}
+
+// 🔴 分隔符必须和后端 _qg_lora_helpers._TRIGGER_SPLIT 一字不差：
+// [,，;；\n\r]+。少认全角分号 / \r 时，卡片把 "foo；bar" 当一个词，
+// 后端却输出两个，勾选与去重结果就对不上了。加载器与开关堆共用这一份。
+export function splitTriggerWords(text) {
+  return String(text || "")
+    .split(/[,，;；\n\r]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export function joinTriggerWords(words) {
+  const seen = new Set();
+  const out = [];
+  for (const word of words ?? []) {
+    const clean = String(word).trim();
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out.join(", ");
+}
+
+// /qg/lora/info 回的是 {ok, info:{…}}，不是裸 info。两边卡片都踩过这个坑：
+// 少剥一层就「一点报错都没有、卡片只剩我的词」。
+export async function readLoraInfo(fetchApi, name) {
+  const response = await fetchApi(`/qg/lora/info?name=${encodeURIComponent(name)}`);
+  const payload = await response.json();
+  const info = payload?.info ?? payload;
+  if (!info || info.ok === false) {
+    throw new Error(info?.error || "Could not read LoRA info.");
+  }
+  return info;
+}
+
+// 卡片的三组词按同一套顺序取，缺的给空数组，渲染时不必各写一遍 ?? []。
+export function triggerGroups(info) {
+  return {
+    file: info?.file_triggers ?? [],
+    civitai: info?.civitai_triggers ?? [],
+    custom: info?.custom_triggers ?? [],
+  };
 }
 
 // 选择器的键盘模型：在被过滤后的列表上维护一个高亮下标。方向键绕回，
@@ -248,10 +305,7 @@ export function loraStackKeyAction(event, { index, rowCount, atAdd = false, edit
 // （Civitai 上整句就是触发词）。所以要在文本里按「它会拆成的那一段」去找，
 // 绝不能按单个片段找。
 function triggerParts(text) {
-  return String(text || "")
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
+  return splitTriggerWords(text);
 }
 
 function findTrigger(parts, wanted) {

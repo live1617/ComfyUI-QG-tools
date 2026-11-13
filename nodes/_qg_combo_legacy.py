@@ -257,6 +257,72 @@ LEGACY = {
     # 一份（widget.options.values 仍是英文数组、没有 getOptionLabel），只有
     # 这里挂上的 getOptionLabel 才真的换掉画布上显示的下拉文字。
     # ───────────────────────────────────────────────────────────────────
+    # 11-11 新增节点（自写）：三个下拉都从第一天就登记，中文界面直接显示中文；
+    # 这三个表的值从来没有中文存档，所以这里只有「英文 → 中文」这一层含义。
+    "QG_ImageFitResize": {
+        "target_mode": {
+            "megapixels": "百万像素",
+            "longest_edge": "长边",
+            "shortest_edge": "短边",
+            "width_height": "宽高",
+            "scale_factor": "倍数",
+        },
+        "keep_proportion": {
+            "stretch": "拉伸",
+            "fit": "适应画布",
+            "cover_crop": "裁剪",
+            "pad": "填充",
+        },
+        "interpolation": {
+            "lanczos": "Lanczos 重采样（高质量抗锯齿）",
+            "bicubic": "双三次",
+            "bilinear": "双线性",
+            # 11-11 从 "nearest" 改名（torch 的 nearest 整体错开半像素，生态用的是
+            # nearest-exact）。中文名取 QG_ImageScale 的同款，同一个界面里说法一致。
+            "nearest-exact": "邻近-精确",
+            "area": "区域",
+        },
+        # 锚点名与 QG_ImageScale 完全一致，两边的存档可以互相抄。
+        "anchor": {
+            "center": "居中",
+            "top": "上",
+            "bottom": "下",
+            "left": "左",
+            "right": "右",
+        },
+    },
+    # 11-11 新增批次三件套（自写）：BatchMerge 只有一个下拉，从第一天就登记。
+    "QG_BatchMerge": {
+        "on_mismatch": {
+            "resize_to_a": "缩到 A 的尺寸",
+            "resize_to_b": "缩到 B 的尺寸",
+            "error": "报错",
+        },
+    },
+    # 11-11 新增 RealignToSource（算法同源 MIT）：两个下拉从第一天就登记。
+    "QG_RealignToSource": {
+        "fit": {
+            "zoom + shift": "缩放 + 平移",
+            "affine": "仿射（含轻微倾斜）",
+        },
+        "empty_fill": {
+            "edge": "延伸边缘像素",
+            "source": "取自原图",
+            "gray": "平灰（供重绘）",
+        },
+    },
+    # 11-11 新增节点（封装）：编辑对位回源的两个下拉从第一天就登记。
+    "QG_RealignToSource": {
+        "fit": {
+            "zoom + shift": "缩放 + 平移",
+            "affine": "仿射（含倾斜）",
+        },
+        "empty_fill": {
+            "edge": "拉伸边缘",
+            "source": "从原图填",
+            "gray": "平灰（给重绘）",
+        },
+    },
     "QG_ImageScale": {
         # 例外：源包这五个下拉的值**本来就是中文**，这一轮才换成英文 key，
         # 所以这里的方向真的是「老中文值 → 英文值」，不只是显示名。

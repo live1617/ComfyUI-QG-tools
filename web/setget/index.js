@@ -40,8 +40,8 @@
  * 工作流 JSON 里保存的只有节点 type / 位置 / 名称（serialize_widgets）。
  */
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=2026110904";
-import { pinCategory } from "../shared/category_zh.mjs?v=2026110904";
+import { zhPair } from "../shared/zh.mjs?v=2026111208";
+import { pinCategory } from "../shared/category_zh.mjs?v=2026111208";
 
 const SET_TYPE = "QG_SetPoint";
 const GET_TYPE = "QG_GetPoint";
@@ -923,6 +923,16 @@ function convertOutputsToSetGet(graph, node) {
 /* ------------------------------------------------------------------ */
 
 function patchCanvasDrawing() {
+    // 🔴 getConnectionPos 已被官方标记 deprecated；Nodes 2.0 下它按经典公式
+    // 算槽位，与 Vue DOM 实测位置差 9~12px（真机虚拟连线落在输入圆点上方）。
+    // 官方路径 getOutputPos / getInputPos 内部走 getSlotPosition，Vue 下会读
+    // 布局写回的真实偏移，经典模式同样正确；老前端没有这两个方法时再退回。
+    const slotPos = (node, isInput, index) => {
+        const official = isInput ? node.getInputPos?.(index) : node.getOutputPos?.(index);
+        if (official && Number.isFinite(official[0]) && Number.isFinite(official[1])) return official;
+        return node.getConnectionPos?.(isInput, index) || [node.pos[0], node.pos[1]];
+    };
+
     // 让开了「显示连线」的节点在视口外也不被裁剪
     const originalComputeVisibleNodes = LGraphCanvas.prototype.computeVisibleNodes;
     if (!originalComputeVisibleNodes.__qgSetGet) {
@@ -956,9 +966,9 @@ function patchCanvasDrawing() {
                 LGraphCanvas.link_type_colors?.[linkType] ||
                 setNode.bgcolor ||
                 "#AAA";
-            const startPos = setNode.getConnectionPos(false, 0);
+            const startPos = slotPos(setNode, false, 0);
             for (const getter of getters) {
-                const endPos = getter.getConnectionPos(true, 0);
+                const endPos = slotPos(getter, true, 0);
                 const highlighted = setNode.is_selected || getter.is_selected;
                 this.renderLink(
                     ctx,

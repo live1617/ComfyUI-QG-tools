@@ -1,21 +1,21 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=2026110904";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026110904";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026110904";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026110904";
+import { sizeFor } from "../shared/node_width.mjs?v=2026111208";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=2026111208";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=2026111208";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=2026111208";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=2026110904";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026110904";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026110904";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026110904";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026110904";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026110904";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026110904";
+} from "../shared/settings_menu.mjs?v=2026111208";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=2026111208";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=2026111208";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=2026111208";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=2026111208";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=2026111208";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=2026111208";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -71,8 +71,13 @@ import {
   loraFolders,
   loraPickerEntries,
   loraStackKeyAction,
-} from "../shared/lora_stack.mjs?v=2026110904";
-import { civitaiButtonLabel, civitaiByHashUrl, civitaiFailureText, isCivitaiAddress, MAX_PICTURE_BYTES, parseCivitaiBody, pickCivitaiPicture, pictureError, pictureErrorText, smallPictureUrl } from "../shared/civitai_lookup.mjs?v=2026110904";
+  readLoraInfo,
+  triggerGroups,
+} from "../shared/lora_stack.mjs?v=2026111208";
+import { civitaiButtonLabel, civitaiFailureText, pictureErrorText } from "../shared/civitai_lookup.mjs?v=2026111208";
+// 查询编排（哈希 → 问 Civitai → 存侧车 → 存预览图）与 QG LoRA堆共用一份。
+// UI 差异全在回调里：这里弹 toast + pictureSaved()。
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=2026111208";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -1597,119 +1602,8 @@ function installStackKeyboard(state) {
   }, { capture: true });
 }
 
-// ---------- Civitai lookup ----------
-
-// One click, one file: the server hashes the LoRA, this browser asks Civitai
-// about that hash, and the server saves the answer beside the LoRA after
-// checking it describes the same file. Returns false when Civitai does not
-// know the file (unpublished or hidden models answer 404).
-// `picture` is the gear option: "off", "PG-13" or "any".
-async function lookUpOnCivitai(serverName, picture = "PG-13") {
-  const hashed = await (await api.fetchApi(
-    `/qg/lora/hash?name=${encodeURIComponent(serverName)}`
-  )).json();
-  if (!hashed.ok) throw new Error(hashed.error || "Could not hash this LoRA file.");
-  // 🔴 redirect 不能设成 "error"：fetch 在那种情况下抛的是 TypeError，和
-  // 「根本连不上」一模一样，于是被 civitaiFailureText 判成「防火墙/VPN/代理
-  // 拦住了」—— 明明连上了、只是跟了一次跳转。改成跟随，再自己验落点：只
-  // 认 civitai.com 自己的 https 地址。
-  const response = await fetch(civitaiByHashUrl(hashed.sha256), {
-    credentials: "omit", redirect: "follow", referrerPolicy: "no-referrer", cache: "no-store",
-  });
-  if (response.status === 404) return false;
-  if (!isCivitaiAddress(response.url)) {
-    throw new Error("Civitai redirected the lookup somewhere else.");
-  }
-  if (!response.ok) throw pictureError("http_status", { status: response.status });
-  const info = parseCivitaiBody(await response.text());
-  const saved = await (await api.fetchApi("/qg/lora/civitai", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: serverName, info }),
-  })).json();
-  if (!saved.ok) throw new Error(saved.error || "Could not save the Civitai info.");
-  if (picture !== "off") {
-    // 图没存成不该把「信息已经存好了」这件事也报成失败。
-    await saveCivitaiPicture(serverName, info, picture === "any").catch((error) => {
-      // 原因由数据层按 code 出两种语言：这句话进的是 toast，翻译器看不到它。
-      const why = pictureErrorText(error);
-      loraToast(zhPair(
-        `Saved the Civitai info, but not its picture: ${why}`,
-        `Civitai 信息已存下，但图没存成：${why}`));
-    });
-  }
-  return true;
-}
-
-// 图床的 content-length 不可全信：可能缺失，也可能是压缩前的长度。所以边读
-// 边数，到上限就 cancel —— 绝不能先 response.blob() 再量，那等于把整个 body
-// 拉进内存之后才说不收。
-async function readCapped(response, limit) {
-  const reader = response.body?.getReader?.();
-  if (!reader) {
-    const blob = await response.blob();
-    if (blob.size > limit) throw pictureError("picture_too_large_while_reading");
-    return blob;
-  }
-  const chunks = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > limit) {
-      await reader.cancel().catch(() => {});
-      throw pictureError("picture_too_large_while_reading");
-    }
-    chunks.push(value);
-  }
-  return new Blob(chunks, { type: response.headers.get("content-type") || "" });
-}
-
-// The LoRA's first picture on Civitai, saved beside it as its preview. The
-// browser downloads a 450-pixel copy from Civitai's picture server without
-// cookies or a referrer; the server decodes it again and never replaces an
-// existing picture.
-async function saveCivitaiPicture(serverName, info, anyRating) {
-  const picture = pickCivitaiPicture(info, anyRating);
-  if (!picture) {
-    loraToast(anyRating
-      ? zhPair("Civitai has no picture of this LoRA to save.", "这张 LoRA 在 Civitai 上没有可存的图。")
-      : zhPair("Civitai has no picture of this LoRA rated PG-13 or milder.",
-        "这张 LoRA 在 Civitai 上没有 PG-13 及以下的图。"));
-    return;
-  }
-  // 默认跟随重定向（Civitai 会跳到自己的文件库），跳完再验一次落点。
-  const response = await fetch(smallPictureUrl(picture.url), {
-    credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store",
-  });
-  if (!response.ok) throw pictureError("picture_server", { status: response.status });
-  if (!isCivitaiAddress(response.url)) throw pictureError("picture_not_civitai");
-  if (!(response.headers.get("content-type") || "").startsWith("image/")) {
-    throw pictureError("picture_not_an_image");
-  }
-  // content-length 只用来提前放弃；真正的量是读出来的那些字节。
-  const declared = Number(response.headers.get("content-length") || 0);
-  if (declared > MAX_PICTURE_BYTES) {
-    throw pictureError("picture_too_large", {
-      megabytes: Math.round((declared / (1024 * 1024)) * 10) / 10,
-      limit: Math.round(MAX_PICTURE_BYTES / (1024 * 1024)),
-    });
-  }
-  const blob = await readCapped(response, MAX_PICTURE_BYTES);
-  const saved = await (await api.fetchApi(
-    `/qg/lora/picture?name=${encodeURIComponent(serverName)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": blob.type || "application/octet-stream" },
-      body: blob,
-    }
-  )).json();
-  // 后端认得出原因时会带 code 与数字回来；不认识的就用它给的英文原文。
-  if (!saved.ok) throw pictureError(saved.code, saved.params ?? {}, saved.error || "Could not save the picture.");
-  pictureSaved();
-  loraToast(zhPair("Saved the LoRA's Civitai picture.", "已存下这张 LoRA 在 Civitai 的图。"));
-}
+// Civitai 查询编排（哈希 → 问 Civitai → 存侧车 → 存预览图）已抽到
+// web/shared/civitai_flow.mjs；toast / pictureSaved 这类 UI 差异由 openInfo 传回调。
 
 // ---------- info card ----------
 
@@ -1807,9 +1701,10 @@ function openInfo(state, index, anchor) {
       }
       card.append(chips);
     };
-    chipSection("From the file", info.file_triggers);
-    chipSection("From Civitai", info.civitai_triggers);
-    chipSection("Your words", info.custom_triggers);
+    const groups = triggerGroups(info);
+    chipSection("From the file", groups.file);
+    chipSection("From Civitai", groups.civitai);
+    chipSection("Your words", groups.custom);
 
     if (state.settings?.civitai_lookup !== false) {
       const fetchButton = el(
@@ -1822,7 +1717,26 @@ function openInfo(state, index, anchor) {
         fetchButton.textContent = zhPair("Fetching...", "正在查询…");
         retranslate(card);
         try {
-          if (!(await lookUpOnCivitai(serverName, state.settings?.civitai_picture ?? "PG-13"))) {
+          if (!(await lookupCivitaiInfo({
+            fetchApi: (...args) => api.fetchApi(...args),
+            name: serverName,
+            picture: state.settings?.civitai_picture ?? "PG-13",
+            // UI 差异只在这里：编排本身与 QG LoRA堆共用 shared/civitai_flow.mjs。
+            onNoPicture: (anyRating) => loraToast(anyRating
+              ? zhPair("Civitai has no picture of this LoRA to save.", "这张 LoRA 在 Civitai 上没有可存的图。")
+              : zhPair("Civitai has no picture of this LoRA rated PG-13 or milder.",
+                "这张 LoRA 在 Civitai 上没有 PG-13 及以下的图。")),
+            onPictureSaved: () => {
+              pictureSaved();
+              loraToast(zhPair("Saved the LoRA's Civitai picture.", "已存下这张 LoRA 在 Civitai 的图。"));
+            },
+            onPictureError: (error) => {
+              const why = pictureErrorText(error);
+              loraToast(zhPair(
+                `Saved the Civitai info, but not its picture: ${why}`,
+                `Civitai 信息已存下，但图没存成：${why}`));
+            },
+          }))) {
             fetchButton.textContent = zhPair("Not found on Civitai", "Civitai 上没有这个文件");
             retranslate(card);
             return;
@@ -1915,7 +1829,7 @@ function openInfo(state, index, anchor) {
         return;
       }
       wordInput.value = "";
-      const words = [...(info.custom_triggers || []), word];
+      const words = [...groups.custom, word];
       let remembered = true;
       try {
         const response = await api.fetchApi("/qg/lora/triggers", {
@@ -1960,12 +1874,9 @@ function openInfo(state, index, anchor) {
   };
 
   const load = () => {
-    api.fetchApi(`/qg/lora/info?name=${encodeURIComponent(serverName)}`)
-      .then((response) => response.json())
-      .then((data) => {
-        if (!data.ok) throw new Error(data.error);
-        render(data.info);
-      })
+    // 剥 {ok, info} 外壳这一层由 shared 负责；两张卡片不会再各写一遍、各漏一遍。
+    readLoraInfo((...args) => api.fetchApi(...args), serverName)
+      .then(render)
       .catch(() => {
         card.textContent = "";
         card.append(el("div", "qgtools-lora-empty", zh("Could not read LoRA info.")));

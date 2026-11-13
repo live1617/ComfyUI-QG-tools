@@ -199,7 +199,8 @@ function updateOutputNames(node) {
 
 /** 按当前控件状态把节点高度压回去（隐藏项不留空白）。 */
 function shrinkNodeHeight(node) {
-    if (typeof node.computeSize === "function" && Array.isArray(node.size)) {
+    // 🔴 1.58.5 的 node.size 是 Float64Array，Array.isArray 判不到 → 动态显隐后不再收缩。
+    if (typeof node.computeSize === "function" && (Array.isArray(node.size) || ArrayBuffer.isView(node.size))) {
         const nextSize = node.computeSize();
         if (Array.isArray(nextSize) && nextSize.length >= 2) {
             node.size[1] = nextSize[1];
@@ -561,7 +562,7 @@ setInterval(() => {
 }, 500);
 
 function shrinkIfTaller(node) {
-    if (typeof node.computeSize !== "function" || !Array.isArray(node.size)) {
+    if (typeof node.computeSize !== "function" || !(Array.isArray(node.size) || ArrayBuffer.isView(node.size))) {
         return;
     }
     const computed = node.computeSize();

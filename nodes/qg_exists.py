@@ -17,9 +17,13 @@ The input is **optional on purpose** — that is what makes "no data"
 expressible. A required input would make ComfyUI refuse to run the node at
 all, so it could never report False.
 
-判定口径与孤海工具箱的「万能是否存在(GH)」对齐：遮罩全黑（含肉眼看不出的低值
-残差）和潜空间全零都算「没有」，图像全黑仍然算「有」。torch 是 ComfyUI 的硬
-依赖，不算新增。
+判定口径与孤海工具箱的「万能是否存在(GH)」基本一致：遮罩全黑（含肉眼看不出的低值
+残差）和潜空间全零都算「没有」，图像全黑仍然算「有」。两处刻意不同：潜空间也按
+0.02 算空（那份用严格等于 0），且空值**如实输出 None**，不像那份会造 64×64 黑图之类
+的占位假数据、也不改写透传的遮罩。torch 是 ComfyUI 的硬依赖，不算新增。
+
+输入口的「任意」标签由 web/exists/index.js 按上游真实类型改写，**只改 label**，
+插槽类型始终是 `*`，存档里不写这个标签。
 """
 
 import torch

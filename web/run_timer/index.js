@@ -630,6 +630,26 @@ function scheduleVueLayer() {
 
 app.registerExtension({
     name: "QG.RunTimer",
+    // 官方 Context Menu API（替代已弃用的 prototype.getExtraMenuOptions 劫持）。
+    // 旧版里还有一段剔除 "Fix node (recreate)" 的逻辑——2026-11-11 真机探针
+    // 证实 1.53 前端根本不生成这一项，剔除循环是死代码，随之删除。
+    getNodeMenuItems(node) {
+        if (String(node?.comfyClass ?? "") !== "QG_RunTimer") return [];
+        if (!node.properties) node.properties = {};
+        const themeItems = Object.keys(THEMES).map((name) => ({
+            content: (node.properties.theme === name ? "● " : "○ ") + name,
+            callback: () => {
+                node.properties.theme = name;
+                requestRepaint();
+            },
+        }));
+        return [
+            { content: "重置计时", callback: () => resetTimer() },
+            { content: "历史记录", submenu: { options: historyMenuItems(node) } },
+            { content: "主题", submenu: { options: themeItems } },
+            { content: "字体颜色", submenu: { options: colorMenuItems(node) } },
+        ];
+    },
 
     setup() {
         api.addEventListener("execution_start", () => startTimer());
@@ -755,33 +775,6 @@ app.registerExtension({
 
         nodeType.prototype.onDrawBackground = function (ctx) {
             drawBody(this, ctx);
-        };
-
-        nodeType.prototype.getExtraMenuOptions = function (_canvas, options) {
-            const node = this;
-            if (!node.properties) node.properties = {};
-            options = options || [];
-            // 为了不显示右上角来源徽章，本节点被伪装成内置模块（见 timer_node.py），
-            // 前端因此会给它加上 "Fix node (recreate)" 这一项——点了会重建节点、
-            // 丢掉主题与字体颜色。这里只剔除这一项，其余菜单项原样保留。
-            for (let i = options.length - 1; i >= 0; i--) {
-                const text = typeof options[i]?.content === "string" ? options[i].content : "";
-                if (/recreate/i.test(text) || /^fix node/i.test(text)) options.splice(i, 1);
-            }
-            const themeItems = Object.keys(THEMES).map((name) => ({
-                content: (node.properties.theme === name ? "● " : "○ ") + name,
-                callback: () => {
-                    node.properties.theme = name;
-                    requestRepaint();
-                },
-            }));
-            options.push(
-                { content: "重置计时", callback: () => resetTimer() },
-                { content: "历史记录", submenu: { options: historyMenuItems(node) } },
-                { content: "主题", submenu: { options: themeItems } },
-                { content: "字体颜色", submenu: { options: colorMenuItems(node) } },
-            );
-            return options;
         };
     },
 });

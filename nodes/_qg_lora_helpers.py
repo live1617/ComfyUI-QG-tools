@@ -110,12 +110,14 @@ def clamp_strength(value: Any, fallback: float = 1.0) -> float:
     NaN 单独挡一道：它和任何数比较都是 False，于是 ``min(limit, nan)`` 会原样
     返回 limit，``max(-limit, limit)`` 再把结果钉死在**上限**—— 一个坏掉的
     NaN 强度会变成 +10 满强度参与出图，比退回默认值严重得多。
+    ±inf 同理：``min(limit, inf)`` 直接给上限。json.loads 会把 1e400 / Infinity
+    读成 inf，所以这两种都要退回默认值（口径与 _clean_bound 一致）。
     """
     try:
         number = float(value)
     except (TypeError, ValueError):
         return fallback
-    if number != number:  # NaN
+    if number != number or number in (float("inf"), float("-inf")):  # NaN / ±inf
         return fallback
     return max(-STRENGTH_LIMIT, min(STRENGTH_LIMIT, number))
 
@@ -657,18 +659,21 @@ def stack_fingerprint(rows: list[dict[str, Any]]) -> str:
     的输出缓存，STRING 那路还是旧的。模型和 CLIP 确实不受影响，但这条输出
     是节点承诺要产出的东西。
     """
-    parts: list[str] = []
+    parts: list[list[Any]] = []
     for row in rows:
         try:
             stat = resolve_lora_path(row["name"]).stat()
             identity = f"{stat.st_mtime_ns}:{stat.st_size}"
         except (ValueError, OSError):
             identity = "missing"
-        parts.append(
-            f"{row['name']}|{row['strength']}|{row['strength_clip']}|"
-            f"{row['enabled']}|{identity}|{row.get('triggers', '')}"
-        )
-    return ";".join(parts)
+        # 🔴 别用裸 `|` / `;` 拼字符串：LoRA 名字或触发词里带分隔符时，
+        # 两个不同的栈能拼出一模一样的指纹（缓存命中旧结果）。整份走 JSON，
+        # 字段边界由引号和转义保证，没有分隔符碰撞这回事。
+        parts.append([
+            row["name"], row["strength"], row["strength_clip"],
+            row["enabled"], identity, row.get("triggers", ""),
+        ])
+    return json.dumps(parts, ensure_ascii=False, separators=(",", ":"))
 
 
 # ---------------------------------------------------------------- 用户存储
@@ -705,6 +710,164 @@ def _read_json(path: Path) -> Any:
 def _triggers_store_path() -> Path | None:
     base = _user_store_dir()
     return None if base is None else base / "lora_triggers.json"
+
+
+# ---------------------------------------------------------------- LoRA堆整栈预设
+#
+# 和 lora_triggers.json 一样放在用户目录（跨工作流、跟着 ComfyUI 用户走，
+# 不塞进工作流文件），但不是同一个文件：触发词是「每个 LoRA 一行」的词表，
+# 预设是「整份 24 行栈」的快照，两者互不干扰。qg_lora_switch_stack 的右键
+# 菜单读写它。所有读写都在 _STORE_LOCK 里做整份读-改-写，避免两个标签页
+# 同时存预设时互相盖掉。
+
+PRESET_NAME_MAX = 60
+PRESET_COUNT_MAX = 60
+PRESET_ROWS_MAX = 24
+
+
+def _presets_store_path() -> Path | None:
+    base = _user_store_dir()
+    return None if base is None else base / "lora_stack_presets.json"
+
+
+def _clean_preset_name(raw: Any) -> str:
+    """预设名压成一行并限长；空名不当键值，交给调用方拒绝。"""
+    return " ".join(str(raw or "").split())[:PRESET_NAME_MAX]
+
+
+def _clean_preset_rows(raw: Any) -> list[dict[str, Any]]:
+    """只保留预设需要的字段，并钳到 SLOT_COUNT 行。
+
+    复用 parse_lora_stack 的口径（强度/开关/触发词怎么归一），但**过滤空行**：
+    预设存的是「有内容的行」。🔴 每行额外记一个 0-based ``position``（原始槽位），
+    载入时铺回原来的位置 —— 否则「第 3、5 行有 LoRA」存成预设再在同一份
+    工作流载入，会变成第 1、2 行，`on_N` 外控连线就悄悄控制错了行。
+    没有 position 的老预设由前端按旧行为（顺序铺前 N 行）兼容。
+
+    两种输入都要认：存的时候前端给的是 JSON 字符串（rows_data 原样），
+    读的时候拿到的是已经存成 dict 的列表。
+    """
+    payload = raw if isinstance(raw, str) else json.dumps(raw)
+    try:
+        entries = json.loads(payload)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(entries, list):
+        return []
+    clean: list[dict[str, Any]] = []
+    for order, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            continue
+        # 逐行走同一套归一，别在这里另写钳制逻辑；空行 parse 后是空表。
+        try:
+            parsed = parse_lora_stack(json.dumps([entry]))
+        except (ValueError, TypeError):
+            continue
+        if not parsed:
+            continue
+        row = dict(parsed[0])
+        # 读回已存的预设时会再归一一次，position 已经是原始槽位，必须沿用；
+        # 否则会被重新编成「过滤后列表的下标」，空行一压缩就回到错位的老问题。
+        slot = entry.get("position")
+        if isinstance(slot, bool) or not isinstance(slot, int) or not (0 <= slot < PRESET_ROWS_MAX):
+            slot = order
+        row["position"] = slot
+        clean.append(row)
+        if len(clean) >= PRESET_ROWS_MAX:
+            break
+    return clean
+
+
+def _read_presets_unlocked(store: Path) -> dict[str, Any]:
+    data = _read_json(store)
+    return data if isinstance(data, dict) else {}
+
+
+def list_stack_presets() -> dict[str, Any]:
+    """返回 {name: {saved: iso, rows: [...]}}；读不出来就当空表，不抛。"""
+    store = _presets_store_path()
+    if store is None or not store.is_file():
+        return {}
+    with _STORE_LOCK:
+        data = _read_presets_unlocked(store)
+    return {str(k): v for k, v in data.items() if isinstance(v, dict)}
+
+
+def save_stack_preset(name: Any, rows: Any) -> dict[str, Any]:
+    """存一份整栈快照，同名覆盖。返回 {name, count}。"""
+    clean_name = _clean_preset_name(name)
+    if not clean_name:
+        raise ValueError("Preset name is empty.")
+    clean_rows = _clean_preset_rows(rows)
+    if not clean_rows:
+        raise ValueError("The stack has no LoRA rows to save.")
+    store = _presets_store_path()
+    if store is None:
+        raise ValueError("User directory is not available for presets.")
+    with _STORE_LOCK:
+        data = _read_presets_unlocked(store)
+        # 文件在却读不出对象：和触发词存储同一条规矩 —— 宁可这次不存，
+        # 也不要整份覆盖掉用户已经存好的预设。
+        if store.is_file() and not isinstance(_read_json(store), dict):
+            raise ValueError(
+                "The saved presets file could not be read, so nothing was "
+                f"overwritten. Fix or delete '{store}' and save again."
+            )
+        from datetime import datetime, timezone
+
+        data[clean_name] = {
+            "saved": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "rows": clean_rows,
+        }
+        # 🔴 按保存时间淘汰最旧，不能按名字排序截断：名字是用户起的，
+        # 新预设叫 "A" 也会被 sorted() 排到前面直接丢掉，函数却仍回成功。
+        # 刚写的这份强制留在 keep 里（同名覆盖也一样）。
+        if len(data) > PRESET_COUNT_MAX:
+            def saved_at(key: str) -> str:
+                entry = data.get(key)
+                return str(entry.get("saved", "")) if isinstance(entry, dict) else ""
+
+            ranked = sorted(data, key=lambda k: (saved_at(k), k))
+            keep = ranked[-(PRESET_COUNT_MAX - 1):]
+            keep.append(clean_name)
+            data = {k: data[k] for k in dict.fromkeys(keep) if k in data}
+        try:
+            _write_json(store, data)
+        except OSError as exc:
+            raise ValueError(f"Could not write presets file: {exc}") from exc
+    return {"name": clean_name, "count": len(clean_rows)}
+
+
+def load_stack_preset(name: Any) -> list[dict[str, Any]]:
+    """取一份整栈快照；不存在返回空表（调用方按「没找到」处理）。"""
+    clean_name = _clean_preset_name(name)
+    store = _presets_store_path()
+    if store is None or not store.is_file() or not clean_name:
+        return []
+    with _STORE_LOCK:
+        data = _read_presets_unlocked(store)
+    entry = data.get(clean_name)
+    if not isinstance(entry, dict):
+        return []
+    return _clean_preset_rows(entry.get("rows"))
+
+
+def delete_stack_preset(name: Any) -> bool:
+    """删一份预设，返回是否真的删掉了。"""
+    clean_name = _clean_preset_name(name)
+    store = _presets_store_path()
+    if store is None or not store.is_file() or not clean_name:
+        return False
+    with _STORE_LOCK:
+        data = _read_presets_unlocked(store)
+        if clean_name not in data:
+            return False
+        del data[clean_name]
+        try:
+            _write_json(store, data)
+        except OSError:
+            return False
+    return True
 
 
 def _clean_bound(value: Any) -> float | None:
@@ -818,8 +981,11 @@ def save_custom_lora_data(
             data.pop(name, None)
         try:
             _write_json(store, data)
-        except OSError:
-            pass
+        except OSError as exc:
+            # 别吞：磁盘满 / 权限 / 文件被占用时返回成功，用户会以为触发词
+            # 和推荐区间已经存好。和 save_stack_preset 保持同一口径，让路由
+            # 统一回 {"ok": false}。
+            raise ValueError(f"Could not write LoRA data file: {exc}") from exc
     return entry
 
 
@@ -1103,6 +1269,50 @@ def register_lora_routes() -> None:
         try:
             info = await asyncio_run_in_executor(lora_info, request.query.get("name", ""))
             return web.json_response({"ok": True, "info": info})
+        except Exception as exc:
+            return web.json_response({"ok": False, "error": safe_route_error(exc)}, status=400)
+
+    # LoRA堆整栈预设：列出 / 保存 / 载入 / 删除。读写都丢线程池，磁盘 I/O
+    # 不留在事件循环上；返回结构和前端 loraPreferences 的用法对齐。
+    @prompt_server.routes.get("/qg/lora/presets")
+    async def qg_lora_presets_list(request):
+        try:
+            presets = await asyncio_run_in_executor(list_stack_presets)
+            return web.json_response({"ok": True, "presets": presets})
+        except Exception as exc:
+            return web.json_response({"ok": False, "error": safe_route_error(exc)}, status=400)
+
+    @prompt_server.routes.post("/qg/lora/presets")
+    async def qg_lora_presets_save(request):
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("Request body must be a JSON object.")
+            result = await asyncio_run_in_executor(
+                save_stack_preset, body.get("name"), body.get("rows")
+            )
+            return web.json_response({"ok": True, **result})
+        except Exception as exc:
+            return web.json_response({"ok": False, "error": safe_route_error(exc)}, status=400)
+
+    @prompt_server.routes.get("/qg/lora/presets/load")
+    async def qg_lora_presets_load(request):
+        try:
+            rows = await asyncio_run_in_executor(
+                load_stack_preset, request.query.get("name", "")
+            )
+            return web.json_response({"ok": True, "rows": rows})
+        except Exception as exc:
+            return web.json_response({"ok": False, "error": safe_route_error(exc)}, status=400)
+
+    @prompt_server.routes.post("/qg/lora/presets/delete")
+    async def qg_lora_presets_delete(request):
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("Request body must be a JSON object.")
+            removed = await asyncio_run_in_executor(delete_stack_preset, body.get("name"))
+            return web.json_response({"ok": True, "removed": removed})
         except Exception as exc:
             return web.json_response({"ok": False, "error": safe_route_error(exc)}, status=400)
 

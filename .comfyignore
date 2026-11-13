@@ -1,0 +1,7 @@
+# Registry 发布包排除名单（官方机制，语法同 .gitignore）。
+# comfy node publish 打包所有 git 跟踪文件，本文件在其上再剔除不该发布的条目。
+# 注意：docs/math.md 与 assets/capture_it.ttf 虽在这两个目录，但分别是
+# package_plugin:REQUIRED 的必备文档和 RunTimer 的字体运行资源，必须照常进包 ——
+# 所以只按子目录精确排除，不要整目录一刀切。
+backup/
+.backup/
