@@ -44,6 +44,20 @@ const FOLDED_INPUTS = {
       "Variable slots: three are shown at first and the next one appears once " +
       "one is filled (up to z). Numbers and booleans both fit; unmapped slots read 0.",
   },
+  // 双式数学同样是 a–z（跳过 e）共 25 个变量槽，但默认露 4 个、两行表达式
+  // 共用同一组值 —— 文案不能照抄 QG_Math，否则「默认 3 个」会说错。
+  QG_DualMath: {
+    match: /^[a-z]$/,
+    term: "变量 a–z（跳过 e）",
+    termEn: "variables a–z (no e)",
+    detail:
+      "25 个变量槽，两行表达式共用同一组值；没接线按 0 算。" +
+      "默认只露 4 个，接满一个才长出下一个（最多 25 个）。e 是常量不是变量。",
+    detailEn:
+      "25 variable slots shared by both expressions; unconnected slots read 0. " +
+      "Four are shown at first and the next appears once one is filled (25 max). " +
+      "e is a constant, not a variable.",
+  },
   QG_AnySwitch: {
     match: /^any_\d+$/,
     term: "任意 01–16",
@@ -52,6 +66,21 @@ const FOLDED_INPUTS = {
     detailEn:
       "Any-type input slots, up to 16. The switch only has something to pick when " +
       "at least two are connected; empty slots are ignored.",
+  },
+  // QG_LoraSwitchStack 声明了 on_1…on_24 共 24 个布尔槽，每个的中文说明只差
+  // 一个行号 —— 帮助卡原先会刷出 24 行一模一样的话。折成一行，顺带把
+  // 「没有行的槽不生效」这条真正有用的信息补上。
+  QG_LoraSwitchStack: {
+    match: /^on_\d+$/,
+    term: "行 1–24 开关",
+    termEn: "row 1–24 switches",
+    detail:
+      "每一行的开关都能从图上接线控制：接上线由连线决定，不接线就沿用行自己的开关。" +
+      "槽与行一一对应，只有实际存在的行才生效。",
+    detailEn:
+      "One enable switch per row: a connected link overrides the row's own switch, " +
+      "otherwise the row keeps it. Slots map to rows one-to-one; only rows that " +
+      "actually exist are active.",
   },
 };
 

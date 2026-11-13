@@ -21,7 +21,7 @@ from ._qg_combo_legacy import combo_legacy
 class QGBatchEveryNth:
     """每 n 帧抽一张，先跳过 offset 帧；顺带把 fps 除以 n。"""
 
-    CATEGORY = "QG-tools/Image/Batch"
+    CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Keeps every nth frame of an IMAGE batch — halve a video's frame "
         "count before an expensive stage, or thin a sweep down to samples. "

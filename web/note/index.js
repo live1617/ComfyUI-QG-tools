@@ -26,8 +26,8 @@
  * 后端节点：nodes/qg_note.py。改本文件只需 F5 刷新页面。
  */
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=202611132008";
-import { pinCategory } from "../shared/category_zh.mjs?v=202611132008";
+import { zhPair } from "../shared/zh.mjs?v=202611141000";
+import { pinCategory } from "../shared/category_zh.mjs?v=202611141000";
 
 const NODE_TYPE = "QG_Note";
 const FONT_STACK = 'Inter, "Microsoft YaHei", "PingFang SC", Arial, sans-serif';

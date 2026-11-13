@@ -639,7 +639,7 @@ def _mmd_fit(src_pool, ref_pool, iters=MMD_ITERS, lr=MMD_LR, anchor=MMD_ANCHOR):
 
 @combo_legacy("QG_ColorMatch")
 class QGColorMatch:
-    CATEGORY = "QG-tools/Image/Color"
+    CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Brings the reference picture's color onto the target: the target keeps its "
         "own composition and light-and-dark structure and only takes the reference's "

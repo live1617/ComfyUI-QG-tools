@@ -21,7 +21,7 @@
  * 后端节点：nodes/qg_prompt_line.py。改本文件只需 F5 刷新页面。
  */
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=202611132008";
+import { zhPair } from "../shared/zh.mjs?v=202611141000";
 
 const TYPE = "QG_PromptLine";
 

@@ -235,7 +235,7 @@ def _size_for_megapixels(rx, ry, target_mp, step):
 
 @combo_legacy("QG_SizeSelector")
 class QGSizeSelector:
-    CATEGORY = "QG-tools/Image/Transform"
+    CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Builds an empty latent from a preset resolution and returns its width "
         "and height as integers. Optional width/height inputs override the "

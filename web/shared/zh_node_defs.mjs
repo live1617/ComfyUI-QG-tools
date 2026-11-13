@@ -2148,6 +2148,9 @@ export const ZH_NODE_DEFS =   {
             "classic": "经典贴回",
             "blend in": "融入画面"
           }
+        },
+        "paste_onto": {
+          "tooltip": "Where the stitched canvas lands. crop keeps the result at the crop's original size (the default, and what every earlier workflow did). original lays it onto the whole picture - only meaningful for a transform stitcher that records one; a plain Crop For Inpaint stitcher passes through unchanged either way. Matches AusBoss 2.25.0."
         }
       },
       "outputs": {

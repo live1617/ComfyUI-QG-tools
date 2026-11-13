@@ -1,21 +1,21 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611132008";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=202611132008";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=202611132008";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=202611132008";
+import { sizeFor } from "../shared/node_width.mjs?v=202611141000";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=202611141000";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=202611141000";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=202611141000";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=202611132008";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=202611132008";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=202611132008";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=202611132008";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=202611132008";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611132008";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=202611132008";
+} from "../shared/settings_menu.mjs?v=202611141000";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=202611141000";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=202611141000";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=202611141000";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=202611141000";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611141000";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=202611141000";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -73,11 +73,11 @@ import {
   loraStackKeyAction,
   readLoraInfo,
   triggerGroups,
-} from "../shared/lora_stack.mjs?v=202611132008";
-import { civitaiButtonLabel, civitaiFailureText, pictureErrorText } from "../shared/civitai_lookup.mjs?v=202611132008";
+} from "../shared/lora_stack.mjs?v=202611141000";
+import { civitaiButtonLabel, civitaiFailureText, pictureErrorText } from "../shared/civitai_lookup.mjs?v=202611141000";
 // 查询编排（哈希 → 问 Civitai → 存侧车 → 存预览图）与 QG LoRA堆共用一份。
 // UI 差异全在回调里：这里弹 toast + pictureSaved()。
-import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611132008";
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611141000";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where

@@ -112,14 +112,14 @@ class QGCropForInpaint:
                 "output_multiple": (
                     "INT",
                     {
-                        "default": 8,
+                        "default": 32,
                         "min": 1,
                         "max": 128,
                         "step": 1,
                         "tooltip": (
                             "Crop and target dimensions are rounded up to a multiple "
-                            "of this so samplers accept them. 8 keeps latent sizes "
-                            "legal."
+                            "of this so samplers accept them. 32 keeps latent sizes "
+                            "legal (matches AusBoss 2.25.0)."
                         ),
                     },
                 ),

@@ -14,7 +14,7 @@ from ._qg_tile_image_helpers import STITCHER_KIND, _model_enlarge, _resample, _r
 class QGTiledUpscale:
     """按目标兆像素把图切成模型能逐块重绘的 tiles。"""
 
-    CATEGORY = "QG-tools/Image/Upscale"
+    CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Sets the size of the finished picture in megapixels and cuts your "
         "picture into tiles a model can redraw one at a time. A picture "

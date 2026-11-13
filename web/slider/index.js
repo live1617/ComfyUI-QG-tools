@@ -33,22 +33,22 @@
 // 滑条顶在右端、输出却是 80，看着就像坏了。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611132008";
-import { roundHalfAway } from "../shared/scrub_input.mjs?v=202611132008";
-import { BRAND, chainCallback, chainHandler, notifyQgChange, zhPair } from "../shared/index.mjs?v=202611132008";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611132008";
-import { hideWidget } from "../shared/widget_visibility.mjs?v=202611132008";
+import { sizeFor } from "../shared/node_width.mjs?v=202611141000";
+import { roundHalfAway } from "../shared/scrub_input.mjs?v=202611141000";
+import { BRAND, chainCallback, chainHandler, notifyQgChange, zhPair } from "../shared/index.mjs?v=202611141000";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611141000";
+import { hideWidget } from "../shared/widget_visibility.mjs?v=202611141000";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
   vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=202611132008";
+} from "../shared/vue_mode.mjs?v=202611141000";
 import {
   closeSettingsMenu,
   gearIconSvg,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=202611132008";
+} from "../shared/settings_menu.mjs?v=202611141000";
 
 const NODE_CLASS = "QG_Slider";
 // kind 的取值，必须和 nodes/qg_slider.py 的 KINDS 逐字一致。
@@ -273,8 +273,19 @@ function installRangeHooks(node) {
     const widget = widgetOf(node, name);
     if (!widget) continue;
     chainCallback(widget, "callback", () => {
-      clampValue(node, { round: kindOf(node) === KIND_INT });
-      refreshView(node);
+      // 🔴 step 变了必须走 applyKind：它把 value widget 的 precision 同步成
+      // 步长的小数位。少了这一步，ComfyUI 原生 number widget 的提交链会按旧的
+      // precision=1 量化 —— step 明明是 0.05、卡片 range 也是 0.05，写 0.05
+      // 却会被吃成 0.1，用户看到的就是「步长设了 0.05 还按 0.1 步进」。
+      // 放在 callback 而不是 setStep 里，是因为连线 / 脚本 / 存档恢复改 step
+      // 也要跟着同步（install() 在节点创建时已经调过一次 applyKind）。
+      // applyKind 内部自带 clampValue + refreshView，这里不用再重复调。
+      if (name === "step") {
+        applyKind(node, kindOf(node));
+      } else {
+        clampValue(node, { round: kindOf(node) === KIND_INT });
+        refreshView(node);
+      }
       notifyQgChange();
     });
   }

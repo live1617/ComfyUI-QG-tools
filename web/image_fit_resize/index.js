@@ -14,7 +14,7 @@
 // （shared/widget_visibility.mjs 的两套渲染器兼容都在那边处理了）。
 
 import { app } from "/scripts/app.js";
-import { setWidgetVisible } from "../shared/widget_visibility.mjs?v=202611132008";
+import { setWidgetVisible } from "../shared/widget_visibility.mjs?v=202611141000";
 
 const NODE_TYPE = "QG_ImageFitResize";
 

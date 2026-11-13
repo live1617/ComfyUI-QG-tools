@@ -11,15 +11,15 @@
 // URLs become buttons or links (the parser already filtered them).
 
 import { api } from "/scripts/api.js";
-import { zh, zhPair } from "../shared/zh.mjs?v=202611132008";
+import { zh, zhPair } from "../shared/zh.mjs?v=202611141000";
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=202611132008";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=202611132008";
-import { collectGraphNodes } from "../shared/appearance.mjs?v=202611132008";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=202611132008";
-import { confirmDiscard } from "../shared/discard_prompt.mjs?v=202611132008";
-import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=202611132008";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=202611132008";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=202611141000";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange } from "../shared/index.mjs?v=202611141000";
+import { collectGraphNodes } from "../shared/appearance.mjs?v=202611141000";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=202611141000";
+import { confirmDiscard } from "../shared/discard_prompt.mjs?v=202611141000";
+import { WIDGET_FRAME, fillNodeHeight, holdNodeMinHeight } from "../shared/panel_layout.mjs?v=202611141000";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=202611141000";
 import {
   COMMON_FOLDERS,
   INPUT_FOLDER,
@@ -39,9 +39,9 @@ import {
   rowFromCells,
   serializeNote,
   subfolderOf,
-} from "../shared/workflow_note.mjs?v=202611132008";
-import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=202611132008";
-import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=202611132008";
+} from "../shared/workflow_note.mjs?v=202611141000";
+import { comboValues, commitWidgetValue } from "../shared/widget_card_math.mjs?v=202611141000";
+import { parseRows, serializeRows } from "../shared/lora_stack.mjs?v=202611141000";
 
 const NODE_CLASS = "QG_WorkflowNote";
 const CSS_ID = "qgtools-workflow-note-css";

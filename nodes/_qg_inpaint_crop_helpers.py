@@ -47,6 +47,15 @@ SEAM_CLASSIC = "classic"
 SEAM_BLEND_IN = "blend in"
 SEAM_MODES = (SEAM_CLASSIC, SEAM_BLEND_IN)
 
+# Stitch Inpaint's ``paste_onto`` choice, mirroring AusBoss 2.25.0 so the two
+# plugins can share stitchers. ``crop`` keeps the stitched canvas as-is;
+# ``original`` lays it back onto the whole picture. QG's Crop For Inpaint never
+# writes the ``original`` transform record, so both behave identically there
+# (pass-through); the distinction only matters for AusBoss' transform stitchers.
+PASTE_ONTO_CROP = "crop"
+PASTE_ONTO_ORIGINAL = "original"
+PASTE_ONTO_MODES = (PASTE_ONTO_CROP, PASTE_ONTO_ORIGINAL)
+
 Rect = tuple[int, int, int, int]  # (x, y, w, h)
 
 
@@ -454,6 +463,10 @@ def build_crop(
         "blend": blend,
         "scale": scale,
         "algorithm": rescale_algorithm,
+        # Size sent to the sampler, so AusBoss' apply_stitch can warn when a
+        # VAE hands back a stretched crop. QG's own apply_stitch ignores it,
+        # but writing it keeps stitchers readable by both plugins (route A).
+        "sampler_size": (int(cropped.shape[2]), int(cropped.shape[1])),
     }
     return cropped, sampling, stitcher
 
@@ -697,6 +710,29 @@ def apply_stitch(
     mixed = torch.where(weights > 0, mixed, region)
     out[:, cy : cy + ch, cx : cx + cw, :] = mixed
     return out[:, oy : oy + oh, ox : ox + ow, :].contiguous()
+
+
+def paste_on_original(
+    stitcher: dict, stitched: torch.Tensor, mask: torch.Tensor
+) -> tuple:
+    """Lay a stitched canvas and its blend mask onto the whole picture.
+
+    Mirrors AusBoss 2.25.0's contract so the two plugins can share stitchers.
+    QG's Crop For Inpaint never writes an ``original`` transform record, so the
+    canvas already sits at picture size and we pass it through unchanged —
+    exactly AusBoss' documented no-op for Crop For Inpaint. The geometry
+    paste-back for transform stitchers (rotation/resize) is AusBoss' domain;
+    QG does not emit such stitchers, so that branch is intentionally left to
+    AusBoss rather than reimplemented (route A: share format, not engine).
+    """
+    record = stitcher.get("original")
+    if record is None:
+        return stitched, mask
+    raise NotImplementedError(
+        "QG Crop For Inpaint does not emit an 'original' transform record, "
+        "so paste_on_original geometry is handled by AusBoss; feed an "
+        "AusBoss stitcher to an AusBoss Stitch node for that path."
+    )
 
 
 def estimate_tone_offset(
@@ -1711,6 +1747,10 @@ __all__ = [
     "SEAM_CLASSIC",
     "SEAM_MODES",
     "STITCHER_KIND",
+    "PASTE_ONTO_CROP",
+    "PASTE_ONTO_ORIGINAL",
+    "PASTE_ONTO_MODES",
+    "paste_on_original",
     "blend_in_seam",
     "blend_in_tone_match",
     "blend_in_weight",

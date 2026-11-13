@@ -109,7 +109,7 @@ export const SIZES = {
 - **节点 ID**：`QG_` 前缀
 - **显示名**：**不带** `QG ` 前缀（2026-10-18 起；标题栏只留功能名，分类已经说明归属）
 - **分类**：`QG-tools`，二级子分类共八个，**一律英文**：
-  `Loaders` / `Text` / `Logic` / `Display` / `Workflow` / `Mask` / `Retouch` / `Image`。
+  `Loaders` / `Text` / `Logic` / `Display` / `Workflow` / `Mask` / `Inpaint` / `Image`。
   🔴 后端写中文，英文界面的节点菜单里就会冒出中文分组。中文名走**官方通道**
   `locales/zh/main.json` 的 `nodeCategories`（见「双语与下拉选项值 · 分类」一节），
   不依赖汉化插件；经典画布的右键「添加节点」菜单官方不管，由
@@ -2359,7 +2359,7 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.18  |  65 nodes loaded  |  8 categories
+  QG-tools v0.9.19  |  65 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

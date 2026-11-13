@@ -168,7 +168,7 @@ def _make_grid(images, cols, rows, match_size, gap, background):
 
 @combo_legacy("QG_ImageGrid")
 class QGImageGrid:
-    CATEGORY = "QG-tools/Image/Output"
+    CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Tiles a batch or a tensor list into a compact grid: 1 image becomes "
         "1x1, two become 2x1, three or four 2x2, five to nine use three columns "

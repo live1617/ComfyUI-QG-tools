@@ -674,7 +674,7 @@ class QGImageScale:
         "图像", "遮罩", "蒙版", "缩放", "放大", "缩小", "尺寸", "分辨率",
         "裁剪", "填充", "等比例", "长边", "短边", "整除", "qg",
     ]
-    CATEGORY = "QG-tools/Image/Transform"
+    CATEGORY = "QG-tools/Image"
     OUTPUT_NODE = False
     FUNCTION = "execute"
     RETURN_TYPES = ("IMAGE", "INT", "INT", "MASK")

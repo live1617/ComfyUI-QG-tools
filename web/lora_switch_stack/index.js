@@ -15,14 +15,14 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611132008";
-import { zhPair } from "../shared/zh.mjs?v=202611132008";
-import { showToast } from "../shared/index.mjs?v=202611132008";
-import { widthFor } from "../shared/node_width.mjs?v=202611132008";
+import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611141000";
+import { zhPair } from "../shared/zh.mjs?v=202611141000";
+import { showToast } from "../shared/index.mjs?v=202611141000";
+import { widthFor } from "../shared/node_width.mjs?v=202611141000";
 import {
     civitaiFailureText,
     pictureErrorText,
-} from "../shared/civitai_lookup.mjs?v=202611132008";
+} from "../shared/civitai_lookup.mjs?v=202611141000";
 // 强度手感 / 触发词 / 选择器过滤 / 读 LoRA 信息只有一份真相源：加载器也在用
 // 同一个 shared 模块，改一次两边同步。🔴 别在这里另写 ±10 / 0.05 或切词正则。
 import {
@@ -41,9 +41,9 @@ import {
     STRENGTH_MIN,
     toggleTrigger,
     triggerGroups,
-} from "../shared/lora_stack.mjs?v=202611132008";
+} from "../shared/lora_stack.mjs?v=202611141000";
 // Civitai 查询编排与加载器共用；卡片 note / 缩略图版本由回调注入。
-import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611132008";
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611141000";
 
 const NODE_CLASS = "QG_LoraSwitchStack";
 const SLOT_COUNT = 24;
@@ -227,7 +227,108 @@ function redrawVueRows(state) {
     }
 }
 
+// 🔴 「没有行也可以连线」修复（2026-11-14 用户截图）：
+// `input.hidden` / `widget.hidden` 只影响**渲染**，litegraph 的 connectSlots
+// 根本不看它们 —— 真机实测只有 5 行时把线接到 on_6 照样成功（Vue / 经典都是），
+// 而后端只按 rows_data 里实际的行数处理，这条外控线永远不会生效。
+// 唯一能拒绝连线的官方钩子是 onConnectInput（LGraphNode.ts 的注释：
+// "if returns false the incoming connection will be canceled"）；connectSlots
+// 在校验类型之后、建 link 之前调它，UI 拖拽和脚本连线都走这一条路。
+// 装成实例方法而不是改 prototype，避免影响别的节点；每次 applyRowCount 都
+// 确认一次，configure 之后钩子被重置也能立刻补回来。
+function installEmptySlotGuard(state) {
+    const node = state.node;
+    if (node.onConnectInput?.__qgEmptySlotGuard) return;
+    const previous = node.onConnectInput;
+    const guard = function (inputIndex, outputType, outputSlot, fromNode, outputIndex) {
+        if (typeof previous === "function"
+            && previous.call(this, inputIndex, outputType, outputSlot, fromNode, outputIndex) === false) {
+            return false;
+        }
+        const st = this.__qgSwitchStack;
+        const input = this.inputs?.[inputIndex];
+        if (!st || !input) return true;
+        const match = /^on_(\d+)$/.exec(input.name || "");
+        if (!match) return true;
+        // visibleRows 含「+ 添加 LoRA」撑出来的那一格空行：它确实画了行，
+        // 允许提前接开关；只有连都没有的行才拒绝。
+        return Number(match[1]) - 1 < visibleRows(st);
+    };
+    guard.__qgEmptySlotGuard = true;
+    node.onConnectInput = guard;
+
+    // 🔴 第二处「圆点落在模型槽旁边」：拖 BOOLEAN 线到节点**背景**时，核心
+    // LGraphCanvas 调 `node.findInputByType()` → findFreeSlotOfType，只按类型 +
+    // 「槽是否空闲」找，**完全不看 hidden**。5 行接满后第一个空闲 BOOLEAN 槽
+    // 就是隐藏的 on_6，核心把高亮圆点画在 getInputSlotPos(on_6)；隐藏槽的
+    // pos 被压成 [10,10]（节点顶部），正好落在「模型」输入旁边（真机 y=120
+    // vs 模型 y=124）。用户截图里那个黄圈亮绿线就是它。
+    // 做法：复用核心原有查找，只在调用期间把「没有行」的槽的 type 临时改成
+    // 不可能匹配的值；同步 try/finally 立刻还原，不动数组结构、不改槽下标，
+    // 存档 / link.target_slot 契约一律不变。再补一道结果兜底，防通配类型绕过。
+    const previousFind = node.findInputByType;
+    const findGuard = function (type) {
+        const st = this.__qgSwitchStack;
+        if (!st || typeof previousFind !== "function") return previousFind?.call(this, type);
+        const visible = visibleRows(st);
+        const saved = [];
+        for (const input of this.inputs || []) {
+            const m = /^on_(\d+)$/.exec(input.name || "");
+            if (m && Number(m[1]) - 1 >= visible) {
+                saved.push([input, input.type]);
+                input.type = "__qg_no_row__";
+            }
+        }
+        try {
+            const found = previousFind.call(this, type);
+            if (found) {
+                const m = /^on_(\d+)$/.exec(found.slot?.name || "");
+                if (m && Number(m[1]) - 1 >= visible) return undefined;
+            }
+            return found;
+        } finally {
+            for (const [input, original] of saved) input.type = original;
+        }
+    };
+    findGuard.__qgEmptySlotGuard = true;
+    node.findInputByType = findGuard;
+
+    // 🔴 第四处「模型槽上叠着的圆点」：LGraphNode.drawSlots 的显示条件是
+    //   isMouseOverSlot || isValidTarget || !slot.isWidgetInputSlot || ...
+    // 拖线时 fromSlot 存在 → 所有同类型输入槽 isValidTarget 都为真，24 个
+    // on_N 全被画成圆点，**完全不读 hidden**。隐藏槽的 pos 被压成 [10,10]，
+    // 19 个圆点全叠在 model 槽（y=120 vs 124）上，看起来就是两个圆叠着。
+    // 真机 AB 对照：把无行槽的 type 改成不匹配值，模型槽上方的灰色半圆
+    // 立刻消失（差异 46 px）。这里改成在绘制期间把它们从 _concreteInputs
+    // 里临时摘掉 —— 同步 try/finally 还原，不动 node.inputs、不改槽下标、
+    // 不改 type，存档与 link.target_slot 契约一律不变；连 isMouseOverSlot /
+    // isConnected 这两条绘制分支也一起挡住。
+    if (node.drawSlots?.__qgEmptySlotGuard) return;
+    const previousDraw = node.drawSlots;
+    const drawGuard = function (ctx, opts) {
+        const st = this.__qgSwitchStack;
+        const concrete = this._concreteInputs;
+        if (!st || typeof previousDraw !== "function" || !Array.isArray(concrete)) {
+            return previousDraw?.call(this, ctx, opts);
+        }
+        const visible = visibleRows(st);
+        const keep = concrete.filter((slot) => {
+            const m = /^on_(\d+)$/.exec(slot.name || "");
+            return !(m && Number(m[1]) - 1 >= visible);
+        });
+        const removed = concrete.length - keep.length;
+        st.__qgLastDrawFiltered = removed;
+        if (!removed) return previousDraw.call(this, ctx, opts);
+        this._concreteInputs = keep;
+        try { return previousDraw.call(this, ctx, opts); }
+        finally { this._concreteInputs = concrete; }
+    };
+    drawGuard.__qgEmptySlotGuard = true;
+    node.drawSlots = drawGuard;
+}
+
 function applyRowCount(state) {
+    installEmptySlotGuard(state);
     const visible = visibleRows(state);
     state.rowWidgets.forEach((widget, index) => {
         const shown = index < visible;
@@ -239,10 +340,18 @@ function applyRowCount(state) {
         // 仍靠上面的 computeSize 收高 —— 两条路都保留才不回归。
         widget.hidden = !shown;
         if (widget.options) widget.options.hidden = !shown;
-        // 槽跟着 widget 走：隐藏的行把输入也摘掉，否则 SLOT_COUNT 个圆点会叠在底部。
+        // 🔴 `input.hidden` 只被部分渲染路径（预览卡片等）读取，connectSlots
+        // 完全不看它 —— 真机实测 hidden=true 的 on_6 照样能连上线。真正拒绝
+        // 连线靠 installEmptySlotGuard 的 onConnectInput；这里保留标记给渲染用。
+        // 槽还必须一直绑着行 widget（见 bindSlots），否则会掉回普通输入区，按
+        // NODE_SLOT_HEIGHT 排成节点外面那一列悬空圆点。
         const input = state.node.inputs?.find((item) => item.name === `on_${index + 1}`);
         if (input) input.hidden = !shown;
     });
+    // 行数变了 / configure 重建过 inputs，都重新确认一次 24 个槽的绑定；
+    // 顺手把「已经没有行」的槽上的旧连线断掉（老存档加载后圆点会卡在模型槽旁）。
+    bindSlots(state);
+    pruneOrphanLinks(state);
     fitHeight(state);
     // 行数变了 → Vue 的独立 canvas 要重画（新行出现 / 删除后不留空壳）。
     redrawVueRows(state);
@@ -2629,9 +2738,16 @@ function hideWidget(widget) {
 // 连线接到了行外面）。所以这个函数是幂等的，挂载和 onConfigure 都调。
 function bindSlots(state) {
     const { node } = state;
-    // 快路径：每帧都会路过这儿，绑好的情况下只做一次查找。
-    const probe = node.inputs?.find((item) => item.name === "on_1");
-    if (probe && probe.widget === state.rowWidgets[0] && probe.label === "\u200b") return;
+    // 🔴 快路径必须查全 24 个槽：只查 on_1 就 return 的话，configure 重建
+    // inputs 后只要「恰好」on_1 绑好了，其余 23 个会永远停在普通输入形态 ——
+    // 画布按 NODE_SLOT_HEIGHT 把它们排在节点下方，就是截图里那列悬空圆点。
+    if (state.rowWidgets.length === SLOT_COUNT && node.inputs?.length) {
+        const allBound = state.rowWidgets.every((widget, index) => {
+            const input = node.inputs.find((item) => item.name === `on_${index + 1}`);
+            return input && input.widget === widget && input.label === "\u200b";
+        });
+        if (allBound) return;
+    }
     for (let index = 0; index < SLOT_COUNT; index += 1) {
         const widget = state.rowWidgets[index];
         const input = node.inputs?.find((item) => item.name === `on_${index + 1}`);
@@ -2673,10 +2789,33 @@ function storedRows(info) {
 // 每帧跑的 `onDrawForeground` 只做绑定兜底，**绝不能**拿 `node.widgets_values`
 // 回写 widget 的值：那个字段在 configure 之后并不总是跟着更新，每帧都会把刚
 // 恢复好的栈冲回旧的 "[]"，看上去又像「加载后栈没了」。
+// 🔴 老存档里可能留着连到「没有行」的 on_N 槽的旧连线（11-14 第三张截图：
+// 一个亮绿圆点连着线，卡在「模型」槽旁边）。前两轮只挡了**新连线**
+// （onConnectInput）和**自动寻槽**（findInputByType），已经存在的 link 一条都
+// 管不到；核心画连线终点用 getInputSlotPos，隐藏槽 pos=[10,10] → 圆点就压在
+// model 槽旁（真机 y=120 vs 模型 y=124）。后端只按 rows_data 实际行数处理，
+// 这些线本来就不生效，断掉无损。
+// 每帧幂等跑：configure 恢复 graph.links 发生在节点 configure **之后**，
+// 只在 applyRowCount 里清一次会扑空（那一刻 link 还没挂上）。
+function pruneOrphanLinks(state) {
+    const node = state.node;
+    if (!node.graph || !node.inputs?.length) return;
+    const visible = visibleRows(state);
+    for (let index = visible; index < SLOT_COUNT; index += 1) {
+        const at = node.inputs.findIndex((item) => item.name === `on_${index + 1}`);
+        if (at < 0) continue;
+        // 🔴 input.link 是弃用访问器：赋非 null 静默忽略。读用 getInputLink，
+        // 断用 disconnectInput。
+        const link = node.getInputLink ? node.getInputLink(at) : null;
+        if (link) node.disconnectInput(at);
+    }
+}
+
 function syncFromSave(node) {
     const state = node.__qgSwitchStack;
     if (!state?.dataWidget || !state.rowWidgets?.length) return;
     bindSlots(state);
+    pruneOrphanLinks(state);
 }
 
 // 接上线的行，前端不再调 `widget.draw`，改画它自己的「已连接」块 —— 那一行就只剩

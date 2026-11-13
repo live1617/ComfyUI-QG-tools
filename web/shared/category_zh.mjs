@@ -21,7 +21,7 @@
  * 是否一致，漏一处就报错。
  */
 
-import { wantsChinese } from "./zh.mjs?v=202611132008";
+import { wantsChinese } from "./zh.mjs?v=202611141000";
 
 /** 子分类 → 中文菜单名。键必须跟后端 CATEGORY 的尾段逐字相同（含大小写）。 */
 export const CATEGORY_ZH = {
@@ -33,11 +33,6 @@ export const CATEGORY_ZH = {
     Mask: "遮罩",
     Image: "图像",
     Inpaint: "重绘",
-    "Image/Transform": "图像/变换",
-    "Image/Color": "图像/调色",
-    "Image/Batch": "图像/批次",
-    "Image/Upscale": "图像/超分",
-    "Image/Output": "图像/输出",
 };
 
 // 前缀故意拆成两截写：带斜杠的整串会被 verify_categories.py 当成前端硬编码分类

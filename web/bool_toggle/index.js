@@ -13,22 +13,22 @@
 //    size 只算主体，别把 30 加进去。
 
 import { app } from "/scripts/app.js";
-import { heightFor, sizeFor } from "../shared/node_width.mjs?v=202611132008";
+import { heightFor, sizeFor } from "../shared/node_width.mjs?v=202611141000";
 import {
   chainCallback,
   chainHandler,
   keepDomWidgetWidthAuto,
   notifyQgChange,
   zh,
-} from "../shared/index.mjs?v=202611132008";
-import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=202611132008";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611132008";
+} from "../shared/index.mjs?v=202611141000";
+import { holdNodeMinWidth } from "../shared/panel_layout.mjs?v=202611141000";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611141000";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
-} from "../shared/vue_mode.mjs?v=202611132008";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=202611132008";
+} from "../shared/vue_mode.mjs?v=202611141000";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=202611141000";
 
 const NODE_CLASS = "QG_BoolToggle";
 const WIDGET_NAME = "qg_bool_toggle_panel";
@@ -448,6 +448,79 @@ function openDomLabelEditor(node, state) {
   });
 }
 
+// 1.58.5 核心只留了 node.onNodeTitleDblClick 这个空钩子（onNodeDblClicked /
+// onShowNodePanel 也都没挂实现），所以经典模式下双击标题本来不会改名；而插件
+// 的 onDblClick 又只判了 pos[0]，把标题栏那一下接成了「改开关名」。这里补一个
+// 跟标签编辑器同口径的内联输入框，让标题栏双击真的改 node.title。
+function openTitleEditor(node) {
+  ensureCss();
+  closeLabelEditor();
+
+  const input = document.createElement("input");
+  input.className = `${EDITOR_CLASS} qgtools-bool-toggle-title`;
+  input.value = String(node.title ?? "");
+  document.body.append(input);
+  openEditor = input;
+
+  let frame = 0;
+  let done = false;
+  const close = () => {
+    if (done) return;
+    done = true;
+    cancelAnimationFrame(frame);
+    // 🔴 先清 openEditor 再 remove：remove() 会同步触发 blur，反了就会误提交。
+    if (openEditor === input) openEditor = null;
+    input.remove();
+  };
+  const commit = () => {
+    const next = input.value;
+    close();
+    const value = next.trim();
+    if (value && value !== node.title) {
+      node.title = value;
+      node.setDirtyCanvas?.(true, true);
+      notifyQgChange();
+    }
+  };
+
+  // 标题栏在主体上方：局部 y ∈ [-30, 0]，跟画布缩放 / 节点拖动同步。
+  // 🔴 输入框要盖满整条标题栏且背景不透明，否则底下 canvas 画的原标题会透出
+  //    半截重影（编辑器共用的 .92 透明度是为卡片大字调的，标题栏用不了）。
+  const place = () => {
+    const scale = app.canvas?.ds?.scale ?? 1;
+    const width = (node.size?.[0] ?? BASE_WIDTH) * scale;
+    const fontPx = Math.max(11, 14 * scale);
+    const height = Math.max(20, Math.round(26 * scale));
+    const [cx, cy] = canvasToScreen(node, 6, -15);
+    input.style.font = `600 ${fontPx.toFixed(1)}px ${FONT}`;
+    input.style.background = "#0a1c1b";
+    input.style.height = `${height}px`;
+    input.style.lineHeight = `${height}px`;
+    input.style.padding = `0 ${Math.round(fontPx * 0.25)}px`;
+    input.style.left = `${Math.round(cx)}px`;
+    input.style.top = `${Math.round(cy - height / 2)}px`;
+    input.style.width = `${Math.round(Math.max(120, width - 12 * scale))}px`;
+  };
+  place();
+  const tick = () => {
+    if (done) return;
+    if (!node.__qgBoolToggle) { close(); return; }
+    place();
+    frame = requestAnimationFrame(tick);
+  };
+  frame = requestAnimationFrame(tick);
+
+  wireEditorKeys(input, commit, close);
+  input.placeholder = ""; // 标签用的「留空显示开/关」不适用标题
+  input.addEventListener("blur", () => {
+    if (!done && openEditor === input) commit();
+  });
+  requestAnimationFrame(() => {
+    input.focus();
+    input.select();
+  });
+}
+
 function openLabelEditor(node) {
   const state = node.__qgBoolToggle;
   if (!state) return;
@@ -555,10 +628,22 @@ function installCanvasHooks(node) {
     this.setDirtyCanvas?.(true, false);
   });
 
-  // 双击卡片改标签。返回 true 把这一下吃掉，否则 LiteGraph 会去改节点标题。
+  // 🔴 局部坐标原点在主体左上角：标题栏 y ∈ [-30, 0)，主体 y ∈ [0, size[1]]。
+  //    核心的分发是「pos[1] < 0 先调 onNodeTitleDblClick，然后**无条件**再调
+  //    onDblClick」，且完全不看 onDblClick 的返回值 —— 所以 return true 挡不住
+  //    标题分支。以前这里只判 pos[0]，双击标题会把标签编辑器一起打开并抢焦点，
+  //    看起来就是「标题不能改名，双击落到改开关名」。
   chainHandler(node, "onDblClick", function (event, pos) {
-    if (!canvasMode(this)) return;
-    if (!pos || pos[0] < 0 || pos[0] > (this.size?.[0] ?? 0)) return;
+    if (!canvasMode(this) || !pos) return;
+    const [x, y] = pos;
+    const [w, h] = this.size ?? [0, 0];
+    if (x < 0 || x > w) return;
+    if (y < 0) {
+      // 核心 / 别的扩展若已经实现标题改名就不抢；1.58.5 默认这个钩子是空的。
+      if (typeof this.onNodeTitleDblClick !== "function") openTitleEditor(this);
+      return;
+    }
+    if (y > h) return;
     openLabelEditor(this);
     return true;
   });

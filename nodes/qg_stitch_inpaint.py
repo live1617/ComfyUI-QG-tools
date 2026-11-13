@@ -19,9 +19,13 @@ from __future__ import annotations
 
 from ._qg_execution_helpers import raise_if_interrupted
 from ._qg_inpaint_crop_helpers import (
+    PASTE_ONTO_CROP,
+    PASTE_ONTO_MODES,
+    PASTE_ONTO_ORIGINAL,
     SEAM_CLASSIC,
     SEAM_MODES,
     apply_stitch,
+    paste_on_original,
     stitch_blend_mask,
 )
 
@@ -29,6 +33,10 @@ from ._qg_inpaint_crop_helpers import (
 # slot Seam now takes. It loads, and stitches, as classic - the same value
 # every earlier workflow had.
 _UNSET_SEAM = ("", None)
+
+# Same guard for paste_onto: a slot that did not exist before can carry an
+# empty value from an older save. It loads, and stitches, as crop.
+_UNSET_PASTE_ONTO = ("", None)
 
 
 class QGStitchInpaint:
@@ -125,6 +133,21 @@ class QGStitchInpaint:
                         ),
                     },
                 ),
+                "paste_onto": (
+                    list(PASTE_ONTO_MODES),
+                    {
+                        "default": PASTE_ONTO_CROP,
+                        "tooltip": (
+                            "Where the stitched canvas lands. crop keeps the result "
+                            "at the crop's original size (the default, and what "
+                            "every earlier workflow did). original lays it onto the "
+                            "whole picture - only meaningful for a transform "
+                            "stitcher that records one; a plain Crop For Inpaint "
+                            "stitcher passes through unchanged either way. Matches "
+                            "AusBoss 2.25.0."
+                        ),
+                    },
+                ),
             },
         }
 
@@ -139,13 +162,21 @@ class QGStitchInpaint:
     )
     FUNCTION = "stitch"
 
-    def stitch(self, stitcher, inpainted, fix_edge_halo=False, color_match=0.0, seam=SEAM_CLASSIC):
+    def stitch(
+        self, stitcher, inpainted, fix_edge_halo=False, color_match=0.0,
+        seam=SEAM_CLASSIC, paste_onto=PASTE_ONTO_CROP,
+    ):
         if seam in _UNSET_SEAM:
             seam = SEAM_CLASSIC
         if seam not in SEAM_MODES:
             raise ValueError(
                 "[QG-tools] Stitch Inpaint: seam must be one of %s, not %r."
                 % (SEAM_MODES, seam)
+            )
+        if paste_onto not in _UNSET_PASTE_ONTO and paste_onto not in PASTE_ONTO_MODES:
+            raise ValueError(
+                "[QG-tools] Stitch Inpaint: paste_onto must be one of %s, not %r."
+                % (PASTE_ONTO_MODES, paste_onto)
             )
         raise_if_interrupted()
         image = apply_stitch(
@@ -157,25 +188,35 @@ class QGStitchInpaint:
         )
         raise_if_interrupted()
         blend = stitch_blend_mask(stitcher, int(image.shape[0]), str(seam))
-        return (image, blend)
+        result = (image, blend)
+        if paste_onto == PASTE_ONTO_ORIGINAL:
+            result = paste_on_original(stitcher, *result)
+        return result
 
     @classmethod
-    def VALIDATE_INPUTS(cls, seam=SEAM_CLASSIC):
-        # Naming seam here takes it out of ComfyUI's own list check, so the
-        # empty value an older workflow carries in its place still queues.
+    def VALIDATE_INPUTS(cls, seam=SEAM_CLASSIC, paste_onto=PASTE_ONTO_CROP):
+        # Naming seam and paste_onto here takes them out of ComfyUI's own list
+        # check, so the empty value an older workflow carries in their place
+        # still queues.
         #
         # 🔴 这里**不能**再补 **kwargs。execution.validate_inputs 里那段
         # `if x not in validate_function_inputs and not validate_has_kwargs:`
         # 的意思是：只要 VALIDATE_INPUTS 收了 **kwargs，本节点**所有**输入的
         # min / max / 下拉列表校验就整块跳过 —— color_match 的 0..1 会形同虚设。
-        # 具名只收 seam 时，核心只把 seam 传进来（`input_filtered` 按参数名过滤），
-        # 其余输入照旧走它自己的校验，也不会 TypeError。
-        if seam in _UNSET_SEAM or seam in SEAM_MODES:
-            return True
-        return "[QG-tools] Stitch Inpaint: seam must be one of %s, not %r." % (
-            SEAM_MODES,
-            seam,
-        )
+        # 具名只收 seam / paste_onto 时，核心只把这两个传进来
+        # （`input_filtered` 按参数名过滤），其余输入照旧走它自己的校验，
+        # 也不会 TypeError。
+        if seam not in _UNSET_SEAM and seam not in SEAM_MODES:
+            return "[QG-tools] Stitch Inpaint: seam must be one of %s, not %r." % (
+                SEAM_MODES,
+                seam,
+            )
+        if paste_onto not in _UNSET_PASTE_ONTO and paste_onto not in PASTE_ONTO_MODES:
+            return (
+                "[QG-tools] Stitch Inpaint: paste_onto must be one of %s, not %r."
+                % (PASTE_ONTO_MODES, paste_onto)
+            )
+        return True
 
 NODE_CLASS_MAPPINGS = {"QG_StitchInpaint": QGStitchInpaint}
 

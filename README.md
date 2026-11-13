@@ -14,7 +14,7 @@
 | **工作流** | 工作流说明卡、工作流开关、运行计时器、注释、设置点、获取点 |
 
 > 上表按**用途**分组，节点菜单里按 `QG-tools` 下的八个子分类（Loaders / Text / Logic /
-> Display / Workflow / Mask / Retouch / Image）排列，两者不是一一对应。
+> Display / Workflow / Mask / Inpaint / Image）排列，两者不是一一对应。
 
 > 哪些是**本插件原创**、哪些**搬自别的插件**（连上游节点名和许可证）：见下方
 > [节点来源](#节点来源原创--搬运) 一节，每个节点章节标题下也单独标了一行。
@@ -199,11 +199,11 @@
 - 指针离开后自动停在「结果」那张图上——哪一路是结果按连线判断（B 通常是从 A 改出来的那张）
 - A 原样从输出送出，所以这个节点可以夹在流程中间，不影响下游
 
-- **当前版本**：v0.9.18（支持 Nodes 2.0 / Vue 渲染）
+- **当前版本**：v0.9.19（支持 Nodes 2.0 / Vue 渲染）
 - **节点**：65 个（完整清单见开头那张按用途分组的表；这里不再重复列一遍 ——
   复制两份清单的结果是两份都会漂）
 - **分类**：全部在 `QG-tools` 下，八个子分类
-  `Loaders` / `Text` / `Logic` / `Display` / `Workflow` / `Mask` / `Retouch` / `Image`
+  `Loaders` / `Text` / `Logic` / `Display` / `Workflow` / `Mask` / `Inpaint` / `Image`
   （中文界面上显示为 加载器 / 文本 / 逻辑 / 展示 / 工作流 / 遮罩 / 重绘 / 图像）
 - **依赖**：无额外 pip 包。只用 ComfyUI 运行期自带的模块（torch / numpy / PIL / PyAV / folder_paths / comfy.*）；
   `scipy`、`pymatting` 用到了才用，缺了有内置回退，不报错。
@@ -239,13 +239,13 @@ git clone https://github.com/live1617/ComfyUI-QG-tools
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.18  |  65 nodes loaded  |  8 categories
+  QG-tools v0.9.19  |  65 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```
 
 无需 `pip install` 任何东西。六十五个节点都在 `QG-tools` 分类下
-（细分：Loaders / Text / Logic / Display / Workflow / Mask / Retouch / Image，
+（细分：Loaders / Text / Logic / Display / Workflow / Mask / Inpaint / Image，
 中文界面显示为 加载器 / 文本 / 逻辑 / 展示 / 工作流 / 遮罩 / 重绘 / 图像），
 节点标题按界面语言显示（中文界面 `添加水印`、英文界面 `Add Watermark`），
 搜索 `lora`、`crop`、`note`、`switch`、`timer`、`text`、`load`、

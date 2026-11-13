@@ -276,7 +276,7 @@ def _save_options(image_format, quality, subsampling):
 
 @combo_legacy("QG_ExportImage")
 class QGExportImage:
-    CATEGORY = "QG-tools/Image/Output"
+    CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Save an image batch as JPEG, PNG or WEBP, with the quality knob in the "
         "place where it actually decides the file size: the encoder. JPEG exposes "

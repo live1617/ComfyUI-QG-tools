@@ -11,7 +11,7 @@
 // 显示只在画布层：后端判定逻辑与 `any_input` 这个参数名完全不知道标签存在。
 
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=202611132008";
+import { zhPair } from "../shared/zh.mjs?v=202611141000";
 
 const NODE_TYPE = "QG_Exists";
 const INPUT_NAME = "any_input";

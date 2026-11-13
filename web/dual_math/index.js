@@ -10,9 +10,9 @@
 // 这两个表达式框（expr1 / expr2）是节点的原生 widget，不归这块管。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611132008";
-import { chainCallback, zhPair } from "../shared/index.mjs?v=202611132008";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611132008";
+import { sizeFor } from "../shared/node_width.mjs?v=202611141000";
+import { chainCallback, zhPair } from "../shared/index.mjs?v=202611141000";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611141000";
 
 const NODE_CLASS = "QG_DualMath";
 // 卡片下限宽度：两个表达式框都要能一眼看下十来个字符。

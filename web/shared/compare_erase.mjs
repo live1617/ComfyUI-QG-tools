@@ -13,8 +13,8 @@
 // 函数拖进上千行。
 // 后端对应文件：nodes/_qg_compare_helpers.py（两边数字必须一致）。
 
-import { BRUSH_SOFT_DEFAULT, clampBrushSize, clampSoft, steppedBrushSize } from "./brush.mjs?v=202611132008";
-import { zhPair } from "./zh.mjs?v=202611132008";
+import { BRUSH_SOFT_DEFAULT, clampBrushSize, clampSoft, steppedBrushSize } from "./brush.mjs?v=202611141000";
+import { zhPair } from "./zh.mjs?v=202611141000";
 
 // 画笔本身就是全包共用那一支（brush.mjs）。
 export {
@@ -28,7 +28,7 @@ export {
   moveAdjust,
   startAdjust,
   steppedSoft,
-} from "./brush.mjs?v=202611132008";
+} from "./brush.mjs?v=202611141000";
 
 export const ERASE_SIZE = [2, 2000];
 export const ERASE_MAX_STROKES = 400;

@@ -40,7 +40,7 @@ TEMPERATURE_GREEN_SWING = 0.12
 
 
 class QGColorCorrect:
-    CATEGORY = "QG-tools/Image/Color"
+    CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Six sliders for the whole colour pass: temperature (cool/warm), hue "
         "rotation, brightness, contrast, saturation and gamma. They are applied "

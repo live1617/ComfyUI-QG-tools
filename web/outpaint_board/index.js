@@ -1,9 +1,9 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { chainCallback, keepDomWidgetWidthAuto, zhPair } from "../shared/index.mjs?v=202611132008";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=202611132008";
-import { sizeFor } from "../shared/node_width.mjs?v=202611132008";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611132008";
+import { chainCallback, keepDomWidgetWidthAuto, zhPair } from "../shared/index.mjs?v=202611141000";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=202611141000";
+import { sizeFor } from "../shared/node_width.mjs?v=202611141000";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611141000";
 
 /* ============================================================
  * QG_OutpaintBoard —— 前端面板

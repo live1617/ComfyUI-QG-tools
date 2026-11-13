@@ -286,7 +286,7 @@ def _image_watermark(base, mark_src, size_pct, opacity, h_pos, v_pos,
 
 @combo_legacy("QG_AddWatermark")
 class QGAddWatermark:
-    CATEGORY = "QG-tools/Image/Output"
+    CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Stamps a text or image watermark onto an image: text size as a "
         "percentage of the base height, opacity, a nine-cell anchor with "

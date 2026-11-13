@@ -41,7 +41,7 @@ def _resize_bhwc(frames, height, width):
 class QGBatchMerge:
     """两个批次拼成一个：a 的帧在前，尺寸不一致按 on_mismatch 处理。"""
 
-    CATEGORY = "QG-tools/Image/Batch"
+    CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Join two IMAGE batches into one, a's frames first — reassemble a "
         "split batch, or append a comparison strip to a run. When the two "
