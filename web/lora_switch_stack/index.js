@@ -15,14 +15,20 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611182145";
-import { zhPair } from "../shared/zh.mjs?v=202611182145";
-import { showToast } from "../shared/index.mjs?v=202611182145";
-import { widthFor } from "../shared/node_width.mjs?v=202611182145";
+import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611201255";
+import { zhPair } from "../shared/zh.mjs?v=202611201255";
+import { BRAND, showToast } from "../shared/index.mjs?v=202611201255";
+import { widthFor } from "../shared/node_width.mjs?v=202611201255";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=202611201255";
+import {
+    closeSettingsMenu,
+    gearIconSvg,
+    openSettingsMenu,
+} from "../shared/settings_menu.mjs?v=202611201255";
 import {
     civitaiFailureText,
     pictureErrorText,
-} from "../shared/civitai_lookup.mjs?v=202611182145";
+} from "../shared/civitai_lookup.mjs?v=202611201255";
 // 强度手感 / 触发词 / 选择器过滤 / 读 LoRA 信息只有一份真相源：加载器也在用
 // 同一个 shared 模块，改一次两边同步。🔴 别在这里另写 ±10 / 0.05 或切词正则。
 import {
@@ -44,9 +50,9 @@ import {
     STRENGTH_MIN,
     toggleTrigger,
     triggerGroups,
-} from "../shared/lora_stack.mjs?v=202611182145";
+} from "../shared/lora_stack.mjs?v=202611201255";
 // Civitai 查询编排与加载器共用；卡片 note / 缩略图版本由回调注入。
-import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611182145";
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611201255";
 
 const NODE_CLASS = "QG_LoraSwitchStack";
 const SLOT_COUNT = 24;
@@ -249,6 +255,15 @@ function redrawVueRows(state) {
 // 在校验类型之后、建 link 之前调它，UI 拖拽和脚本连线都走这一条路。
 // 装成实例方法而不是改 prototype，避免影响别的节点；每次 applyRowCount 都
 // 确认一次，configure 之后钩子被重置也能立刻补回来。
+// 来源是不是「数值控件」（滑条 / 数字输入）：有且只有一个名为 value 的有限数值
+// widget 才算。布尔开关的控件值是 boolean，不会被认成数值；多个 value 的复合
+// 节点也不敢猜。与 rowStrengthState 的判据保持完全一致。
+function numericSourceNode(fromNode) {
+    const values = (fromNode?.widgets || []).filter(
+        (w) => w.name === "value" && typeof w.value === "number" && Number.isFinite(w.value));
+    return values.length === 1;
+}
+
 function installEmptySlotGuard(state) {
     const node = state.node;
     if (node.onConnectInput?.__qgEmptySlotGuard) return;
@@ -263,6 +278,25 @@ function installEmptySlotGuard(state) {
         if (!st || !input) return true;
         const match = /^on_(\d+)$/.exec(input.name || "");
         if (!match) return true;
+
+        // 🔴 11-20：on_N / strength_N 两组圆点被 LiteGraph 画在同一处（同一 row
+        // widget 派生坐标），拖线过去总是先命中 on_N。用户拿数值滑条想调强度，
+        // 却连到了开关，红框数字纹丝不动（用户截图「没反馈」）。这里按**来源**
+        // 改道：来源是数值控件（唯一 value 数值 widget）→ 拒绝连 on_N，下一拍
+        // 自动接到同一行的 strength_N。布尔开关仍照常连 on_N。与 rowStrengthState
+        // 的判据同源，避免「改道了但显示读不到」。
+        if (numericSourceNode(fromNode)) {
+            const row = Number(match[1]);
+            const strengthName = `strength_${row}`;
+            const strengthIndex = this.inputs?.findIndex((i) => i.name === strengthName) ?? -1;
+            if (strengthIndex >= 0 && this.inputs[strengthIndex].link == null) {
+                setTimeout(() => {
+                    try { fromNode.connect?.(outputIndex, this, strengthIndex); } catch (_) { /* 拖线已取消 */ }
+                }, 0);
+            }
+            return false;
+        }
+
         // visibleRows 含「+ 添加 LoRA」撑出来的那一格空行：它确实画了行，
         // 允许提前接开关；只有连都没有的行才拒绝。
         return Number(match[1]) - 1 < visibleRows(st);
@@ -459,6 +493,27 @@ function rowSwitchState(node, index, row) {
     return { linked: true, on: Boolean(bools[0].value), unknown: false };
 }
 
+// 这一行显示用的强度。接了 strength_N 线时，尽量读上游滑条的实时值画出来
+// —— 后端 _merge_slots 只在「运行」时才覆盖强度，画布上若不自己读线，用户
+// 拖滑条时红框里的数字纹丝不动，看着就像没接上（11-20 用户实测反馈）。
+// 🔴 与 rowSwitchState 同口径：能唯一定位到一个数值控件才显示它的真值，
+// 读不到（多个数值控件 / 运行时算出的值 / Primitive）就标 linked+unknown，
+// 让界面诚实说「外控」而不是拿存档值骗人。存档值一个都不改。
+function rowStrengthState(node, index, row) {
+    const stored = finite(row?.strength, 1);
+    const input = node.inputs?.find((item) => item.name === `strength_${index + 1}`);
+    const id = input?.link;
+    if (id == null) return { linked: false, value: stored, unknown: false };
+    const graph = node.graph;
+    const link = graph?.links?.[id];
+    const origin = link ? graph.getNodeById?.(link.origin_id) : null;
+    const numbers = (origin?.widgets || []).filter(
+        (widget) => widget.name === "value" && typeof widget.value === "number"
+            && Number.isFinite(widget.value));
+    if (numbers.length !== 1) return { linked: true, value: stored, unknown: true };
+    return { linked: true, value: clampStrength(numbers[0].value), unknown: false };
+}
+
 // 重复 LoRA 提示：名字（去空白后精确匹配）出现超过一次的名字集合。
 // 空行不算；同一个栈里挑了两遍同一个文件通常是误操作，给黄框提醒。
 // 每次 drawRow 都算一遍（最多 24 行，开销可忽略），比在 writeRows 里维护一份
@@ -602,10 +657,17 @@ function drawRow(ctx, node, state, index, posY, width) {
     }
 
     // 强度控件：左箭头 −、中间数值、右箭头 +。数值居中而不是右对齐，左右才对称。
-    const sameClip = Math.abs(row.strength_clip - row.strength) < 0.005;
-    const strengthText = sameClip
-        ? row.strength.toFixed(2)
-        : `${row.strength.toFixed(2)}/${row.strength_clip.toFixed(2)}`;
+    // 接了 strength_N 外控线时显示上游实时值（拖滑条数字跟着动），读不到就写「外控」。
+    const strengthState = rowStrengthState(node, index, row);
+    const shownStrength = strengthState.value;
+    const sameClip = Math.abs(row.strength_clip - row.strength) < 0.005
+        && !strengthState.linked;   // 外控只改模型强度，CLIP 仍是存档值，不再并成一个数字
+    const strengthText = strengthState.linked && strengthState.unknown
+        ? zhPair("wire", "外控")
+        : sameClip
+            ? shownStrength.toFixed(2)
+            : `${shownStrength.toFixed(2)}/${row.strength_clip.toFixed(2)}`;
+    const strengthLinked = strengthState.linked && !strengthState.unknown;
     const dragging = state.drag?.index === index;
     const centerY = posY + ROW_HEIGHT / 2 - 1;
     const dim = off || !row.name;
@@ -619,11 +681,15 @@ function drawRow(ctx, node, state, index, posY, width) {
     ctx.textBaseline = "middle";
     fitNumberFont(ctx, strengthText, cols.valueRight - cols.valueLeft - 2);
     ctx.fillStyle = dragging ? COLOR.accent
+        : strengthLinked ? "#6fd0f0"   // 外控实时值用青色，和行外控青框同色，一眼看出由线驱动
         : (dim ? COLOR.textEmpty : COLOR.text);
     ctx.fillText(strengthText, cols.valueMid, centerY);
-    // 供探针断言「数值确实居中、双值没溢出、箭头分列两侧」。
+    // 供探针断言「数值确实居中、双值没溢出、箭头分列两侧、外控值实时显示」。
     state.strengthLayout = {
         text: strengthText,
+        external: strengthState.linked,
+        externalUnknown: strengthState.unknown,
+        externalValue: strengthState.linked ? shownStrength : null,
         font: ctx.font,
         textWidth: ctx.measureText(strengthText).width,
         centerX: cols.valueMid,
@@ -632,6 +698,9 @@ function drawRow(ctx, node, state, index, posY, width) {
         valueLeft: cols.valueLeft,
         valueRight: cols.valueRight,
     };
+    // 逐行留档：strengthLayout 只留最后一行，探针要按行核对实时外控值。
+    state.strengthByRow = state.strengthByRow || {};
+    state.strengthByRow[index] = state.strengthLayout;
 
     // 强度条：0 在中间的一条细线，只铺在数值区下方（不占箭头的位置）。
     // 数字给「现在是多少」，条给「离两端还有多远」——拖的时候不用盯着数字算。
@@ -642,7 +711,7 @@ function drawRow(ctx, node, state, index, posY, width) {
         const barMid = (barLeft + barRight) / 2;
         ctx.fillStyle = "rgba(160, 178, 190, .20)";
         ctx.fillRect(barLeft, barY, barRight - barLeft, 1.5);
-        const value = clampStrength(row.strength);
+        const value = clampStrength(shownStrength);
         // 正负极各自除以自己的端点：哪天上下界不再对称，条也不会画歪。
         const span = value < 0 ? -STRENGTH_MIN : STRENGTH_MAX;
         const tip = barMid + (barRight - barMid) * (value / span);
@@ -835,12 +904,16 @@ function linkedRowAt(node, state, y) {
 // 🔴 只改 `input.link` 不够：link 对象自己记着 `target_slot`（node.inputs 里的下标），
 // 画布按它算落点，不改就会画在旧槽上、状态却在新槽里。
 function shiftSlotLinks(node, fromRow) {
-    const slots = [];
-    for (let index = 0; index < SLOT_COUNT; index += 1) {
-        const at = node.inputs?.findIndex((item) => item.name === `on_${index + 1}`) ?? -1;
-        if (at < 0) return;          // 槽还没建好（加载中 / 老存档），别动连线
-        slots.push(at);
+    // on_N 与 strength_N 两组槽都要跟着行前移，否则强度外控会悄悄串到别的行。
+    for (const prefix of ["on", "strength"]) {
+        shiftSlotGroup(node, fromRow, prefix);
     }
+}
+
+// 单组槽的「删行 → 后面前移」。逻辑与原来完全相同，只是槽数组由 prefix 决定。
+function shiftSlotGroup(node, fromRow, prefix) {
+    const slots = slotIndices(node, prefix);
+    if (!slots) return;          // 槽还没建好（加载中 / 老存档），别动连线
     const graph = node.graph;
     const orphan = node.inputs[slots[fromRow]]?.link ?? null;
     // 🔴 先删被删行自己那条线，再挪别人的。顺序反了的话 removeLink 会按
@@ -898,10 +971,12 @@ function compactRows(state, predicate) {
 // 界面上一点都看不出来。shiftSlotLinks 只管「删行 → 后面前移」，这里补齐
 // 「插入 → 后面后移」和「交换两行 → 交换两条线」。
 
-function slotIndices(node) {
+// 取一组逐行槽的 input 下标。prefix 默认 "on"（保持原有调用不变），
+// strength_N 传 "strength"。两组槽都按行号 1:1 排，缺任一个就返回 null。
+function slotIndices(node, prefix = "on") {
     const slots = [];
     for (let index = 0; index < SLOT_COUNT; index += 1) {
-        const at = node.inputs?.findIndex((item) => item.name === `on_${index + 1}`) ?? -1;
+        const at = node.inputs?.findIndex((item) => item.name === `${prefix}_${index + 1}`) ?? -1;
         if (at < 0) return null;   // 槽还没建好（加载中），别动连线
         slots.push(at);
     }
@@ -912,7 +987,14 @@ function slotIndices(node) {
 // 🔴 先断掉第 24 行自己的线：它要被挤出栈，不断就会留一条指向空槽的孤线；
 // 顺序反了的话 removeLink 会按 target_slot 把刚搬过来的线一起清掉。
 function shiftSlotLinksBack(node, atRow) {
-    const slots = slotIndices(node);
+    // 与删除对称：on_N 和 strength_N 两组都要整体后移一位。
+    for (const prefix of ["on", "strength"]) {
+        shiftSlotGroupBack(node, atRow, prefix);
+    }
+}
+
+function shiftSlotGroupBack(node, atRow, prefix) {
+    const slots = slotIndices(node, prefix);
     if (!slots) return;
     const graph = node.graph;
     const last = node.inputs[slots[SLOT_COUNT - 1]];
@@ -952,35 +1034,38 @@ function insertRow(state, index, source = null) {
     return true;
 }
 
-// 交换两行：行内容和两条外控连线一起换，target_slot 也要同步。
+// 单组槽的交换。1.58.5 起 `input.link` 是弃用访问器：赋非 null 值直接被忽略
+// （mutate via node["connect"]() / node.disconnectInput()），所以必须走官方接口。
+function swapSlotGroup(node, graph, prefix, a, b) {
+    const slots = slotIndices(node, prefix);
+    if (!slots || !graph) return;
+    const sa = slots[a], sb = slots[b];
+    const readLink = (slot) => {
+        const link = node.getInputLink?.(slot) ?? graph.links?.[node.inputs[slot]?.link] ?? null;
+        return link ? { origin_id: link.origin_id, origin_slot: link.origin_slot } : null;
+    };
+    const infoA = readLink(sa);
+    const infoB = readLink(sb);
+    if (infoA) node.disconnectInput?.(sa);
+    if (infoB) node.disconnectInput?.(sb);
+    const reconnect = (info, slot) => {
+        if (!info) return;
+        const src = graph.getNodeById?.(info.origin_id)
+            ?? graph._nodes?.find?.((n) => String(n.id) === String(info.origin_id));
+        src?.connect?.(info.origin_slot, node, slot);
+    };
+    reconnect(infoA, sb);
+    reconnect(infoB, sa);
+}
+
+// 交换两行：行内容和两组外控连线一起换，target_slot 也要同步。
 function swapRows(state, a, b) {
     if (a < 0 || b < 0 || a >= SLOT_COUNT || b >= SLOT_COUNT || a === b) return false;
     const node = state.node;
     const graph = node.graph;
-    const slots = slotIndices(node);
-    if (slots && graph) {
-        const sa = slots[a];
-        const sb = slots[b];
-        // 🔴 1.58.5 起 `input.link` 是弃用访问器：赋非 null 值**直接被忽略**
-        // （前端源码原话：mutate via node["connect"]() / node.disconnectInput()）。
-        // 删行时靠改 link.target_slot 还能生效，但「两条线互换」会静默失败，
-        // 所以这里走官方接口：读来源 → 断开两个槽 → 按交换后的槽重新连接。
-        const readLink = (slot) => {
-            const link = node.getInputLink?.(slot) ?? graph.links?.[node.inputs[slot]?.link] ?? null;
-            return link ? { origin_id: link.origin_id, origin_slot: link.origin_slot } : null;
-        };
-        const infoA = readLink(sa);
-        const infoB = readLink(sb);
-        if (infoA) node.disconnectInput?.(sa);
-        if (infoB) node.disconnectInput?.(sb);
-        const reconnect = (info, slot) => {
-            if (!info) return;
-            const src = graph.getNodeById?.(info.origin_id)
-                ?? graph._nodes?.find?.((n) => String(n.id) === String(info.origin_id));
-            src?.connect?.(info.origin_slot, node, slot);
-        };
-        reconnect(infoA, sb);
-        reconnect(infoB, sa);
+    // 两组槽都交换，否则强度外控会留在原来的行号上，指错 LoRA。
+    for (const prefix of ["on", "strength"]) {
+        swapSlotGroup(node, graph, prefix, a, b);
     }
     const tmp = state.rows[a];
     state.rows[a] = state.rows[b];
@@ -1952,9 +2037,10 @@ async function openStackPanel(state) {
     const element = document.createElement("div");
     element.className = "qg-switchstack-tools";
     element.dataset.qgStackPanel = "1";
-    // 🔴 面板优先放在节点**正下方的空白画布**，完全不遮挡节点。
-    // 真机截图试过：左上角会盖住三行，右侧宽度不够翻到左侧又盖住文件名。
-    // 下方通常是空的（节点下面没别的东西），放不下时才退到右侧/左侧。
+    // 🔴 面板贴在节点**右侧**：右缘 + 间隙，顶部与节点标题栏对齐，不遮挡节点。
+    // 之前放正下方会压住下面的画布内容；右侧通常留白更多。放不下时夹进视口右缘，
+    // 保持「靠右」的语义（窄屏只能这样，绝不再翻回节点左下盖住行）。
+    const GAP = 14;
     const frame = app.canvas.canvas.getBoundingClientRect();
     const ds = app.canvas.ds;
     const n = state.node;
@@ -1963,14 +2049,11 @@ async function openStackPanel(state) {
     const nodeLeft = frame.left + (n.pos[0] + offset[0]) * scale;
     const nodeTop = frame.top + (n.pos[1] + offset[1]) * scale;
     const nodeRight = nodeLeft + n.size[0] * scale;
-    // +30 是标题栏，size[1] 只算节点主体。
-    const nodeBottom = nodeTop + (n.size[1] + 30) * scale;
     const PANEL_W = 336;
-    // 初值：节点正下方。真实高度要 append 之后才量得到（预设条数会变），
-    // 所以先用「节点左缘 + 下方」定位，内容填完再夹进视口 —— 别用 400px
-    // 的保守估计，那会把本该放下方的面板误判成放不下、又翻回节点左侧。
-    const initialLeft = Math.max(8, Math.min(Math.round(nodeLeft), window.innerWidth - PANEL_W - 8));
-    const initialTop = Math.max(8, Math.round(nodeBottom + 14));
+    // 初值：节点右缘 + GAP。真实高度要 append 之后才量得到（预设条数会变），
+    // 所以内容填完后再由 fitPanel 按真实尺寸重新夹一次。
+    const initialLeft = Math.max(8, Math.min(Math.round(nodeRight + GAP), window.innerWidth - PANEL_W - 8));
+    const initialTop = Math.max(8, Math.round(nodeTop));
     element.style.cssText = `
         position: fixed; left: ${initialLeft}px; top: ${initialTop}px; width: ${PANEL_W}px;
         max-height: min(560px, calc(100vh - 24px)); overflow-y: auto;
@@ -2164,15 +2247,17 @@ async function openStackPanel(state) {
         sectionLabel(zhPair("Saved presets", "已存预设")), listHost,
     );
     // element 创建时就已 append（1075 行），这里只填内容，不再重复 append。
-    // 内容落定后按**真实高度**夹进视口：优先保持在节点下方，实在放不下
-    // 才上移贴住视口底；横向摆在节点左缘下方，本来就是空白画布。
+    // 内容落定后按**真实高度**夹进视口：横向固定在节点右侧（放不下就贴视口右缘，
+    // 不再翻回左下），纵向从节点标题栏起，超高才上移贴住视口顶。
     const fitPanel = () => {
         if (!element.isConnected) return;
         const rect = element.getBoundingClientRect();
-        let top = Math.round(nodeBottom + 14);
+        const left = Math.max(8, Math.min(Math.round(nodeRight + GAP), window.innerWidth - rect.width - 8));
+        let top = Math.max(8, Math.round(nodeTop));
         if (top + rect.height > window.innerHeight - 8) {
             top = Math.max(8, Math.round(window.innerHeight - 8 - rect.height));
         }
+        element.style.left = `${left}px`;
         element.style.top = `${top}px`;
     };
     stackPanel = { element, abort, fit: fitPanel };
@@ -2528,18 +2613,21 @@ function openOrganizePanel(state) {
     document.body.append(element);
     organizePanel = { element, abort };
 
-    // 摆在节点正下方，内容落定后夹进视口（与栈工具面板同一套，避免遮挡行）。
+    // 贴节点右侧：与栈工具面板同口径（右缘 + 14，顶部对齐标题栏），不遮挡 LoRA 行。
+    // 面板比栈工具宽（420px），右侧放不下就夹视口右缘，不再翻回节点左下。
+    const GAP = 14;
     const frame = app.canvas.canvas.getBoundingClientRect();
     const ds = app.canvas.ds;
     const scale = ds.scale || 1;
     const offset = ds.offset ?? [0, 0];
     const nodeLeft = frame.left + (state.node.pos[0] + offset[0]) * scale;
-    const nodeBottom = frame.top + (state.node.pos[1] + offset[1] + state.node.size[1]) * scale;
+    const nodeRight = nodeLeft + state.node.size[0] * scale;
+    const nodeTop = frame.top + (state.node.pos[1] + offset[1]) * scale;
     const fit = () => {
         if (!element.isConnected) return;
         const rect = element.getBoundingClientRect();
-        const left = Math.max(8, Math.min(Math.round(nodeLeft), window.innerWidth - rect.width - 8));
-        let top = Math.round(nodeBottom + 14);
+        const left = Math.max(8, Math.min(Math.round(nodeRight + GAP), window.innerWidth - rect.width - 8));
+        let top = Math.max(8, Math.round(nodeTop));
         if (top + rect.height > window.innerHeight - 8) {
             top = Math.max(8, Math.round(window.innerHeight - 8 - rect.height));
         }
@@ -2669,6 +2757,269 @@ function collectAllTriggers(state, separator = ", ") {
         });
     });
     return words.join(separator);
+}
+
+// ---------------------------------------------------------------- 齿轮菜单（经典 / Vue 双模式）
+//
+// 把原先挂在节点右键菜单的三项入口（栈工具 / 删除 / 整理栈）收进标题栏齿轮，
+// 样式与导出图像节点一致：齿轮紧挨帮助徽标「?」左侧，点开 QG 通用设置浮层。
+// 经典模式用 canvas 自绘 + onMouseDown 命中；Vue(Nodes 2.0) 画布不自己画，
+// 由标题栏 DOM 按钮承载（见 installGearDom）。两条路都只调 openSettingsMenu，
+// 不改节点接口、后端与存档格式。
+const GEAR_STEP = 22;
+const GEAR_RADIUS = 7;
+const GEAR_SCALE = 0.85;
+const GEAR_INK = "rgba(155,162,170,0.8)";
+
+function gearCenter(nodeWidth) {
+    const [cx, cy] = badgeCenter(nodeWidth);
+    return [cx - GEAR_STEP, cy];
+}
+
+function gearShown(node) {
+    return showBadge(node.size?.[0] ?? 0, node.flags?.collapsed);
+}
+
+function hitsGear(pos, nodeWidth) {
+    const [cx, cy] = gearCenter(nodeWidth);
+    // 右边界给到 +12，正好贴住「?」的命中区（宽-26），中间无缝也不重叠。
+    return pos[0] >= cx - 10 && pos[0] <= cx + 12 && pos[1] >= cy - 11 && pos[1] <= cy + 11;
+}
+
+// 与导出图像同款 8 齿 + 外圆 evenodd 挖孔，跟随帮助徽标的灰、hover 时染品牌色。
+function drawStackGear(node, ctx) {
+    if (!gearShown(node)) return;
+    const [cx, cy] = gearCenter(node.size[0]);
+    const hover = node.__qgGearHover && app.canvas?.node_over === node;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(GEAR_SCALE, GEAR_SCALE);
+    ctx.fillStyle = hover ? BRAND : GEAR_INK;
+    for (let i = 0; i < 8; i += 1) {
+        ctx.save();
+        ctx.rotate((i * Math.PI) / 4);
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(-1.4, -8, 2.8, 4.4, 1);
+        else ctx.rect(-1.4, -8, 2.8, 4.4);
+        ctx.fill();
+        ctx.restore();
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.6, 0, Math.PI * 2);
+    ctx.arc(0, 0, 2.1, 0, Math.PI * 2);
+    ctx.fill("evenodd");
+    ctx.restore();
+}
+
+// 节点局部坐标 -> 屏幕矩形；换算照 LiteGraph 口径 (world + offset) * scale。
+function gearAnchor(node) {
+    const canvas = app.canvas;
+    const [lx, ly] = gearCenter(node.size?.[0] ?? 0);
+    const box = canvas?.canvas?.getBoundingClientRect?.() ?? { left: 0, top: 0 };
+    const scale = canvas?.ds?.scale ?? 1;
+    const offset = canvas?.ds?.offset ?? [0, 0];
+    const cx = box.left + (node.pos[0] + lx + offset[0]) * scale;
+    const cy = box.top + (node.pos[1] + ly + offset[1]) * scale;
+    const half = GEAR_RADIUS * scale;
+    return { left: cx - half, top: cy - half, bottom: cy + half, width: half * 2 };
+}
+
+// 齿轮菜单本身：三项 action 直接调用现成的面板函数。每项都先关菜单再开面板，
+// 与加载器的 action 项一致；scope 用固定值即可（action 不读写存储）。
+function openStackGearMenu(node, anchor) {
+    const state = node.__qgSwitchStack;
+    if (!state) return;
+    const schema = [
+        {
+            key: "_stack_tools",
+            label: zhPair("Stack tools", "栈工具"),
+            type: "action",
+            button: zhPair("Open", "打开"),
+            hint: zhPair("Presets and global strength multiplier.", "预设与全局强度倍率。"),
+            onAction: () => { closeSettingsMenu(); openStackPanel(state); },
+        },
+        {
+            key: "_stack_delete",
+            label: zhPair("Delete", "删除"),
+            type: "action",
+            button: zhPair("Open", "打开"),
+            hint: zhPair("Delete empty/duplicate rows, clear the stack or a preset.", "删空行、去重行、清空整栈或删预设。"),
+            // 删除原本是右键的二级菜单，四个动作带各自 callback（含预设二次
+            // 确认）。这里直接弹同一套原生菜单，行为逐字不变，不重做逻辑。
+            onAction: () => {
+                closeSettingsMenu();
+                if (typeof LiteGraph === "undefined" || typeof LiteGraph.ContextMenu !== "function") return;
+                // 🔴 不能传合成 event：ContextMenu 的 event 分支会读 offsetX 等字段，
+                // 只有 clientX/clientY 的假对象会让菜单弹到屏幕左上角 (0,0)。
+                // 与本文件行菜单同口径，直接传屏幕坐标 left/top，落在齿轮下方。
+                const a = gearAnchor(node);
+                new LiteGraph.ContextMenu(deleteMenuOptions(node), {
+                    left: a.left,
+                    top: a.bottom + 6,
+                    scale: Math.max(1, app.canvas?.ds?.scale || 1),
+                });
+            },
+        },
+        {
+            key: "_stack_organize",
+            label: zhPair("Organize", "整理栈"),
+            type: "action",
+            button: zhPair("Open", "打开"),
+            hint: zhPair("Seed combo, batch control, missing check and trigger copy.", "种子组合、批量外控、缺失体检与触发词复制。"),
+            onAction: () => { closeSettingsMenu(); openOrganizePanel(state); },
+        },
+    ];
+    openSettingsMenu({
+        scope: "lora_switch_stack_gear",
+        schema,
+        anchor: anchor ?? gearAnchor(node),
+        title: zhPair("LoRA stack menu", "LoRA 堆菜单"),
+        initial: {},
+    });
+}
+
+// Vue(Nodes 2.0) 标题栏齿轮：画布自绘那条路在 Vue 下整块不跑，齿轮要作为真
+// 按钮塞进节点外壳的标题栏 flex 行，插在帮助徽章「?」之前。沿用帮助徽章同款
+// 的 shell 查找与定时巡检（Vue 重排会冲掉 DOM），但只服务这一个节点的齿轮。
+const GEAR_DOM_CLASS = "qgtools-stack-gear";
+const GEAR_STYLE_ID = "qgtools-stack-gear-style";
+const gearDomTracked = new Map();
+let gearDomTimer = null;
+
+function ensureGearStyle() {
+    if (document.getElementById(GEAR_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = GEAR_STYLE_ID;
+    style.textContent = `
+.${GEAR_DOM_CLASS}{
+  flex:none;width:16px;height:16px;box-sizing:border-box;margin:0 2px 0 1px;
+  position:relative;z-index:2;display:inline-flex;align-items:center;justify-content:center;
+  padding:0;border:0;background:transparent;color:rgba(155,162,170,.8);cursor:pointer;
+  opacity:.7;transition:opacity .12s,color .12s;
+}
+.${GEAR_DOM_CLASS}:hover{opacity:1;color:${BRAND};}
+.${GEAR_DOM_CLASS} svg{width:14px;height:14px;display:block;}`;
+    document.head.append(style);
+}
+
+function gearShellOf(node) {
+    const id = node?.id;
+    if (id === undefined || id === null) return null;
+    const want = String(id);
+    let suffix = null, hits = 0;
+    for (const el of document.querySelectorAll(".lg-node")) {
+        if (el.dataset?.ghost) continue;
+        const raw = el.dataset?.nodeId;
+        if (!raw) continue;
+        if (raw === want) return el;
+        if (raw.endsWith(":" + want)) { suffix = el; hits += 1; }
+    }
+    return hits === 1 ? suffix : null;
+}
+
+function createGearButton(node) {
+    ensureGearStyle();
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = GEAR_DOM_CLASS;
+    btn.dataset.qgStackGear = "1";
+    btn.title = zhPair("LoRA stack menu", "LoRA 堆菜单");
+    btn.innerHTML = gearIconSvg();
+    // Vue 外壳整块挂在拖拽处理器下面：不拦指针，点齿轮就变成拖节点。
+    btn.addEventListener("pointerdown", (event) => { event.stopPropagation(); event.preventDefault(); });
+    btn.addEventListener("pointerup", (event) => event.stopPropagation());
+    btn.addEventListener("dblclick", (event) => event.stopPropagation());
+    btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        try { openStackGearMenu(node); } catch (error) {
+            console.error("[QG-tools] LoRA 堆菜单打开失败：", error);
+        }
+    });
+    return btn;
+}
+
+function attachGear(entry) {
+    if (entry.el?.isConnected) return;
+    const shell = gearShellOf(entry.node);
+    const row = shell?.querySelector(".lg-node-header > div");
+    if (!row) return; // Vue 还没渲染，下次巡检再挂
+    const el = entry.el ?? (entry.el = createGearButton(entry.node));
+    // 插在帮助徽章「?」之前；没有徽章就追加到行尾。
+    const badge = row.querySelector(".qgtools-help-badge");
+    if (badge) row.insertBefore(el, badge);
+    else row.append(el);
+}
+
+function sweepGearDom() {
+    const vue = vueNodesEnabled();
+    for (const entry of [...gearDomTracked.values()]) {
+        if (!vue || entry.node?.flags?.collapsed) {
+            try { entry.el?.remove(); } catch (_) { /* 忽略 */ }
+            continue;
+        }
+        attachGear(entry);
+    }
+    if (!gearDomTracked.size && gearDomTimer) {
+        clearInterval(gearDomTimer); gearDomTimer = null;
+    }
+}
+
+function installGearDom(node) {
+    if (!node) return;
+    if (!gearDomTracked.has(node)) gearDomTracked.set(node, { node, el: null });
+    sweepGearDom();
+    if (!gearDomTimer) gearDomTimer = setInterval(sweepGearDom, 800);
+}
+
+function uninstallGearDom(node) {
+    const entry = node ? gearDomTracked.get(node) : null;
+    if (!entry) return;
+    try { entry.el?.remove(); } catch (_) { /* 忽略 */ }
+    gearDomTracked.delete(node);
+    if (!gearDomTracked.size && gearDomTimer) {
+        clearInterval(gearDomTimer); gearDomTimer = null;
+    }
+}
+
+// 探针/控制台用的稳定入口：三项面板函数与删除二级菜单选项。真机探针原本靠
+// 右键菜单项触发，入口移到齿轮后改走这里，测试意图（面板功能本身）不变；
+// 齿轮入口本身由 gear 探针单独验。幂等，configure 重建节点也能重挂。
+function installStackApi(node) {
+    node.__qgStackApi = {
+        openTools: () => openStackPanel(node.__qgSwitchStack),
+        openOrganize: () => openOrganizePanel(node.__qgSwitchStack),
+        deleteOptions: () => deleteMenuOptions(node),
+        gearMenu: (anchor) => openStackGearMenu(node, anchor),
+    };
+}
+
+// 经典模式的齿轮画在标题栏负 y 上（帮助徽标左边），LiteGraph 的 getNodeAtPos
+// 命不到标题栏：真机实测点该处既不开菜单也不选中节点，节点级 onMouseDown 收不到。
+// 用 document 捕获阶段补一刀：只认领落在齿轮屏幕矩形里的左键，吞掉事件免得变成
+// 拖节点。Vue 模式的齿轮是真 DOM 按钮，不走这里。
+let gearHitInstalled = false;
+function installGearHit() {
+    if (gearHitInstalled) return;
+    gearHitInstalled = true;
+    document.addEventListener("pointerdown", (event) => {
+        if (vueNodesEnabled() || event.button !== 0) return;
+        // 浮层/菜单内部的点击交给它们自己的处理器，别在这里重复开菜单。
+        if (event.target?.closest?.(".qgtools-set-pop, .litecontextmenu, .litemenu-entry")) return;
+        const nodes = window.app?.graph?._nodes;
+        if (!Array.isArray(nodes)) return;
+        for (const node of nodes) {
+            if (String(node?.type) !== "QG_LoraSwitchStack" || !gearShown(node)) continue;
+            const a = gearAnchor(node);
+            const pad = 4;
+            if (event.clientX >= a.left - pad && event.clientX <= a.left + a.width + pad
+                && event.clientY >= a.top - pad && event.clientY <= a.bottom + pad) {
+                event.preventDefault();
+                event.stopPropagation();
+                openStackGearMenu(node, a);
+                return;
+            }
+        }
+    }, { capture: true });
 }
 
 // ---------------------------------------------------------------- Civitai
@@ -3389,25 +3740,40 @@ function hideWidget(widget) {
 // 连线接到了行外面）。所以这个函数是幂等的，挂载和 onConfigure 都调。
 function bindSlots(state) {
     const { node } = state;
+    // on_N（BOOLEAN）与 strength_N（FLOAT）绑同一个行 widget，LiteGraph 会把两组
+    // 圆点画在同一处。给 strength 一组专属青色，用户拖线时凭颜色就能分辨连的是
+    // 开关（默认绿）还是强度（青）；配合强度数字的实时外控反馈，连错立刻看得出。
+    // 🔴 这段放在快路径之前，否则已绑好的老节点永远拿不到颜色。
+    for (const input of node.inputs || []) {
+        if (/^strength_\d+$/.test(input.name)
+            && input.color_on !== "#6fd0f0") {
+            input.color_on = "#6fd0f0";
+            input.color_off = "#3a7f96";
+        }
+    }
     // 🔴 快路径必须查全 24 个槽：只查 on_1 就 return 的话，configure 重建
     // inputs 后只要「恰好」on_1 绑好了，其余 23 个会永远停在普通输入形态 ——
     // 画布按 NODE_SLOT_HEIGHT 把它们排在节点下方，就是截图里那列悬空圆点。
     if (state.rowWidgets.length === SLOT_COUNT && node.inputs?.length) {
         const allBound = state.rowWidgets.every((widget, index) => {
             const input = node.inputs.find((item) => item.name === `on_${index + 1}`);
-            return input && input.widget === widget && input.label === "\u200b";
+            const sin = node.inputs.find((item) => item.name === `strength_${index + 1}`);
+            return input && input.widget === widget && input.label === "\u200b"
+                && (!sin || (sin.widget === widget && sin.label === "\u200b"));
         });
         if (allBound) return;
     }
     for (let index = 0; index < SLOT_COUNT; index += 1) {
         const widget = state.rowWidgets[index];
-        const input = node.inputs?.find((item) => item.name === `on_${index + 1}`);
-        if (!input || !widget) continue;
-        if (input.widget !== widget) input.widget = widget;
-        // 空字符串不够 —— 前端会退回 input.name（"row_1"）画在行上。零宽字符才行。
-        if (input.label !== "\u200b") input.label = "\u200b";
-        // 残留的坐标会让它不跟随 widget。
-        if (input.pos) delete input.pos;
+        for (const prefix of ["on", "strength"]) {
+            const input = node.inputs?.find((item) => item.name === `${prefix}_${index + 1}`);
+            if (!input || !widget) continue;
+            if (input.widget !== widget) input.widget = widget;
+            // 空字符串不够 —— 前端会退回 input.name（"row_1"）画在行上。零宽字符才行。
+            if (input.label !== "\u200b") input.label = "\u200b";
+            // 残留的坐标会让它不跟随 widget。
+            if (input.pos) delete input.pos;
+        }
     }
 }
 
@@ -3453,12 +3819,14 @@ function pruneOrphanLinks(state) {
     if (!node.graph || !node.inputs?.length) return;
     const visible = visibleRows(state);
     for (let index = visible; index < SLOT_COUNT; index += 1) {
-        const at = node.inputs.findIndex((item) => item.name === `on_${index + 1}`);
-        if (at < 0) continue;
-        // 🔴 input.link 是弃用访问器：赋非 null 静默忽略。读用 getInputLink，
-        // 断用 disconnectInput。
-        const link = node.getInputLink ? node.getInputLink(at) : null;
-        if (link) node.disconnectInput(at);
+        for (const prefix of ["on", "strength"]) {
+            const at = node.inputs.findIndex((item) => item.name === `${prefix}_${index + 1}`);
+            if (at < 0) continue;
+            // 🔴 input.link 是弃用访问器：赋非 null 静默忽略。读用 getInputLink，
+            // 断用 disconnectInput。
+            const link = node.getInputLink ? node.getInputLink(at) : null;
+            if (link) node.disconnectInput(at);
+        }
     }
 }
 
@@ -3482,18 +3850,22 @@ function drawLinkedRows(node) {
     if (!ctx) return;
     const visible = visibleRows(state);
     for (let index = 0; index < visible; index += 1) {
-        const input = node.inputs?.find((item) => item.name === `on_${index + 1}`);
+        const onInput = node.inputs?.find((item) => item.name === `on_${index + 1}`);
+        const strengthInput = node.inputs?.find((item) => item.name === `strength_${index + 1}`);
         const widget = state.rowWidgets[index];
-        if (!input?.link || !widget) continue;
+        // 任一组槽接了线，这一行就走前景补画（自带 widget.draw 看不到外控圆点）。
+        if (!((onInput?.link || strengthInput?.link)) || !widget) continue;
         drawRow(ctx, node, state, index, widget.y, rowDrawWidth(node, widget));
     }
 }
 
 function installConfigureHook(node) {    if (node.__qgSwitchStackHooked) return;
     node.__qgSwitchStackHooked = true;
-    const previousConfigure = node.configure;
+        const previousConfigure = node.configure;
     node.configure = function (info) {
         const result = previousConfigure?.apply(this, arguments);
+        installGearDom(this);
+        installStackApi(this);
         // 🔴 无条件先 mount：configure 会把 widgets 数组整个换掉，此刻
         // `state.dataWidget` 还指着旧对象（或干脆是 null），先判空就永远进不来。
         mount(this);
@@ -3639,62 +4011,23 @@ app.registerExtension({
             const result = onCreated?.apply(this, arguments);
             mount(this);
             installConfigureHook(this);
+            installGearDom(this);
+            installStackApi(this);
             // 模式切换观察器的迁移入口；新建 / 加载工作流也会调，幂等无害。
             this.__qgSyncMode = () => syncSwitchStackMode(this);
             return result;
         };
 
-        // 右键菜单入口：整栈预设 / 批量强度。note 节点已用同一套 Context Menu
-        // API（getExtraMenuOptions），这里沿用；菜单项的 content 是节点内文字，
-        // 走 zhPair 才能跟随语言切换。
-        // 🔴 Context Menu API 的约定（LGraphCanvas.ts:8625）：
-        //   const extra = node.getExtraMenuOptions?.(this, options)
-        //   if (Array.isArray(extra) && extra.length > 0)
-        //       options = extra.concat(options)
-        // 传入的 options 是所有插件共享的那一个数组；返回非数组（undefined）时
-        // 前端继续用它。所以正确写法和 note 节点一致：**只往 args[1] 里 unshift，
-        // 不 return 数组**。返回数组会让前端 concat 出重复项，而且调用链上别的
-        // 插件（Custom-Scripts / rgthree / Manager）会拿这个返回值另做处理 ——
-        // 真机实测第一版「return baseExtra() 的结果」菜单里完全没有「栈工具」。
-        const baseExtra = nodeType.prototype.getExtraMenuOptions;
-        nodeType.prototype.getExtraMenuOptions = function (...args) {
-            const shared = args[1];
-            baseExtra?.apply(this, args);
-            const node = this;
-            if (Array.isArray(shared)) {
-                // 幂等：别的插件可能再次调用，别重复插同一组入口。
-                // 两个入口一次 unshift 进去，顺序才是「栈工具」在前、「删除」在后。
-                if (!shared.some((item) => item && item.__qgStackTools)) {
-                    shared.unshift(
-                        {
-                            __qgStackTools: true,
-                            content: zhPair("Stack tools (presets / strength)", "栈工具（预设 / 强度）"),
-                            callback: () => {
-                                const state = node.__qgSwitchStack;
-                                if (state) openStackPanel(state);
-                            },
-                        },
-                        {
-                            // 独立的二级菜单，删除操作全部收在这里，不用再开面板。
-                            __qgDeleteTools: true,
-                            content: zhPair("Delete (rows / presets)", "删除（行 / 预设）"),
-                            has_submenu: true,
-                            submenu: { options: deleteMenuOptions(node) },
-                        },
-                        {
-                            // 第二层：筛选 / 批量开关 / 整栈导入导出。
-                            __qgOrganizeTools: true,
-                            content: zhPair("Organize (filter / batch / share)", "整理栈（筛选 / 批量 / 导入导出）"),
-                            callback: () => {
-                                const state = node.__qgSwitchStack;
-                                if (state) openOrganizePanel(state);
-                            },
-                        },
-                    );
-                }
-            }
-            // 故意不 return：让前端沿用它传进来的那个 options 数组。
+        // 节点删除时摘掉 Vue 标题栏齿轮，别让 Map 攥着它、留下幽灵按钮。
+        const onRemoved = nodeType.prototype.onRemoved;
+        nodeType.prototype.onRemoved = function () {
+            uninstallGearDom(this);
+            return onRemoved?.apply(this, arguments);
         };
+
+        // 🔴 11-20 起三项栈入口（栈工具 / 删除 / 整理栈）已收进标题栏齿轮，
+        // 不再挂节点右键菜单——所以这里不再覆盖 getExtraMenuOptions：让 rgthree
+        // 等其它插件的原菜单项原样透传（用户菜单里那两条「队列输出节点」就是）。
 
         // 每帧一次的机会：configure 之外（比如撤销/重做把 inputs 换掉）也把绑定补回来。
         const onDrawForeground = nodeType.prototype.onDrawForeground;
@@ -3702,6 +4035,10 @@ app.registerExtension({
             const result = onDrawForeground?.apply(this, arguments);
             syncFromSave(this);
             drawLinkedRows(this);
+            // 经典模式画标题栏齿轮（帮助徽标「?」由 appearance 全局绘制，
+            // 齿轮紧挨其左，与导出图像节点同款）。Vue 模式整块画布不跑这里，
+            // 由 installGearDom 的 DOM 按钮承载。
+            if (!vueNodesEnabled()) drawStackGear(this, app.canvas?.ctx);
             return result;
         };
 
@@ -3719,6 +4056,14 @@ app.registerExtension({
         nodeType.prototype.onMouseMove = function (event, pos, canvas) {
             const result = onMouseMove?.apply(this, arguments);
             const s = this.__qgSwitchStack;
+            // 齿轮 hover 染色：只在状态翻转时重绘，别每次移动都刷整块画布。
+            if (!vueNodesEnabled() && gearShown(this) && pos) {
+                const h = hitsGear(pos, this.size[0]);
+                if (Boolean(this.__qgGearHover) !== h) {
+                    this.__qgGearHover = h;
+                    this.setDirtyCanvas?.(true, false);
+                }
+            }
             if (s?.rowWidgets?.length && pos) {
                 const visible = visibleRows(s);
                 let hit = -1;
@@ -3750,6 +4095,13 @@ app.registerExtension({
         nodeType.prototype.onMouseDown = function (event, pos, canvas) {
             const result = onMouseDown?.apply(this, arguments);
             if (result) return result;
+            // 齿轮命中要先于行命中：标题栏在负 y，行的 linkedRowAt 不会命中它，
+            // 但必须消费掉点击，免得被当成拖动节点。
+            if (!vueNodesEnabled() && event?.button === 0 && gearShown(this)
+                && pos && hitsGear(pos, this.size[0])) {
+                openStackGearMenu(this, gearAnchor(this));
+                return true;
+            }
             const state = this.__qgSwitchStack;
             if (!state?.rowWidgets?.length || !pos) return result;
             if (event?.button > 0) return result;
@@ -3760,6 +4112,8 @@ app.registerExtension({
     },
 
     async setup() {
+        // 经典模式齿轮在负 y 标题栏上，节点级 onMouseDown 收不到，补全局命中。
+        installGearHit();
         // 行操作菜单的入口是「在这一行上点右键」。钩子挂在 window 捕获阶段，
         // 经典画布和 Nodes 2.0 的独立行 canvas 都进得来；只认领命中行的右键，
         // 其余位置照旧走 ComfyUI 原生节点菜单。
@@ -3774,6 +4128,8 @@ app.registerExtension({
             closePresetDeleteMenu();
             closeRowMenu();
             closeOrganizePanel();
+            // 齿轮按钮按渲染模式挂载/摘除，切模式立刻巡检一次（另有 800ms 兜底）。
+            sweepGearDom();
         });
         // 切模式后把每个 LoRA 堆节点上的残留控件宽度清掉。观察器自带 400ms
         // 轮询 + 350ms 防抖，只在真正跨模式时触发；fallback 兜住「加载工作流

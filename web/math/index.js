@@ -15,9 +15,9 @@
 // （来自 Python 的 DESCRIPTION，这里是同一个信息源，不用再维护一份说明）。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611182145";
-import { chainCallback, zhPair } from "../shared/index.mjs?v=202611182145";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611182145";
+import { sizeFor } from "../shared/node_width.mjs?v=202611201255";
+import { chainCallback, zhPair } from "../shared/index.mjs?v=202611201255";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611201255";
 
 const NODE_CLASS = "QG_Math";
 // 卡片下限宽度：表达式那行要能一眼看下十来个字符。

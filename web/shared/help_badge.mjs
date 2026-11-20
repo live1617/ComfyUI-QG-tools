@@ -70,18 +70,35 @@ const FOLDED_INPUTS = {
   // QG_LoraSwitchStack 声明了 on_1…on_24 共 24 个布尔槽，每个的中文说明只差
   // 一个行号 —— 帮助卡原先会刷出 24 行一模一样的话。折成一行，顺带把
   // 「没有行的槽不生效」这条真正有用的信息补上。
-  QG_LoraSwitchStack: {
-    match: /^on_\d+$/,
-    term: "行 1–24 开关",
-    termEn: "row 1–24 switches",
-    detail:
-      "每一行的开关都能从图上接线控制：接上线由连线决定，不接线就沿用行自己的开关。" +
-      "槽与行一一对应，只有实际存在的行才生效。",
-    detailEn:
-      "One enable switch per row: a connected link overrides the row's own switch, " +
-      "otherwise the row keeps it. Slots map to rows one-to-one; only rows that " +
-      "actually exist are active.",
-  },
+  // strength_N 是第二组「只差行号」的外控槽（每行模型强度），与 on_N 语义
+  // 不同，不能并进上面那条折叠文案里，否则「开关」的说明会说错强度。
+  // 故本节点的折叠入口改成数组，两组各折各的；其它节点仍是单个对象。
+  QG_LoraSwitchStack: [
+    {
+      match: /^on_\d+$/,
+      term: "行 1–24 开关",
+      termEn: "row 1–24 switches",
+      detail:
+        "每一行的开关都能从图上接线控制：接上线由连线决定，不接线就沿用行自己的开关。" +
+        "槽与行一一对应，只有实际存在的行才生效。",
+      detailEn:
+        "One enable switch per row: a connected link overrides the row's own switch, " +
+        "otherwise the row keeps it. Slots map to rows one-to-one; only rows that " +
+        "actually exist are active.",
+    },
+    {
+      match: /^strength_\d+$/,
+      term: "行 1–24 强度",
+      termEn: "row 1–24 strengths",
+      detail:
+        "每一行的模型强度也能从图上接线控制：接上线由滑条等数值节点决定，不接线就沿用行自己的强度。" +
+        "只改模型强度，不改 CLIP 强度；只有实际存在的行才生效。",
+      detailEn:
+        "One model-strength input per row: a connected numeric link overrides the " +
+        "row's own strength, otherwise the row keeps it. Only the model strength " +
+        "changes, not the CLIP strength; only rows that actually exist are active.",
+    },
+  ],
 };
 
 // 前端注入、后端 schema 里没有的输入名（LoadImage / CropRotatePad 上那个上传控件）。
@@ -96,18 +113,21 @@ const INJECTED_INPUTS = {
 };
 
 function inputItems(inputSpec, nodeName, zhNode) {
-  const fold = FOLDED_INPUTS[nodeName];
+  const declared = FOLDED_INPUTS[nodeName];
+  // 老节点是单个对象（一组折叠），QG_LoraSwitchStack 这类有多组同款槽的是数组。
+  const folds = !declared ? [] : (Array.isArray(declared) ? declared : [declared]);
+  const folded = new Set();
   const items = [];
-  let folded = false;
   for (const group of ["required", "optional"]) {
     for (const [name, spec] of Object.entries(inputSpec?.[group] ?? {})) {
-      if (fold && fold.match.test(name)) {
-        if (!folded) {
+      const fold = folds.find((f) => f.match.test(name));
+      if (fold) {
+        if (!folded.has(fold)) {
           items.push({
             term: zhNode ? fold.term : fold.termEn || fold.term,
             detail: zhNode ? fold.detail : fold.detailEn || fold.detail,
           });
-          folded = true;
+          folded.add(fold);
         }
         continue;
       }

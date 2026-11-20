@@ -10,7 +10,7 @@
 // separator 是节点的原生 widget，不归这块管。
 
 import { app } from "/scripts/app.js";
-import { chainCallback } from "../shared/index.mjs?v=202611182145";
+import { chainCallback } from "../shared/index.mjs?v=202611201255";
 
 const NODE_CLASS = "QG_TextConcat";
 // 必须与后端 nodes/qg_text_concat.py 的输入名完全一致（顺序也要一致）。

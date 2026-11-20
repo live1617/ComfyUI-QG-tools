@@ -1,7 +1,8 @@
 """QG LoRA Stack.
 
-A LoRA stack whose every row can be switched from the graph: row N has an
-``on_N`` BOOLEAN input, and the row's own toggle is what that input overrides.
+A LoRA stack whose every row can be switched - and have its strength set -
+from the graph: row N has an ``on_N`` BOOLEAN input and a ``strength_N`` FLOAT
+input, and the row's own values are what those inputs override when wired.
 
 Why this exists next to QG_LoraLoader: that node edits its stack inside one
 DOM panel, so its inputs can only live on the node's left edge. Here each row
@@ -24,6 +25,7 @@ from typing import Any
 from ._qg_lora_helpers import (
     MISSING_MODES,
     apply_lora_stack,
+    clamp_strength,
     collect_trigger_words,
     missing_lora_rows,
     parse_lora_stack,
@@ -44,8 +46,8 @@ from comfy_api.latest import io
 SLOT_COUNT = 24
 
 
-def _merge_slots(rows_data: Any, on_slots: dict[str, Any]) -> str:
-    """Overlay the wired on_N switches onto the stored stack.
+def _merge_slots(rows_data: Any, wired: dict[str, Any]) -> str:
+    """Overlay wired ``on_N`` switches and ``strength_N`` strengths onto the stack.
 
     Applies by *position in the raw list* (1-based), matching the row the user
     sees: empty rows stay in the list, so row 3 is entry 3 even when rows 1 and
@@ -55,7 +57,7 @@ def _merge_slots(rows_data: Any, on_slots: dict[str, Any]) -> str:
     Anything unparsable is returned untouched so ``parse_lora_stack`` can raise
     the one error message the user is used to.
     """
-    if not on_slots:
+    if not wired:
         return "" if rows_data is None else str(rows_data)
     try:
         data = json.loads(str(rows_data).strip() or "[]")
@@ -66,14 +68,24 @@ def _merge_slots(rows_data: Any, on_slots: dict[str, Any]) -> str:
     merged = []
     for position, entry in enumerate(data, start=1):
         if isinstance(entry, dict):
-            key = "on_%d" % position
+            on_key = "on_%d" % position
+            strength_key = "strength_%d" % position
+            changes: dict[str, Any] = {}
             # 🔴 用 truthy 而不是 bool：bool("false") is True，会把本该关掉的
             # 行静默打开。另外 IS_CHANGED 里核心对连线输入只给 None（拿不到
             # 上游值），None 不该把这一行的存档开关强行改写成 False —— 那种
             # 情况下保留行自身的 enabled 更接近真实执行结果。
-            if key in on_slots and on_slots[key] is not None:
+            if on_key in wired and wired[on_key] is not None:
+                changes["enabled"] = truthy(wired[on_key])
+            # 强度同理：没接线的槽是 None，保留行自身在面板里拖出来的值；
+            # 接了线的槽用 clamp_strength 收进 ±STRENGTH_LIMIT，与面板同一口径。
+            # 只改 model 强度，strength_clip 保持行自身值（面板里两个强度也
+            # 是分别编辑的，外控不该偷偷把一个改成另一个）。
+            if strength_key in wired and wired[strength_key] is not None:
+                changes["strength"] = clamp_strength(wired[strength_key])
+            if changes:
                 entry = dict(entry)
-                entry["enabled"] = truthy(on_slots[key])
+                entry.update(changes)
         merged.append(entry)
     return json.dumps(merged)
 
@@ -94,10 +106,16 @@ class QGLoraSwitchStack(io.ComfyNode):
 
     @classmethod
     def define_schema(cls):
-        # 24 个 on_N 是 BOOLEAN forceInput 可选槽。
+        # 24 个 on_N 是 BOOLEAN forceInput 可选槽；strength_N 是配套的 FLOAT，
+        # 接上就覆盖该行强度，不接（None）保留面板里的值。
         on_inputs = [
             io.Boolean.Input("on_%d" % slot, optional=True, extra_dict={"forceInput": True},
                 tooltip="Row %d's switch, wired from the graph. A wire overrides the row's own toggle; unwired, the toggle decides." % slot)
+            for slot in range(1, SLOT_COUNT + 1)
+        ]
+        strength_inputs = [
+            io.Float.Input("strength_%d" % slot, optional=True, force_input=True,
+                tooltip="Row %d's model strength, wired from a slider. A wire overrides the row's own strength; unwired, the row keeps its value. Only the model strength changes, not the CLIP strength." % slot)
             for slot in range(1, SLOT_COUNT + 1)
         ]
         return io.Schema(
@@ -113,6 +131,7 @@ class QGLoraSwitchStack(io.ComfyNode):
                 io.Clip.Input("clip", optional=True,
                     tooltip="Optional CLIP to patch; without it, CLIP strengths are ignored."),
                 *on_inputs,
+                *strength_inputs,
                 io.String.Input("trigger_separator", optional=True, default=", ",
                     tooltip="Joins the enabled rows' trigger words into the triggers output."),
                 io.Combo.Input("on_missing", optional=True, options=list(MISSING_MODES), default="error",
