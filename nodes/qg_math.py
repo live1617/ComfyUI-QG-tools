@@ -29,6 +29,8 @@ ValueError，ComfyUI 的红框里带着原始表达式和原因，比静默返�
 
 import string
 
+from comfy_api.latest import io
+
 from ._qg_math_engine import (
     MathError,
     evaluate,
@@ -62,75 +64,108 @@ _EXPRESSION_HELP = (
     "number when the whole string is a number, otherwise as text."
 )
 
+_DESCRIPTION = (
+    "One expression over variables a to z (every letter except e), for numbers "
+    "or for text. Type a "
+    "formula such as round(a / b * 2, 2) or a + \", best quality\" on the card. "
+    "Variables a, b, c… are wire-only inputs: three slots show up first and "
+    "the next one appears as soon as the last is connected (up to z); they take "
+    "integers, floats, booleans or text, and an unwired slot counts as 0, so any "
+    "constant goes straight into the expression. There is no e slot: e stays the "
+    "constant 2.718… so 2 * e keeps working. A variable that arrives as text "
+    "counts as a number when the whole string is a number, otherwise it stays "
+    "text. "
+    "Outputs the result four ways: as a decimal, as an integer rounded to the "
+    "nearest whole number (halves go away from zero, so 2.5 becomes 3), as a "
+    "boolean (non-zero is true), and as text (a number is written the way you "
+    "would write it, 1024 rather than 1024.0). When the expression produces "
+    "text the three numeric outputs are 0, 0 and false. Expressions are parsed, "
+    "never executed, which keeps a shared workflow from running code. Every "
+    "function with an example: "
+    "https://github.com/live1617/ComfyUI-QG-tools/blob/main/docs/math.md . "
+    + _EXPRESSION_HELP
+)
 
-class QGMath:
-    CATEGORY = "QG-tools/Logic"
-    DESCRIPTION = (
-        "One expression over variables a to z (every letter except e), for numbers "
-        "or for text. Type a "
-        "formula such as round(a / b * 2, 2) or a + \", best quality\" on the card. "
-        "Variables a, b, c\u2026 are wire-only inputs: three slots show up first and "
-        "the next one appears as soon as the last is connected (up to z); they take "
-        "integers, floats, booleans or text, and an unwired slot counts as 0, so any "
-        "constant goes straight into the expression. There is no e slot: e stays the "
-        "constant 2.718\u2026 so 2 * e keeps working. A variable that arrives as text "
-        "counts as a number when the whole string is a number, otherwise it stays "
-        "text. "
-        "Outputs the result four ways: as a decimal, as an integer rounded to the "
-        "nearest whole number (halves go away from zero, so 2.5 becomes 3), as a "
-        "boolean (non-zero is true), and as text (a number is written the way you "
-        "would write it, 1024 rather than 1024.0). When the expression produces "
-        "text the three numeric outputs are 0, 0 and false. Expressions are parsed, "
-        "never executed, which keeps a shared workflow from running code. Every "
-        "function with an example: "
-        "https://github.com/live1617/ComfyUI-QG-tools/blob/main/docs/math.md . "
-        + _EXPRESSION_HELP
-    )
+
+class QGMath(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_Math",
+            display_name="Math Expression",
+            category="QG-tools/Logic",
+            description=_DESCRIPTION,
+            inputs=[
+                io.String.Input(
+                    "expr",
+                    default="a + b",
+                    multiline=False,
+                    # 🔴 变量怎么接、常数写哪里统一放 description（帮助卡第一段），
+                    #    这里只讲「算式能写什么」。两边都写 = 帮助卡里两段重复的蓝字。
+                    tooltip=(
+                        "The expression, for example round(a / b * 2, 2).\n"
+                        "Constants pi, e and tau; operators + - * / // % **, comparisons, "
+                        "and/or/not and the ternary form; plus over thirty functions "
+                        "including sqrt, round, min, max, log and sin, each documented "
+                        "in docs/math.md. Empty evaluates to 0."
+                    ),
+                ),
+                # 🔴 联合类型：只让 FLOAT 的话「宽度 / 高度」这类整数输出接不进来
+                #    （连线规则要求类型对得上）；补 BOOLEAN 与官方数学表达式对齐；
+                #    再补 STRING 才能把文本拼进去。MultiType 序列化后正好是
+                #    V1 的 "INT,FLOAT,BOOLEAN,STRING"，存档与连线零漂移。
+                #    没连线按 0 算 —— 常数直接写进表达式，不需要一排数字框。
+                *[
+                    io.MultiType.Input(
+                        name,
+                        [io.Int, io.Float, io.Boolean, io.String],
+                        optional=True,
+                        tooltip="Variable %s" % name,
+                        # V1 的 optional 槽带 "default": 0（没连线按 0 算），
+                        # V3 的 MultiType 不是 WidgetInput、不收 default 参数，
+                        # 得走 extra_dict 才能把这一项写回 object_info，
+                        # 否则老存档/契约 diff 会少一个键。
+                        extra_dict={"default": 0},
+                    )
+                    for name in VARIABLES
+                ],
+            ],
+            outputs=[
+                io.Float.Output(
+                    id="value",
+                    tooltip=(
+                        "The result of the expression, as a decimal. It is 0 when the "
+                        "expression produces text."
+                    ),
+                ),
+                io.Int.Output(
+                    id="integer",
+                    tooltip=(
+                        "The same result rounded to the nearest whole number, halves "
+                        "away from zero (2.5 gives 3), then clamped to the INT32 range. "
+                        "It is 0 when the expression produces text."
+                    ),
+                ),
+                io.Boolean.Output(
+                    id="boolean",
+                    tooltip=(
+                        "Whether the same result is non-zero. With a comparison such as "
+                        "a > b it works as a condition directly. False when the "
+                        "expression produces text."
+                    ),
+                ),
+                io.String.Output(
+                    id="text",
+                    tooltip=(
+                        "The result as text. A number is written the way you would write "
+                        "it (1024 rather than 1024.0), so it can go straight into a prompt."
+                    ),
+                ),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "expr": ("STRING", {
-                    "default": "a + b",
-                    "multiline": False,
-                    # 🔴 变量怎么接、常数写哪里统一放 DESCRIPTION（帮助卡第一段），
-                    #    这里只讲「算式能写什么」。两边都写 = 帮助卡里两段重复的蓝字。
-                    "tooltip": "The expression, for example round(a / b * 2, 2).\nConstants pi, e and tau; operators + - * / // % **, comparisons, and/or/not and the ternary form; plus over thirty functions including sqrt, round, min, max, log and sin, each documented in docs/math.md. Empty evaluates to 0.",
-                }),
-            },
-            "optional": {
-                # 🔴 类型写成联合值：只写 FLOAT 的话，「宽度 / 高度」这类整数输出
-                #    接不进来（ComfyUI 的连线规则是类型必须对得上）；补 BOOLEAN
-                #    是跟官方「数学表达式」对齐；再补 STRING 才能把文本拼进去
-                #    （纯文本上游以前根本接不上，只能绕 TextConcat）。
-                #    老式 INPUT_TYPES 里用逗号分隔表示「任一即可」。
-                #    没连线时按 0 算 —— 常数直接写进表达式（`100 * 2`），不需要
-                #    再给变量单独留一排数字框。
-                name: ("INT,FLOAT,BOOLEAN,STRING", {
-                    "default": 0,
-                    "tooltip": "Variable %s" % name,
-                })
-                for name in VARIABLES
-            },
-        }
-
-    RETURN_TYPES = ("FLOAT", "INT", "BOOLEAN", "STRING")
-    RETURN_NAMES = ("value", "integer", "boolean", "text")
-    OUTPUT_TOOLTIPS = (
-        "The result of the expression, as a decimal. It is 0 when the "
-        "expression produces text.",
-        "The same result rounded to the nearest whole number, halves away from "
-        "zero (2.5 gives 3), then clamped to the INT32 range. It is 0 when the "
-        "expression produces text.",
-        "Whether the same result is non-zero. With a comparison such as a > b "
-        "it works as a condition directly. False when the expression produces text.",
-        "The result as text. A number is written the way you would write it "
-        "(1024 rather than 1024.0), so it can go straight into a prompt.",
-    )
-    FUNCTION = "execute"
-
-    def execute(self, expr="", **variables):
+    def execute(cls, expr="", **variables):
         # 变量不再一律压成数字：接进来的文本要能原样传给表达式。
         # VARIABLES 里已经没有与常量同名的名字（e / pi / tau / inf），
         # 所以这里可以直接铺进 scope，常量由 evaluate() 自己兜底。
@@ -147,13 +182,13 @@ class QGMath:
         # 文本结果只走 text 槽：三个数字输出一律给 0 / 0 / False，
         # 免得下游拿一个「算不上数的字符串」当尺寸用。
         if isinstance(result, str):
-            return (0.0, 0, False, result)
+            return io.NodeOutput(0.0, 0, False, result)
 
         # 布尔 / 整数结果也走 float，下游拿到的是统一的数字形态。
         # evaluate() 已经保证是有限数，这里不再需要 NaN 兜底。
         number = float(result)
         integer = max(INT32_MIN, min(INT32_MAX, round_half_away(number)))
-        return (number, integer, bool(number), format_number(number))
+        return io.NodeOutput(number, integer, bool(number), format_number(number))
 
 
 NODE_CLASS_MAPPINGS = {"QG_Math": QGMath}

@@ -28,6 +28,8 @@ all, so it could never report False.
 
 import torch
 
+from comfy_api.latest import io
+
 from ._qg_any_type import ANY
 
 try:  # 旧版本 ComfyUI 没有这个模块，缺了也不影响判定
@@ -89,7 +91,7 @@ def _present(value):
     return True
 
 
-class QGExists:
+class QGExists(io.ComfyNode):
     CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "Says whether anything came through, and passes it along untouched. "
@@ -102,41 +104,45 @@ class QGExists:
     )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {},
-            "optional": {
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_Exists",
+            display_name="Exists",
+            category="QG-tools/Logic",
+            description=cls.DESCRIPTION,
+            inputs=[
                 # 唯一输入，什么都能接。optional 是这套逻辑的前提：required
                 # 的话 ComfyUI 会在执行前就报「缺少输入」，永远看不到 False。
-                "any_input": (ANY, {
-                    "forceInput": True,
-                    "tooltip": "Any input. When it is wired and actually delivers a value, the boolean output is true; unwired, or when upstream hands over an empty value, it is false (empty text, empty list, all-black mask and all-zero latent all count as empty). A fully black image is not empty - it is a valid picture. The value itself is passed on through the any output.",
-                }),
-            },
-        }
-
-    RETURN_TYPES = (ANY, "BOOLEAN")
-    RETURN_NAMES = ("any", "boolean")
-    OUTPUT_TOOLTIPS = (
-        "The value passed through unchanged (empty when nothing is connected).",
-        # 🔴 一条 tooltip 对应一个输出槽。这两个输出各有各的说明，以前把两段
-        # 拼成一条（只有 1 项）→ /object_info 里 boolean 那槽没有说明，
-        # 而 any 那槽的悬停文字里混着 boolean 的解释。
-        "A value means true, nothing means false. Empty text, an empty list, an "
-        "all-black mask and an all-zero latent all count as nothing; 0 and "
-        "False count as something. Drives a branch, a switch, or any boolean "
-        "input.",
-    )
-    FUNCTION = "execute"
+                # V1 的 forceInput → V3 AnyType 无 force_input 形参，走 extra_dict。
+                io.AnyType.Input(
+                    "any_input",
+                    optional=True,
+                    extra_dict={"forceInput": True},
+                    tooltip="Any input. When it is wired and actually delivers a value, the boolean output is true; unwired, or when upstream hands over an empty value, it is false (empty text, empty list, all-black mask and all-zero latent all count as empty). A fully black image is not empty - it is a valid picture. The value itself is passed on through the any output.",
+                ),
+            ],
+            outputs=[
+                io.AnyType.Output("any", tooltip="The value passed through unchanged (empty when nothing is connected)."),
+                # 一条 tooltip 对应一个输出槽：any 与 boolean 各有各的说明。
+                io.Boolean.Output(
+                    "boolean",
+                    tooltip="A value means true, nothing means false. Empty text, an empty list, an "
+                            "all-black mask and an all-zero latent all count as nothing; 0 and "
+                            "False count as something. Drives a branch, a switch, or any boolean "
+                            "input.",
+                ),
+            ],
+        )
 
     @classmethod
-    def VALIDATE_INPUTS(cls, input_types=None):
+    def validate_inputs(cls, input_types=None):
         # 输入声明成 ANY，前端按 * 校验；这里放行一切具体类型，否则接 IMAGE /
         # 模型之类的端口会被后端判成类型不符。
         return True
 
-    def execute(self, any_input=None):
-        return (any_input, _present(any_input))
+    @classmethod
+    def execute(cls, any_input=None):
+        return io.NodeOutput(any_input, _present(any_input))
 
 
 NODE_CLASS_MAPPINGS = {"QG_Exists": QGExists}

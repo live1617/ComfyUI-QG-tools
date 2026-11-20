@@ -71,7 +71,9 @@ import numpy as np
 import torch
 from PIL import Image
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 # 逐帧缩放是纯 CPU 的重活：视频 batch 一大，用户点取消得能立刻停下。
 # 部分离线检查脚本按文件路径加载本模块（没有包上下文），相对导入会抛
@@ -653,8 +655,9 @@ def scale_image(image=None, mask=None, width=512, height=512,
             torch.cat(out_masks, dim=0))
 
 
-@combo_legacy("QG_ImageScale")
-class QGImageScale:
+# V1 @combo_legacy("QG_ImageScale")：5 下拉有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce 五值，与 V1 等价。
+class QGImageScale(io.ComfyNode):
     """图像 + 遮罩同步缩放，输出缩放后的图、最终宽高与同步后的遮罩。"""
 
     DESCRIPTION = (
@@ -674,129 +677,72 @@ class QGImageScale:
         "图像", "遮罩", "蒙版", "缩放", "放大", "缩小", "尺寸", "分辨率",
         "裁剪", "填充", "等比例", "长边", "短边", "整除", "qg",
     ]
-    CATEGORY = "QG-tools/Image"
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("IMAGE", "INT", "INT", "MASK")
-    RETURN_NAMES = ("image", "width", "height", "mask")
-    OUTPUT_TOOLTIPS = (
-        "The scaled image, one frame per input frame.",
-        "Width of the output image in pixels, ready for a size input.",
-        "Height of the output image in pixels, ready for a size input.",
-        "The mask scaled together with the image, matching its output size.",
-    )
-
     @classmethod
-    def VALIDATE_INPUTS(cls, scale_method=None, interpolation=None,
+    def validate_inputs(cls, scale_method=None, interpolation=None,
                         scale_mode=None, anchor=None, condition=None):
-        # 五个下拉的译名登记在 nodes/_qg_combo_legacy.py 的 LEGACY 表里
-        # （源包的值全是中文，这一轮才换成英文 key，老存档靠组合兜住）。
-        # 这里具名报上去，让 ComfyUI 跳过「值必须在列表里」那道检查 ——
-        # 中文界面显示的是「按长边等比例」，直接往 API 里塞中文也不会炸。
-        # 不写 **kwargs：那会把宽 / 高 / 整除数这些数字的 min/max 一起关掉。
+        # 五个下拉的中文译名在 LEGACY 表；具名跳过列表校验，值由 coerce 换回。
+        # 不写 **kwargs：那会关掉宽/高/整除数的 min/max 校验。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "width": (
-                    "INT",
-                    {
-                        "default": 512, "min": 0, "max": 100000, "step": 1,
-                        "tooltip": "Target width in custom-size mode; 0 derives it from the height. Ignored by the by-long-side / by-short-side methods.",
-                    },
-                ),
-                "height": (
-                    "INT",
-                    {
-                        "default": 512, "min": 0, "max": 100000, "step": 1,
-                        "tooltip": "Target height in custom-size mode; 0 derives it from the width. Ignored by the by-long-side / by-short-side methods.",
-                    },
-                ),
-                "scale_method": (
-                    SCALE_METHODS,
-                    {
-                        "default": "by-long-side",
-                        "tooltip": "by-long-side / by-short-side: apply the edge length below to the long or the short side. custom-size: use the width and height above.",
-                    },
-                ),
-                "edge_size": (
-                    "INT",
-                    {
-                        "default": 1024, "min": 64, "max": 100000, "step": 1,
-                        "tooltip": "Target edge length in pixels for the proportional methods (1024 in the original node). Also used by the when-long-side-greater / when-short-side-smaller conditions.",
-                    },
-                ),
-                "interpolation": (
-                    INTERPOLATIONS,
-                    {
-                        "default": "lanczos",
-                        "tooltip": "Resampling filter. The image and the mask are resampled with the same filter, matching Goohaitools Image Scale V2.",
-                    },
-                ),
-                "scale_mode": (
-                    SCALE_MODES,
-                    {
-                        "default": "crop",
-                        "tooltip": "stretch / crop / three fill modes / total pixels. Note: with by-long-side or by-short-side and multiple_of <= 1 this is not used at all (the original node behaves the same way).",
-                    },
-                ),
-                "anchor": (
-                    ANCHORS,
-                    {
-                        "default": "center",
-                        "tooltip": "Which side survives a crop or a fill: center / top / bottom / left / right.",
-                    },
-                ),
-                "condition": (
-                    CONDITIONS,
-                    {
-                        "default": "always",
-                        "tooltip": "Run always, or only when the long side is greater / the short side is smaller than the target. Otherwise the input passes through unchanged (multiple_of may still adapt the size).",
-                    },
-                ),
-                "fill_color": (
-                    "STRING",
-                    {
-                        "default": "#364254",
-                        "tooltip": "Canvas colour for the fill-color mode, as #RRGGBB (default #364254). Click the swatch on the node to pick one or type the hex; the original node writes the same string.",
-                    },
-                ),
-                "multiple_of": (
-                    "INT",
-                    {
-                        "default": 0, "min": 0, "max": 256, "step": 1,
-                        "tooltip": "Round the final width and height up to a multiple of this number (0 or 1 means no rounding). Each scale mode rounds in its own direction, matching the original node.",
-                    },
-                ),
-            },
-            "optional": {
-                "image": (
-                    "IMAGE",
-                    {
-                        "tooltip": "The image batch to scale, standard [B,H,W,C]. Optional: with only a mask connected the image output is a black placeholder.",
-                    },
-                ),
-                "mask": (
-                    "MASK",
-                    {
-                        "tooltip": "The mask to scale together with the image. Not connected gives an all-black mask; a single frame is repeated to match a multi-frame image.",
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_ImageScale",
+            display_name="Image Scale",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Int.Input("width", default=512, min=0, max=100000, step=1,
+                    tooltip="Target width in custom-size mode; 0 derives it from the height. Ignored by the by-long-side / by-short-side methods."),
+                io.Int.Input("height", default=512, min=0, max=100000, step=1,
+                    tooltip="Target height in custom-size mode; 0 derives it from the width. Ignored by the by-long-side / by-short-side methods."),
+                io.Combo.Input("scale_method", options=SCALE_METHODS, default="by-long-side",
+                    tooltip="by-long-side / by-short-side: apply the edge length below to the long or the short side. custom-size: use the width and height above."),
+                io.Int.Input("edge_size", default=1024, min=64, max=100000, step=1,
+                    tooltip="Target edge length in pixels for the proportional methods (1024 in the original node). Also used by the when-long-side-greater / when-short-side-smaller conditions."),
+                io.Combo.Input("interpolation", options=INTERPOLATIONS, default="lanczos",
+                    tooltip="Resampling filter. The image and the mask are resampled with the same filter, matching Goohaitools Image Scale V2."),
+                io.Combo.Input("scale_mode", options=SCALE_MODES, default="crop",
+                    tooltip="stretch / crop / three fill modes / total pixels. Note: with by-long-side or by-short-side and multiple_of <= 1 this is not used at all (the original node behaves the same way)."),
+                io.Combo.Input("anchor", options=ANCHORS, default="center",
+                    tooltip="Which side survives a crop or a fill: center / top / bottom / left / right."),
+                io.Combo.Input("condition", options=CONDITIONS, default="always",
+                    tooltip="Run always, or only when the long side is greater / the short side is smaller than the target. Otherwise the input passes through unchanged (multiple_of may still adapt the size)."),
+                io.String.Input("fill_color", default="#364254",
+                    tooltip="Canvas colour for the fill-color mode, as #RRGGBB (default #364254). Click the swatch on the node to pick one or type the hex; the original node writes the same string."),
+                io.Int.Input("multiple_of", default=0, min=0, max=256, step=1,
+                    tooltip="Round the final width and height up to a multiple of this number (0 or 1 means no rounding). Each scale mode rounds in its own direction, matching the original node."),
+                io.Image.Input("image", optional=True,
+                    tooltip="The image batch to scale, standard [B,H,W,C]. Optional: with only a mask connected the image output is a black placeholder."),
+                io.Mask.Input("mask", optional=True,
+                    tooltip="The mask to scale together with the image. Not connected gives an all-black mask; a single frame is repeated to match a multi-frame image."),
+            ],
+            outputs=[
+                io.Image.Output("image", tooltip="The scaled image, one frame per input frame."),
+                io.Int.Output("width", tooltip="Width of the output image in pixels, ready for a size input."),
+                io.Int.Output("height", tooltip="Height of the output image in pixels, ready for a size input."),
+                io.Mask.Output("mask", tooltip="The mask scaled together with the image, matching its output size."),
+            ],
+        )
 
-    def execute(self, width=512, height=512, scale_method="by-long-side",
+    @classmethod
+    def execute(cls, width=512, height=512, scale_method="by-long-side",
                 edge_size=1024, interpolation="lanczos", scale_mode="crop",
                 anchor="center", condition="always", fill_color="#364254",
                 multiple_of=0, image=None, mask=None):
-        return scale_image(
+        # V1 装饰器 coerce 五个下拉值，V3 显式保留。
+        scale_method = coerce("QG_ImageScale", "scale_method", scale_method)
+        interpolation = coerce("QG_ImageScale", "interpolation", interpolation)
+        scale_mode = coerce("QG_ImageScale", "scale_mode", scale_mode)
+        anchor = coerce("QG_ImageScale", "anchor", anchor)
+        condition = coerce("QG_ImageScale", "condition", condition)
+        return io.NodeOutput(*scale_image(
             image=image, mask=mask, width=width, height=height,
             scale_method=scale_method, edge_size=edge_size,
             interpolation=interpolation, scale_mode=scale_mode,
             anchor=anchor, condition=condition, fill_color=fill_color,
-            multiple_of=multiple_of)
+            multiple_of=multiple_of))
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageScale": QGImageScale}

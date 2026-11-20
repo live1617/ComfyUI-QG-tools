@@ -8,7 +8,7 @@
 
 - 本插件：ComfyUI-QG-tools · GPL-3.0-or-later · https://github.com/live1617/ComfyUI-QG-tools
 - 依据：`ORIGINS.json`（更新于 2026-11-08）
-- 规模：65 个节点 = **6 个搬运** + **59 个原创**
+- 规模：71 个节点 = **6 个搬运** + **65 个原创**
 
 ## 口径
 
@@ -78,6 +78,11 @@
 | `QG_SizeSelector` | 尺寸选择器 | ComfyUI_Muye「MuyeSizeSelector」 | MIT | 参考思路，代码自行实现 |
 | `QG_EmptyLatentResolution` | 空 Latent 分辨率 | ComfyUI-EmptyLatentResolution「EmptyLatentResolution」 | MIT | 作者自有插件，合并进来 |
 | `QG_TextConcat` | 文本合并 | ComfyUI_Comfyroll_CustomNodes「CR_TextConcatenate」 | MIT | 参考思路，代码自行实现 |
+| `QG_ImageScaleRange` | 图像缩放（范围） | Goohaitools-comfyui「图像缩放（范围）孤海」 | GPL-3.0-or-later | 参考思路，代码自行实现 |
+| `QG_ColorImage` | 纯色图像 | ComfyUI_LayerStyle「LayerUtility: ColorImage V2」 | GPL-3.0-or-later | 参考思路，代码自行实现 |
+| `QG_ImageMergeMask` | 图像合并（遮罩） | Goohaitools-comfyui「孤海-图像合并（遮罩）」 | GPL-3.0-or-later | 参考思路，代码自行实现 |
+| `QG_StringConstant` | 字符串常量 | ComfyUI-KJNodes「StringConstant」 | GPL-3.0-or-later | 参考思路，代码自行实现 |
+| `QG_StringConstantMultiline` | 字符串常量（多行） | ComfyUI-KJNodes「StringConstantMultiline」 | GPL-3.0-or-later | 参考思路，代码自行实现 |
 | `QG_TextReplace` | 文本替换 | ComfyUI_Comfyroll_CustomNodes「CR_TextReplace」 | MIT | 参考思路，代码自行实现 |
 | `QG_ColorCorrect` | 颜色校正 | comfyui-art-venture「ColorCorrect」 | MIT | 参考思路，代码自行实现 |
 | `QG_ImageScale` | 图像缩放 | ComfyUI-QG-Multipack v0.1.0「QG_ImageScale」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
@@ -115,7 +120,7 @@
 
 ## 完全原创（无上游参考）
 
-8 个节点从零实现，没有对应的上游项目：`QG_ColorMatch`、`QG_BoolToggle`、`QG_Number`、`QG_Slider`、`QG_Math`、`QG_Exists`、`QG_ExportImage`、`QG_StepPreview`。
+9 个节点从零实现，没有对应的上游项目：`QG_ColorMatch`、`QG_ColorMatchPro`、`QG_BoolToggle`、`QG_Number`、`QG_Slider`、`QG_Math`、`QG_Exists`、`QG_ExportImage`、`QG_StepPreview`。
 
 另有 16 个节点合并自作者自己的插件（`QG_RemoveBGByMask`、`QG_MaskBlend`、`QG_MaskAnalysis`、`QG_MaskDetect`、`QG_RunTimer`、`QG_AddWatermark`、`QG_EmptyLatentResolution`、`QG_ImageScale`、`QG_RatioResolution`、`QG_MDReader`、`QG_TripleLoader`、`QG_PromptLine`、`QG_ImageNormalize`、`QG_Note`、`QG_SetPoint`、`QG_GetPoint`），版权同属作者。
 

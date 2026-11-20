@@ -69,6 +69,21 @@ _LANG_ZH_FROM = {"auto": "自动检测", **_LANG_ZH}
 
 
 LEGACY = {
+    "QG_ImageScaleRange": {
+        "limit_mode": {
+            "long": "长边", "short": "短边", "width": "宽度",
+            "height": "高度", "both": "宽度与高度",
+        },
+    },
+    "QG_ColorImage": {
+        "size": {
+            "custom": "自定义",
+            "256x256": "256x256", "512x512": "512x512", "768x768": "768x768",
+            "1024x1024": "1024x1024", "512x768": "512x768", "768x512": "768x512",
+            "768x1024": "768x1024", "1024x768": "1024x768",
+            "1024x1536": "1024x1536", "1536x1024": "1536x1024",
+        },
+    },
     "QG_AddWatermark": {
         # 源包（QG-Multipack）的锚点值是中文，搬入时换成英文 key；
         # 顺序必须与节点里的 _H_POSITIONS / _V_POSITIONS 一致。
@@ -81,6 +96,29 @@ LEGACY = {
             "center": "居中",
             "top": "靠上",
             "bottom": "靠下",
+        },
+    },
+    "QG_CropForInpaint": {
+        "rescale_algorithm": {
+            # 与 locales/zh/nodeDefs.json 的同名下拉一致；V1 时代 AST 对
+            # list(RESIZE_ALGORITHMS) 求值失败静默跳过，一直漏登记。
+            "bilinear": "双线性",
+            "bicubic": "双三次",
+            "area": "面积平均",
+            "nearest": "最近邻",
+        },
+    },
+    "QG_ColorMatchPro": {
+        "method": {
+            "mkl": "MKL 线性映射",
+            "hm": "直方图匹配",
+            "reinhard": "莱因哈德色彩迁移",
+            "mvgd": "多元高斯分布",
+            "hm-mvgd-hm": "直方图-多元高斯-直方图",
+            "hm-mkl-hm": "直方图-MKL-直方图",
+            "reinhard_lab": "Reinhard Lab（快速）",
+            "wavelet": "小波变换",
+            "adain": "自适应实例统一化",
         },
     },
     "QG_ColorMatch": {

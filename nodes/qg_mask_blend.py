@@ -56,7 +56,9 @@
 import torch
 import torch.nn.functional as F
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 # 下拉值用英文 key（存进 widgets_values 的是数据不是文案）；中文界面显示什么
 # 由 nodes/_qg_combo_legacy.py 的 LEGACY 表 + web/shared/combo_zh.mjs 决定。
@@ -253,8 +255,9 @@ def apply_bbox(mask, bbox, align):
 # 节点外壳
 # ---------------------------------------------------------------------------
 
-@combo_legacy("QG_MaskBlend")
-class QGMaskBlend:
+# V1 @combo_legacy("QG_MaskBlend")：3 下拉有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce，与 V1 等价。
+class QGMaskBlend(io.ComfyNode):
     """两张遮罩做混合运算，再按 BBOX 规则输出矩形遮罩与宽高。"""
 
     DESCRIPTION = "Blend two masks with add / subtract / intersect / exclude, or keep one half by direction, then optionally replace the non-zero bounding box with a solid rectangle according to the BBOX rule and report that rectangle's width and height. Sizes are matched automatically and a batch uses the combined extent of every frame."
@@ -263,78 +266,51 @@ class QGMaskBlend:
         "intersect", "遮罩", "蒙版", "混合", "相加", "相减", "相交",
         "外接矩形", "对齐", "qg",
     ]
-    CATEGORY = "QG-tools/Mask"
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("MASK", "INT", "INT")
-    RETURN_NAMES = ("mask", "width", "height")
-    OUTPUT_TOOLTIPS = (
-        "The blended mask, with the solid rectangle applied when a BBOX "
-        "rule was chosen.",
-        "Width of the reported rectangle in pixels; 0 when no rectangle "
-        "was applied.",
-        "Height of the reported rectangle in pixels; 0 when no rectangle "
-        "was applied.",
-    )
-
     @classmethod
-    def VALIDATE_INPUTS(cls, blend_mode=None, bbox=None, align=None):
-        # 三个下拉的中文标签（相加 / 相减 …；不替换 / 正方形（长边）…；左 / 居中 …）
-        # 登记在 nodes/_qg_combo_legacy.py 的 LEGACY 表里，值本身是英文。
-        # 具名列出的作用只有一个：让 ComfyUI 跳过「值必须在列表里」，
-        # 别的输入（两张遮罩）照常校验。
+    def validate_inputs(cls, blend_mode=None, bbox=None, align=None):
+        # 三个下拉的中文标签在 LEGACY 表；具名跳过列表校验，值由 coerce 换回。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "blend_mode": (
-                    BLEND_MODES,
-                    {
-                        "default": "subtract",
-                        "tooltip": "add / subtract / intersect / exclude work per pixel (exclude is NOR: the area neither mask covers). left / right / top / bottom compare the two masks' non-zero extents, cut at the nearer edge and keep that half of mask 1 only.",
-                    },
-                ),
-                "bbox": (
-                    BBOX_MODES,
-                    {
-                        "default": "off",
-                        "tooltip": "Replace the non-zero bounding box of the blended mask with a solid white rectangle (not a crop). off outputs the blended mask as it is and still reports the box size. The other rules rescale the box 1:1; align decides where it lands.",
-                    },
-                ),
-                "align": (
-                    ALIGN_MODES,
-                    {
-                        "default": "center",
-                        "tooltip": "Where the new rectangle sits relative to the original bounding box. Has no effect when bbox is off or original.",
-                    },
-                ),
-            },
-            "optional": {
-                "mask1": (
-                    "MASK",
-                    {
-                        "tooltip": "First mask. Its canvas size is the reference; the other mask is resized to match when the sizes differ.",
-                    },
-                ),
-                "mask2": (
-                    "MASK",
-                    {
-                        "tooltip": "Second mask. Leave it unconnected to use an all-black mask of the same size.",
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_MaskBlend",
+            display_name="Mask Blend",
+            category="QG-tools/Mask",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Combo.Input("blend_mode", options=BLEND_MODES, default="subtract",
+                    tooltip="add / subtract / intersect / exclude work per pixel (exclude is NOR: the area neither mask covers). left / right / top / bottom compare the two masks' non-zero extents, cut at the nearer edge and keep that half of mask 1 only."),
+                io.Combo.Input("bbox", options=BBOX_MODES, default="off",
+                    tooltip="Replace the non-zero bounding box of the blended mask with a solid white rectangle (not a crop). off outputs the blended mask as it is and still reports the box size. The other rules rescale the box 1:1; align decides where it lands."),
+                io.Combo.Input("align", options=ALIGN_MODES, default="center",
+                    tooltip="Where the new rectangle sits relative to the original bounding box. Has no effect when bbox is off or original."),
+                io.Mask.Input("mask1", optional=True,
+                    tooltip="First mask. Its canvas size is the reference; the other mask is resized to match when the sizes differ."),
+                io.Mask.Input("mask2", optional=True,
+                    tooltip="Second mask. Leave it unconnected to use an all-black mask of the same size."),
+            ],
+            outputs=[
+                io.Mask.Output("mask", tooltip="The blended mask, with the solid rectangle applied when a BBOX rule was chosen."),
+                io.Int.Output("width", tooltip="Width of the reported rectangle in pixels; 0 when no rectangle was applied."),
+                io.Int.Output("height", tooltip="Height of the reported rectangle in pixels; 0 when no rectangle was applied."),
+            ],
+        )
 
-    def execute(self, blend_mode="subtract", bbox="off", align="center",
+    @classmethod
+    def execute(cls, blend_mode="subtract", bbox="off", align="center",
                 mask1=None, mask2=None):
+        # V1 装饰器 coerce 三个下拉值，V3 显式保留。
+        blend_mode = coerce("QG_MaskBlend", "blend_mode", blend_mode)
+        bbox = coerce("QG_MaskBlend", "bbox", bbox)
+        align = coerce("QG_MaskBlend", "align", align)
         a, b = _align_pair(_as_bhw(mask1), _as_bhw(mask2))
         if a is None:                       # 两个输入都没接
-            return (torch.zeros((1, 1, 1), dtype=torch.float32), 0, 0)
+            return io.NodeOutput(torch.zeros((1, 1, 1), dtype=torch.float32), 0, 0)
         blended = blend_masks(a, b, blend_mode)
         out, width, height = apply_bbox(blended, bbox, align)
-        return (out.contiguous().float(), int(width), int(height))
+        return io.NodeOutput(out.contiguous().float(), int(width), int(height))
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskBlend": QGMaskBlend}

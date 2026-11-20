@@ -12,10 +12,34 @@
 //
 // 数据源：nodes/_qg_combo_legacy.py 的 LEGACY 表（Python 侧执行期兜底用的是同一张表）。
 
-import { wantsChinese } from "./zh.mjs?v=202611141000";
-import { chainCallback } from "./index.mjs?v=202611141000";
+import { wantsChinese } from "./zh.mjs?v=202611182145";
+import { chainCallback } from "./index.mjs?v=202611182145";
 
 export const COMBO_ZH = {
+    QG_ImageScaleRange: {
+        limit_mode: {
+            "long": "长边",
+            "short": "短边",
+            "width": "宽度",
+            "height": "高度",
+            "both": "宽度与高度",
+        },
+    },
+    QG_ColorImage: {
+        size: {
+            "custom": "自定义",
+            "256x256": "256x256",
+            "512x512": "512x512",
+            "768x768": "768x768",
+            "1024x1024": "1024x1024",
+            "512x768": "512x768",
+            "768x512": "768x512",
+            "768x1024": "768x1024",
+            "1024x768": "1024x768",
+            "1024x1536": "1024x1536",
+            "1536x1024": "1536x1024",
+        },
+    },
     QG_AddWatermark: {
         h_position: {
             "center": "居中",
@@ -26,6 +50,27 @@ export const COMBO_ZH = {
             "center": "居中",
             "top": "靠上",
             "bottom": "靠下",
+        },
+    },
+    QG_CropForInpaint: {
+        rescale_algorithm: {
+            "bilinear": "双线性",
+            "bicubic": "双三次",
+            "area": "面积平均",
+            "nearest": "最近邻",
+        },
+    },
+    QG_ColorMatchPro: {
+        method: {
+            "mkl": "MKL 线性映射",
+            "hm": "直方图匹配",
+            "reinhard": "莱因哈德色彩迁移",
+            "mvgd": "多元高斯分布",
+            "hm-mvgd-hm": "直方图-多元高斯-直方图",
+            "hm-mkl-hm": "直方图-MKL-直方图",
+            "reinhard_lab": "Reinhard Lab（快速）",
+            "wavelet": "小波变换",
+            "adain": "自适应实例统一化",
         },
     },
     QG_ColorMatch: {
@@ -598,7 +643,12 @@ function applyLabels(node, table) {
 function migrateSaved(info, table) {
     const saved = info?.widgets_values;
     if (!Array.isArray(saved)) return;
-    const widgets = this.widgets || [];
+    // 🔴 必须排除 `serialize === false` 的控件（如 widget_card 的 qg_widget_card）：
+    //    它们不写进 widgets_values，却仍留在 this.widgets 里 —— 不排除的话
+    //    saved.length(控件数) 与 widgets.length(含卡片) 永远不等，这里直接 return，
+    //    老中文值从来没被迁过（11-17 实测 QG_Number：kind 加载后仍是 "整数"）。
+    //    V1 时期靠后端 VALIDATE_INPUTS + @combo_legacy 兜住执行，所以看不出来。
+    const widgets = (this.widgets || []).filter((w) => w?.serialize !== false);
     if (saved.length !== widgets.length) return; // 结构对不上就别猜，交给后端 coerce
     for (let i = 0; i < widgets.length; i += 1) {
         const entry = table[widgets[i]?.name];

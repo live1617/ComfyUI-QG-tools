@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import torch
 
+from comfy_api.latest import io
+
 from ._qg_tile_image_helpers import STITCHER_KIND, _join, _rgb
 
-class QGTiledUpscaleStitch:
+class QGTiledUpscaleStitch(io.ComfyNode):
     """把采样器重绘的 tiles 拼回成品图：渐变融合 + LAB 保色。"""
 
     CATEGORY = "QG-tools/Image"
@@ -27,50 +29,55 @@ class QGTiledUpscaleStitch:
         "tiled upscale stitch", "join tiles", "merge tiles", "tiled upscale",
         "拼接", "拼回", "融合", "qg",
     ]
-    OUTPUT_NODE = False
-    INPUT_IS_LIST = True
-    FUNCTION = "stitch"
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
-    OUTPUT_IS_LIST = (True,)
-    OUTPUT_TOOLTIPS = (
-        "The finished picture at the size you asked for. A list of pictures comes out as a list, one finished picture each.",
-    )
+    @classmethod
+    def define_schema(cls):
+        # V1 的 INPUT_IS_LIST=True → Schema(is_input_list=True)：所有输入按 list 传入，
+        # execute 收到的 tiles/stitcher/keep_colors 形态与 V1 stitch() 完全一致。
+        # V1 的 OUTPUT_IS_LIST=(True,) → io.Image.Output(is_output_list=True)。
+        return io.Schema(
+            node_id="QG_TiledUpscaleStitch",
+            display_name="Tiled Upscale Stitch",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            is_input_list=True,
+            inputs=[
+                io.Image.Input(
+                    "tiles",
+                    tooltip=(
+                        "The redrawn tiles, in the order Tiled Upscale gave them. A tile "
+                        "that came back at another size is fitted to its place."
+                    ),
+                ),
+                # 自定义类型：V1 的 QG_TILE_STITCHER 原样保留，连线契约不变。
+                io.Custom("QG_TILE_STITCHER").Input(
+                    "stitcher",
+                    tooltip="The stitcher from Tiled Upscale.",
+                ),
+                io.Float.Input(
+                    "keep_colors",
+                    optional=True,
+                    default=1.0,
+                    min=0.0,
+                    max=1.0,
+                    step=0.05,
+                    tooltip=(
+                        "1 keeps your picture's colors: each tile is matched to the same "
+                        "tile of your picture. Lower lets the model's colors through; 0 is off."
+                    ),
+                ),
+            ],
+            outputs=[
+                io.Image.Output(
+                    "image",
+                    is_output_list=True,
+                    tooltip="The finished picture at the size you asked for. A list of pictures comes out as a list, one finished picture each.",
+                ),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "tiles": (
-                    "IMAGE",
-                    {
-                        "tooltip": (
-                            "The redrawn tiles, in the order Tiled Upscale gave them. A tile "
-                            "that came back at another size is fitted to its place."
-                        ),
-                    },
-                ),
-                "stitcher": (
-                    "QG_TILE_STITCHER",
-                    {"tooltip": "The stitcher from Tiled Upscale."},
-                ),
-            },
-            "optional": {
-                "keep_colors": (
-                    "FLOAT",
-                    {
-                        "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
-                        "tooltip": (
-                            "1 keeps your picture's colors: each tile is matched to the same "
-                            "tile of your picture. Lower lets the model's colors through; 0 is off."
-                        ),
-                    },
-                ),
-            },
-        }
-
-    def stitch(self, tiles, stitcher, keep_colors=None):
+    def execute(cls, tiles, stitcher, keep_colors=None):
         # A list of pictures runs Tiled Upscale once per picture: the tiles
         # arrive as one list, picture after picture, with one stitcher each.
         stitchers = list(stitcher) if isinstance(stitcher, (list, tuple)) else [stitcher]
@@ -100,7 +107,7 @@ class QGTiledUpscaleStitch:
         for item, count in zip(stitchers, counts):
             pictures.append(_join(redrawn[start:start + count], item, strength))
             start += count
-        return (pictures,)
+        return io.NodeOutput(pictures)
 
 
 NODE_CLASS_MAPPINGS = {"QG_TiledUpscaleStitch": QGTiledUpscaleStitch}

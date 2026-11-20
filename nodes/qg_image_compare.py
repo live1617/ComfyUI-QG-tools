@@ -32,6 +32,7 @@ from pathlib import Path
 import folder_paths
 import torch
 from PIL import Image
+from comfy_api.latest import io
 
 from ._qg_compare_helpers import (
     MESSAGES,
@@ -229,7 +230,7 @@ def _register_save_route() -> None:
         return web.json_response(answer)
 
 
-class QGImageCompare:
+class QGImageCompare(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "A/B compare: two images in one panel. Slide to see the difference, or hold A "
@@ -249,70 +250,48 @@ class QGImageCompare:
         self._prefix = temp_prefix()
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image_a": (
-                    "IMAGE",
-                    {
-                        "tooltip": (
-                            "The reference batch. The first frame becomes preview A and the "
-                            "whole batch goes out through the output untouched."
-                        ),
-                    },
-                ),
-                "image_b": (
-                    "IMAGE",
-                    {
-                        "tooltip": (
-                            "The comparison batch. The first frame becomes preview B, revealed "
-                            "by sliding across the panel, switching to B, or erasing."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "filename": (
-                    "STRING",
-                    {
-                        "forceInput": True,
-                        "tooltip": (
-                            "Optional. The filename used when saving the eraser result, "
-                            "typically the source image's name; any directory and extension are "
-                            "stripped. Unwired, the name typed on the node is used."
-                        ),
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        # is_output_node=True 承担 V1 OUTPUT_NODE；filename 是 forceInput 槽。
+        return io.Schema(
+            node_id="QG_ImageCompare",
+            display_name="Image Compare",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("image_a", tooltip="The reference batch. The first frame becomes preview A and the whole batch goes out through the output untouched."),
+                io.Image.Input("image_b", tooltip="The comparison batch. The first frame becomes preview B, revealed by sliding across the panel, switching to B, or erasing."),
+                io.String.Input("filename", optional=True, extra_dict={"forceInput": True},
+                    tooltip="Optional. The filename used when saving the eraser result, typically the source image's name; any directory and extension are stripped. Unwired, the name typed on the node is used."),
+            ],
+            outputs=[
+                io.Image.Output("image_a", tooltip="The batch fed into A, passed straight through so the node can sit mid-graph."),
+                io.Image.Output("image_b", tooltip="The batch fed into B, untouched: the picture you compare against, often the edited one."),
+            ],
+            is_output_node=True,
+        )
 
-    RETURN_TYPES = ("IMAGE", "IMAGE")
-    RETURN_NAMES = ("image_a", "image_b")
-    OUTPUT_TOOLTIPS = (
-        "The batch fed into A, passed straight through so the node can sit "
-        "mid-graph.",
-        "The batch fed into B, untouched: the picture you compare against, "
-        "often the edited one.",
-    )
-    OUTPUT_NODE = True
-    FUNCTION = "compare"
-
-    def compare(self, image_a, image_b, filename=None):
+    @classmethod
+    def execute(cls, image_a, image_b, filename=None):
+        # 原 compare 实例方法体逐字不动（用 self._prefix / self._preview_file），
+        # V3 execute 是 classmethod，这里实例化取 per-instance 前缀。
+        inst = cls()
         # 透明部分要留着：面板在它们底下铺棋盘格，橡皮擦也得能把它们混回来。
-        preview_a = save_temp_preview(image_a, self._prefix, keep_alpha=True)
-        preview_b = save_temp_preview(image_b, self._prefix, keep_alpha=True)
+        preview_a = save_temp_preview(image_a, inst._prefix, keep_alpha=True)
+        preview_b = save_temp_preview(image_b, inst._prefix, keep_alpha=True)
         wired = tidy_save_name(filename)
-        return {
-            "ui": {
+        # V1 {"ui":..., "result":...} → V3 io.NodeOutput(*result, ui=...)。
+        return io.NodeOutput(
+            image_a, image_b,
+            ui={
                 "a_images": [preview_a],
                 "b_images": [preview_b],
                 # 橡皮擦保存时回传的键，所以它从不指名要读哪个文件。
-                "pair": [remember_pair(self._preview_file(preview_a), self._preview_file(preview_b), wired)],
+                "pair": [remember_pair(inst._preview_file(preview_a), inst._preview_file(preview_b), wired)],
                 # 连线时文件会叫什么名字。
                 "save_name": [wired],
             },
-            "result": (image_a, image_b),
-        }
+        )
 
     @staticmethod
     def _preview_file(preview: dict) -> Path:

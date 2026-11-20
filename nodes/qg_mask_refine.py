@@ -29,10 +29,12 @@ import numpy as np
 import folder_paths
 from PIL import Image
 
+from comfy_api.latest import io
+
 from ._qg_mask_refine_helpers import EDGE_REFINE_MODES, refine_mask
 
 
-class QGMaskRefine:
+class QGMaskRefine(io.ComfyNode):
     CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
         "Cleans up a mask in one fixed-order pass: expand (grow/shrink by whole "
@@ -45,141 +47,46 @@ class QGMaskRefine:
     )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "mask": ("MASK", {"tooltip": "BHW mask; white is the selected area."}),
-                "expand": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": -1024,
-                        "max": 1024,
-                        "step": 1,
-                        "tooltip": "Pixels to grow (+) or shrink (-) the mask.",
-                    },
-                ),
-                "blur": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": 0.0,
-                        "max": 100.0,
-                        "step": 0.1,
-                        "tooltip": "Gaussian feather strength in pixels; 0 keeps hard edges.",
-                    },
-                ),
-                "fill_holes": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": (
-                            "Fill fully enclosed gaps inside the mask before feathering. "
-                            "Gaps that touch the frame edge never count as holes."
-                        ),
-                    },
-                ),
-                "smooth": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 256,
-                        "step": 1,
-                        "tooltip": (
-                            "Melts staircase jaggies by this many pixels while keeping a "
-                            "hard edge; 0 is off. Runs before the feather blur."
-                        ),
-                    },
-                ),
-                "black_point": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.01,
-                        "tooltip": (
-                            "Mask values at or below this become fully black; clears faint "
-                            "gray haze outside the subject. Applied last."
-                        ),
-                    },
-                ),
-                "white_point": (
-                    "FLOAT",
-                    {
-                        "default": 1.0,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.01,
-                        "tooltip": (
-                            "Mask values at or above this become fully white; solidifies "
-                            "the mask core. Applied last."
-                        ),
-                    },
-                ),
-                "edge_refine": (
-                    list(EDGE_REFINE_MODES),
-                    {
-                        "default": "off",
-                        "tooltip": (
-                            "Snap the mask edge to the guide_image. 'guided filter' is fast "
-                            "edge-aware filtering (needs opencv-contrib-python); 'matting' "
-                            "solves closed-form alpha matting around the edge (needs "
-                            "pymatting). Both require the guide_image input."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "preview": (
-                    "BOOLEAN",
-                    {
-                        "default": True,
-                        "tooltip": (
-                            "Show the refined mask on the node face. Off skips writing the "
-                            "preview file to ComfyUI's temp folder."
-                        ),
-                    },
-                ),
-                "guide_image": (
-                    "IMAGE",
-                    {
-                        "tooltip": (
-                            "RGB frames the mask belongs to; required when edge_refine is "
-                            "'guided filter' or 'matting'."
-                        ),
-                    },
-                ),
-                "max_hole_size": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": 0.0,
-                        "max": 100.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "The biggest hole fill_holes fills, in percent of the picture. "
-                            "2 fills the gaps a quick brush leaves but keeps a person or pet "
-                            "you left unpainted; 0 fills every hole."
-                        ),
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        # is_output_node=True 承担 V1 的 OUTPUT_NODE（带预览的中间节点）。
+        return io.Schema(
+            node_id="QG_MaskRefine",
+            display_name="Mask Refine",
+            category="QG-tools/Mask",
+            description=cls.DESCRIPTION,
+            inputs=[
+                io.Mask.Input("mask", tooltip="BHW mask; white is the selected area."),
+                io.Int.Input("expand", default=0, min=-1024, max=1024, step=1,
+                    tooltip="Pixels to grow (+) or shrink (-) the mask."),
+                io.Float.Input("blur", default=0.0, min=0.0, max=100.0, step=0.1,
+                    tooltip="Gaussian feather strength in pixels; 0 keeps hard edges."),
+                io.Boolean.Input("fill_holes", default=False,
+                    tooltip="Fill fully enclosed gaps inside the mask before feathering. Gaps that touch the frame edge never count as holes."),
+                io.Int.Input("smooth", default=0, min=0, max=256, step=1,
+                    tooltip="Melts staircase jaggies by this many pixels while keeping a hard edge; 0 is off. Runs before the feather blur."),
+                io.Float.Input("black_point", default=0.0, min=0.0, max=1.0, step=0.01,
+                    tooltip="Mask values at or below this become fully black; clears faint gray haze outside the subject. Applied last."),
+                io.Float.Input("white_point", default=1.0, min=0.0, max=1.0, step=0.01,
+                    tooltip="Mask values at or above this become fully white; solidifies the mask core. Applied last."),
+                io.Combo.Input("edge_refine", options=list(EDGE_REFINE_MODES), default="off",
+                    tooltip="Snap the mask edge to the guide_image. 'guided filter' is fast edge-aware filtering (needs opencv-contrib-python); 'matting' solves closed-form alpha matting around the edge (needs pymatting). Both require the guide_image input."),
+                io.Boolean.Input("preview", optional=True, default=True,
+                    tooltip="Show the refined mask on the node face. Off skips writing the preview file to ComfyUI's temp folder."),
+                io.Image.Input("guide_image", optional=True,
+                    tooltip="RGB frames the mask belongs to; required when edge_refine is 'guided filter' or 'matting'."),
+                io.Float.Input("max_hole_size", optional=True, default=0.0, min=0.0, max=100.0, step=0.1,
+                    tooltip="The biggest hole fill_holes fills, in percent of the picture. 2 fills the gaps a quick brush leaves but keeps a person or pet you left unpainted; 0 fills every hole."),
+            ],
+            outputs=[
+                io.Mask.Output("mask", tooltip="The refined BHW mask."),
+                io.Mask.Output("mask_inverted", tooltip="The refined mask inverted, for operations that target the background."),
+            ],
+            is_output_node=True,
+        )
 
-    RETURN_TYPES = ("MASK", "MASK")
-    RETURN_NAMES = ("mask", "mask_inverted")
-    OUTPUT_TOOLTIPS = (
-        "The refined BHW mask.",
-        "The refined mask inverted, for operations that target the background.",
-    )
-    FUNCTION = "refine"
-    # 带预览的中间节点，跟本插件其它预览节点一致（见文件头说明）。
-    OUTPUT_NODE = True
-
-    def refine(
-        self,
+    @classmethod
+    def execute(
+        cls,
         mask,
         expand,
         blur,
@@ -205,14 +112,15 @@ class QGMaskRefine:
             max_hole_size=float(max_hole_size),
         )
         if not preview:
-            return (refined, inverted)
+            return io.NodeOutput(refined, inverted)
         # 预览画的是修好的遮罩本身：上游展示的是喂进 mask 的那个东西，而分割类
         # 节点上游根本没有图可看，于是最需要看结果的时候面板恰恰是空的。
+        # V1 {"ui":..., "result":...} → V3 io.NodeOutput(*result, ui=...)。
         try:
-            return {"ui": {"images": self._preview(refined)}, "result": (refined, inverted)}
+            return io.NodeOutput(refined, inverted, ui={"images": cls._preview(refined)})
         except Exception as exc:  # 预览失败不影响出结果
             logging.warning("[QG-tools] Mask Refine: preview unavailable (%s).", exc)
-            return (refined, inverted)
+            return io.NodeOutput(refined, inverted)
 
     @staticmethod
     def _preview(mask):

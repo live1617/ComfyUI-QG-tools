@@ -31,7 +31,9 @@ import requests
 from server import PromptServer
 from aiohttp import web
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 # 连接超时 6s / 读取超时 20s。国内直连 Google 时连接阶段最容易被卡，收紧连接超时
 # 可以让第一跳尽快失败、立即落到第二跳（绕代理直连）重试。
@@ -360,49 +362,11 @@ def _register_manual_route():
 _register_manual_route()
 
 
-@combo_legacy("QG_GoogleTranslateText")
-class QGGoogleTranslateText:
+# V1 @combo_legacy("QG_GoogleTranslateText")：两个语言下拉有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce，与 V1 等价。
+class QGGoogleTranslateText(io.ComfyNode):
     """Translate a text prompt into another language with Google Translate."""
 
-    @classmethod
-    def VALIDATE_INPUTS(cls, from_translate=None, to_translate=None):
-        # 两个语言下拉的中文标签（南非荷兰语 / 中文（简体）…）登记在
-        # nodes/_qg_combo_legacy.py 的 LEGACY 表里，值仍然是 BCP-47 语言码。
-        # 这里把两个选项名报上去，让 ComfyUI 跳过「值必须在列表里」——
-        # 中文界面上显示的是中文名，直接往 API 里塞中文名也不会炸。
-        return True
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "from_translate": (
-                    ["auto"] + list(LANGUAGES.keys()),
-                    {"default": "auto",
-                     "tooltip": "Source language. \"auto\" lets Google detect it."},
-                ),
-                "to_translate": (
-                    list(LANGUAGES.keys()),
-                    {"default": "en",
-                     "tooltip": "Target language for the translation."},
-                ),
-                "manual_translate": (
-                    "BOOLEAN",
-                    {"default": False,
-                     "tooltip": "When on, the node passes the text through and you translate in place with the Manual Translate button."},
-                ),
-                "text": (
-                    "STRING",
-                    {"multiline": True,
-                     "tooltip": "The text to translate. Text longer than Google's per-request limit is split on line breaks and rejoined, so keep one sentence per line for the cleanest split."},
-                ),
-            }
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("text",)
-    FUNCTION = "translate_text"
-    OUTPUT_TOOLTIPS = ("The translated text.",)
     CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Translate a text prompt into another language using Google Translate. "
@@ -415,12 +379,44 @@ class QGGoogleTranslateText:
         "through unchanged."
     )
 
-    def translate_text(self, from_translate, to_translate, manual_translate, text):
+    @classmethod
+    def validate_inputs(cls, from_translate=None, to_translate=None):
+        # 两个语言下拉的中文标签登记在 LEGACY 表；具名报上去跳过列表校验，
+        # 中文界面显示中文名，直接往 API 塞中文名也不炸。值由 coerce 换回 BCP-47。
+        return True
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_GoogleTranslateText",
+            display_name="Google Translate",
+            category="QG-tools/Text",
+            description=cls.DESCRIPTION,
+            inputs=[
+                io.Combo.Input("from_translate", options=["auto"] + list(LANGUAGES.keys()),
+                    default="auto", tooltip="Source language. \"auto\" lets Google detect it."),
+                io.Combo.Input("to_translate", options=list(LANGUAGES.keys()), default="en",
+                    tooltip="Target language for the translation."),
+                io.Boolean.Input("manual_translate", default=False,
+                    tooltip="When on, the node passes the text through and you translate in place with the Manual Translate button."),
+                io.String.Input("text", multiline=True,
+                    tooltip="The text to translate. Text longer than Google's per-request limit is split on line breaks and rejoined, so keep one sentence per line for the cleanest split."),
+            ],
+            outputs=[
+                io.String.Output("text", tooltip="The translated text."),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, from_translate, to_translate, manual_translate, text):
+        # V1 装饰器 coerce 两个语言下拉值，V3 显式保留。
+        from_translate = coerce("QG_GoogleTranslateText", "from_translate", from_translate)
+        to_translate = coerce("QG_GoogleTranslateText", "to_translate", to_translate)
         text = normalize_text(text)
         if manual_translate:
-            return (text,)
+            return io.NodeOutput(text)
         translated = translate(text, from_translate, to_translate)
-        return (translated,)
+        return io.NodeOutput(translated)
 
 
 NODE_CLASS_MAPPINGS = {

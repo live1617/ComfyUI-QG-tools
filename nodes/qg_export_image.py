@@ -35,7 +35,9 @@ import torch
 from PIL import Image
 
 import folder_paths
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 FORMATS = ["JPEG", "PNG", "WEBP"]
 FORMAT_EXT = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
@@ -274,8 +276,9 @@ def _save_options(image_format, quality, subsampling):
     return {"format": "WEBP", "quality": int(quality), "method": 2}
 
 
-@combo_legacy("QG_ExportImage")
-class QGExportImage:
+# V1 @combo_legacy("QG_ExportImage")：format/subsampling/alpha_mode 有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce，与 V1 等价。
+class QGExportImage(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Save an image batch as JPEG, PNG or WEBP, with the quality knob in the "
@@ -303,113 +306,43 @@ class QGExportImage:
         "画质",
     ]
 
-    RETURN_TYPES = ()
-    RETURN_NAMES = ()
-    FUNCTION = "run"
-    OUTPUT_NODE = True
-
     @classmethod
-    def VALIDATE_INPUTS(cls, subsampling=None, alpha_mode=None):
-        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
-        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
-        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+    def validate_inputs(cls, subsampling=None, alpha_mode=None):
+        # 两个下拉中文遗留值在 LEGACY 表；具名跳过列表校验，值由 execute coerce 换回。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "images": (
-                    "IMAGE",
-                    {
-                        "forceInput": True,
-                        "tooltip": "The images to export. Every frame in a batch is written out as its own file.",
-                    },
-                ),
-                "format": (
-                    FORMATS,
-                    {
-                        "default": "JPEG",
-                        "tooltip": "JPEG is lossy and the smallest; PNG is lossless and bulky; WEBP sits between the two and keeps transparency.",
-                    },
-                ),
-                "quality": (
-                    "INT",
-                    {
-                        "default": 90,
-                        "min": 1,
-                        "max": 100,
-                        "step": 1,
-                        "tooltip": (
-                            "Encoding quality, used by JPEG and WEBP only, since PNG is "
-                            "lossless and ignores it. 90 is the usual visually lossless "
-                            "setting; drop to 85 to save real space, and below that the loss "
-                            "starts to show."
-                        ),
-                    },
-                ),
-                "subsampling": (
-                    list(SUBSAMPLING.keys()),
-                    {
-                        "default": "4:4:4",
-                        "tooltip": (
-                            "Chroma subsampling, JPEG only. 4:4:4 keeps every bit of colour "
-                            "detail; 4:2:2 saves around 15% and softens red and orange edges; "
-                            "4:2:0 saves a little more and only shows when you view at half "
-                            "size."
-                        ),
-                    },
-                ),
-                "alpha_mode": (
-                    ALPHA_MODES,
-                    {
-                        "default": "on-white",
-                        "tooltip": (
-                            "What to do with a transparency channel on the input: composite "
-                            "onto white or black and save an opaque image, or keep the "
-                            "transparency as it is. Only PNG and WEBP support it, and choosing "
-                            "JPEG falls back to white."
-                        ),
-                    },
-                ),
-                "filename_prefix": (
-                    "STRING",
-                    {
-                        # 跟 ComfyUI 原生 SaveImage 同一个默认值，两边的出图能并排放
-                        "default": DEFAULT_PREFIX,
-                        "tooltip": (
-                            "Filename prefix -- the name only, no directory. Naming matches "
-                            "ComfyUI's own Save Image node exactly: the output looks like "
-                            "ComfyUI_00001_.png, a five digit counter that skips numbers "
-                            "already taken in the folder. Variables: %date:yyyyMMdd% for the "
-                            "date, %time:HHmmss% for the time, %INDEX% for the position in the "
-                            "batch, %BATCH% for the batch size; the native set %width% %height% "
-                            "%year% %month% %day% %hour% %minute% %second% %batch_num% works "
-                            "too."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "save_path": (
-                    "STRING",
-                    {
-                        "default": "",
-                        "tooltip": (
-                            "Leave empty to write into ComfyUI's output folder. You can also "
-                            "give a subfolder name such as auto/2026, a full absolute path "
-                            "(D:\\pics\\today), a network share (\\\\NAS\\share\\pics), a path "
-                            "holding environment variables (%USERPROFILE%\\Desktop\\pics), or one "
-                            "starting with a tilde (~\\Desktop\\pics). System folders, drive "
-                            "roots and a bare drive letter such as D: are all refused."
-                        ),
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        # 零输出 + OUTPUT_NODE；images 是 forceInput。
+        return io.Schema(
+            node_id="QG_ExportImage",
+            display_name="Export Image",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("images", extra_dict={"forceInput": True},
+                    tooltip="The images to export. Every frame in a batch is written out as its own file."),
+                io.Combo.Input("format", options=FORMATS, default="JPEG",
+                    tooltip="JPEG is lossy and the smallest; PNG is lossless and bulky; WEBP sits between the two and keeps transparency."),
+                io.Int.Input("quality", default=90, min=1, max=100, step=1,
+                    tooltip="Encoding quality, used by JPEG and WEBP only, since PNG is lossless and ignores it. 90 is the usual visually lossless setting; drop to 85 to save real space, and below that the loss starts to show."),
+                io.Combo.Input("subsampling", options=list(SUBSAMPLING.keys()), default="4:4:4",
+                    tooltip="Chroma subsampling, JPEG only. 4:4:4 keeps every bit of colour detail; 4:2:2 saves around 15% and softens red and orange edges; 4:2:0 saves a little more and only shows when you view at half size."),
+                io.Combo.Input("alpha_mode", options=ALPHA_MODES, default="on-white",
+                    tooltip="What to do with a transparency channel on the input: composite onto white or black and save an opaque image, or keep the transparency as it is. Only PNG and WEBP support it, and choosing JPEG falls back to white."),
+                io.String.Input("filename_prefix", default=DEFAULT_PREFIX,
+                    tooltip="Filename prefix -- the name only, no directory. Naming matches ComfyUI's own Save Image node exactly: the output looks like ComfyUI_00001_.png, a five digit counter that skips numbers already taken in the folder. Variables: %date:yyyyMMdd% for the date, %time:HHmmss% for the time, %INDEX% for the position in the batch, %BATCH% for the batch size; the native set %width% %height% %year% %month% %day% %hour% %minute% %second% %batch_num% works too."),
+                io.String.Input("save_path", optional=True, default="",
+                    tooltip="Leave empty to write into ComfyUI's output folder. You can also give a subfolder name such as auto/2026, a full absolute path (D:\\pics\\today), a network share (\\\\NAS\\share\\pics), a path holding environment variables (%USERPROFILE%\\Desktop\\pics), or one starting with a tilde (~\\Desktop\\pics). System folders, drive roots and a bare drive letter such as D: are all refused."),
+            ],
+            outputs=[],
+            is_output_node=True,
+        )
 
-    def run(
-        self,
+    @classmethod
+    def execute(
+        cls,
         images,
         format="JPEG",
         quality=90,
@@ -418,6 +351,10 @@ class QGExportImage:
         filename_prefix=DEFAULT_PREFIX,
         save_path="",
     ):
+        # V1 装饰器 coerce 三个下拉值，V3 显式保留。
+        format = coerce("QG_ExportImage", "format", format)
+        subsampling = coerce("QG_ExportImage", "subsampling", subsampling)
+        alpha_mode = coerce("QG_ExportImage", "alpha_mode", alpha_mode)
         if isinstance(images, torch.Tensor):
             batch = [images[i] for i in range(images.shape[0])] if images.ndim == 4 else [images]
         elif isinstance(images, (list, tuple)):
@@ -509,13 +446,11 @@ class QGExportImage:
                     "type": "temp",
                 })
 
-        return {
-            "ui": {
-                "images": previews,
-                "text": ["\n".join(written)],
-            },
-            "result": (),
-        }
+        # V1 {"ui":..., "result":()} → V3 io.NodeOutput(ui=...)（零结果）。
+        return io.NodeOutput(ui={
+            "images": previews,
+            "text": ["\n".join(written)],
+        })
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):

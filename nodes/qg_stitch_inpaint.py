@@ -17,13 +17,17 @@ rename here and not there silently breaks every saved workflow.
 
 from __future__ import annotations
 
+from comfy_api.latest import io
+
 from ._qg_execution_helpers import raise_if_interrupted
+from ._qg_follow_changes_helpers import follow_changes as _follow_changes
 from ._qg_inpaint_crop_helpers import (
     PASTE_ONTO_CROP,
     PASTE_ONTO_MODES,
     PASTE_ONTO_ORIGINAL,
     SEAM_CLASSIC,
     SEAM_MODES,
+    _resize_image,
     apply_stitch,
     paste_on_original,
     stitch_blend_mask,
@@ -39,7 +43,7 @@ _UNSET_SEAM = ("", None)
 _UNSET_PASTE_ONTO = ("", None)
 
 
-class QGStitchInpaint:
+class QGStitchInpaint(io.ComfyNode):
     CATEGORY = "QG-tools/Inpaint"
     DESCRIPTION = (
         "Pastes an inpainted crop back into the picture it came from. Wire the "
@@ -51,9 +55,12 @@ class QGStitchInpaint:
         "Raise color_match when the new area reads lighter, darker or warmer than "
         "the picture. fix_edge_halo recovers the true colour under a feathered "
         "seam when it leaves a dark or light rim, and needs the optional "
-        "pymatting package. Pixels the stitch does not reach are bit-identical "
-        "to the original - they never pass through a resize. blend_mask marks "
-        "exactly what the stitch changed, ready for a downstream colour match."
+        "pymatting package. follow_changes is for edit models that redraw the "
+        "whole crop: it lines the crop up with the picture and grows the paste "
+        "past the box so boots, rims and collars that reach out are not cut off "
+        "(classic seam and a plain crop only). Pixels the stitch does not reach "
+        "are bit-identical to the original - they never pass through a resize. "
+        "blend_mask marks exactly what the stitch changed, ready for a downstream colour match."
     )
     SEARCH_ALIASES = [
         "stitch inpaint",
@@ -67,104 +74,39 @@ class QGStitchInpaint:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "stitcher": (
-                    "AUSBOSS_STITCHER",
-                    {
-                        "tooltip": (
-                            "The stitcher from Crop For Inpaint (this pack's or "
-                            "AusBoss's), or from Crop + Rotate + Pad when "
-                            "outpainting a padded canvas."
-                        )
-                    },
-                ),
-                "inpainted": (
-                    "IMAGE",
-                    {
-                        "tooltip": (
-                            "The painted crop to paste back. It is resized to the "
-                            "crop window if the sampler changed its size."
-                        )
-                    },
-                ),
-            },
-            "optional": {
-                "fix_edge_halo": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": (
-                            "Recover the true colour under the feathered seam "
-                            "before pasting, so half-transparent edge pixels stop "
-                            "blending their background in twice and leaving a dark "
-                            "or light rim. Needs the optional pymatting package; "
-                            "without it the paste is unchanged and the console "
-                            "says so once."
-                        ),
-                    },
-                ),
-                "color_match": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.05,
-                        "tooltip": (
-                            "Match the new area's tone to the picture when it comes "
-                            "back lighter, darker or warmer. 1 is a full match, 0 "
-                            "is off. It needs a feather, since it reads the strip "
-                            "of the picture the model repainted."
-                        ),
-                    },
-                ),
-                "seam": (
-                    list(SEAM_MODES),
-                    {
-                        "default": SEAM_CLASSIC,
-                        "tooltip": (
-                            "How the new area joins the picture. Pick blend in for "
-                            "outpaints, turned or straight: the model's picture "
-                            "fades into yours across your picture's own edge. "
-                            "classic keeps the older paste for every existing "
-                            "workflow, and is what a plain crop always uses."
-                        ),
-                    },
-                ),
-                "paste_onto": (
-                    list(PASTE_ONTO_MODES),
-                    {
-                        "default": PASTE_ONTO_CROP,
-                        "tooltip": (
-                            "Where the stitched canvas lands. crop keeps the result "
-                            "at the crop's original size (the default, and what "
-                            "every earlier workflow did). original lays it onto the "
-                            "whole picture - only meaningful for a transform "
-                            "stitcher that records one; a plain Crop For Inpaint "
-                            "stitcher passes through unchanged either way. Matches "
-                            "AusBoss 2.25.0."
-                        ),
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_StitchInpaint",
+            display_name="Stitch Inpaint",
+            category="QG-tools/Inpaint",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Custom("AUSBOSS_STITCHER").Input("stitcher",
+                    tooltip="The stitcher from Crop For Inpaint (this pack's or AusBoss's), or from Crop + Rotate + Pad when outpainting a padded canvas."),
+                io.Image.Input("inpainted",
+                               tooltip="The painted crop to paste back. It is resized to the crop window if the sampler changed its size."),
+                io.Boolean.Input("fix_edge_halo", optional=True, default=False,
+                                 tooltip="Recover the true colour under the feathered seam before pasting, so half-transparent edge pixels stop blending their background in twice and leaving a dark or light rim. Needs the optional pymatting package; without it the paste is unchanged and the console says so once."),
+                io.Float.Input("color_match", optional=True, default=0.0, min=0.0, max=1.0, step=0.05,
+                               tooltip="Match the new area's tone to the picture when it comes back lighter, darker or warmer. 1 is a full match, 0 is off. It needs a feather, since it reads the strip of the picture the model repainted."),
+                io.Combo.Input("seam", optional=True, options=list(SEAM_MODES), default=SEAM_CLASSIC,
+                               tooltip="How the new area joins the picture. Pick blend in for outpaints, turned or straight: the model's picture fades into yours across your picture's own edge. classic keeps the older paste for every existing workflow, and is what a plain crop always uses."),
+                io.Combo.Input("paste_onto", optional=True, options=list(PASTE_ONTO_MODES), default=PASTE_ONTO_CROP,
+                               tooltip="Where the stitched canvas lands. crop keeps the result at the crop's original size (the default, and what every earlier workflow did). original lays it onto the whole picture - only meaningful for a transform stitcher that records one; a plain Crop For Inpaint stitcher passes through unchanged either way. Matches AusBoss 2.25.0."),
+                io.Boolean.Input("follow_changes", optional=True, default=False,
+                                 tooltip="Paste what the model changed next to the box too, so feet, rims and collars that reach past the box are not cut off. It also undoes a small zoom or shift the model drew. Turn it on for edit models that redraw the whole crop. Only applies with the classic seam and a plain inpaint crop - an outpaint has no picture under its new area to compare against."),
+            ],
+            outputs=[
+                io.Image.Output("image", tooltip="Original-size picture with the painted crop blended in; pixels outside the blend region are untouched."),
+                io.Mask.Output("blend_mask", tooltip="The feathered paste mask in the stitched picture's coordinates - white where the paint blended in, zero where the original survived. Wire it to a colour-match or compositing node to treat exactly the pasted region."),
+            ],
+        )
 
-    RETURN_TYPES = ("IMAGE", "MASK")
-    RETURN_NAMES = ("image", "blend_mask")
-    OUTPUT_TOOLTIPS = (
-        "Original-size picture with the painted crop blended in; pixels outside "
-        "the blend region are untouched.",
-        "The feathered paste mask in the stitched picture's coordinates - white "
-        "where the paint blended in, zero where the original survived. Wire it to "
-        "a colour-match or compositing node to treat exactly the pasted region.",
-    )
-    FUNCTION = "stitch"
-
-    def stitch(
-        self, stitcher, inpainted, fix_edge_halo=False, color_match=0.0,
-        seam=SEAM_CLASSIC, paste_onto=PASTE_ONTO_CROP,
+    @classmethod
+    def execute(
+        cls, stitcher, inpainted, fix_edge_halo=False, color_match=0.0,
+        seam=SEAM_CLASSIC, paste_onto=PASTE_ONTO_CROP, follow_changes=False,
     ):
         if seam in _UNSET_SEAM:
             seam = SEAM_CLASSIC
@@ -179,6 +121,13 @@ class QGStitchInpaint:
                 % (PASTE_ONTO_MODES, paste_onto)
             )
         raise_if_interrupted()
+        if follow_changes is True and seam == SEAM_CLASSIC and isinstance(stitcher, dict) \
+                and "canvas" in stitcher and stitcher.get("source_bbox") is None:
+            # An inpaint crop only: an outpaint's new area has no picture
+            # under it to compare against.
+            inpainted, stitcher, lines = _follow_changes(stitcher, inpainted, _resize_image)
+            for line in lines:
+                print("[QG-tools] Stitch Inpaint: %s" % line)
         image = apply_stitch(
             stitcher,
             inpainted,
@@ -191,10 +140,10 @@ class QGStitchInpaint:
         result = (image, blend)
         if paste_onto == PASTE_ONTO_ORIGINAL:
             result = paste_on_original(stitcher, *result)
-        return result
+        return io.NodeOutput(*result)
 
     @classmethod
-    def VALIDATE_INPUTS(cls, seam=SEAM_CLASSIC, paste_onto=PASTE_ONTO_CROP):
+    def validate_inputs(cls, seam=SEAM_CLASSIC, paste_onto=PASTE_ONTO_CROP):
         # Naming seam and paste_onto here takes them out of ComfyUI's own list
         # check, so the empty value an older workflow carries in their place
         # still queues.

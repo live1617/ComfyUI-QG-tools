@@ -37,7 +37,9 @@ import contextlib
 
 import torch
 import torch.nn.functional as F
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 from ._qg_tensor_helpers import as_image_batch, as_mask_batch
 
 # 逐帧配色匹配（直方图 / MMD / 小波…）是纯 CPU 的重活，长批次点取消要能停。
@@ -637,8 +639,10 @@ def _mmd_fit(src_pool, ref_pool, iters=MMD_ITERS, lr=MMD_LR, anchor=MMD_ANCHOR):
     return a.to(dtype), b.to(dtype)
 
 
-@combo_legacy("QG_ColorMatch")
-class QGColorMatch:
+# V1 @combo_legacy("QG_ColorMatch")：5 下拉有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce 五值；原 color_match 实例方法体逐字不动，
+# 改名为 _color_match 由 execute 包装（内部大量 self. 辅助方法）。
+class QGColorMatch(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Brings the reference picture's color onto the target: the target keeps its "
@@ -675,165 +679,52 @@ class QGColorMatch:
     ]
 
     @classmethod
-    def VALIDATE_INPUTS(cls, 
+    def validate_inputs(cls,
         method=None,
         ref_mode=None,
         src_mode=None,
         scope=None,
         mask_use=None,
     ):
-        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
-        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
-        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        # 五个下拉旧存档含中文值；具名跳过列表校验，值由 execute coerce 换回。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": (
-                    "IMAGE",
-                    {"tooltip": "The target image to recolor; a batch is processed frame by frame, and an alpha channel is passed through."},
-                ),
-                "reference": (
-                    "IMAGE",
-                    {"tooltip": "The reference the color is taken from. It need not match the target's size; only its statistics are used."},
-                ),
-                "method": (
-                    list(METHODS),
-                    {
-                        "default": "reinhard",
-                        "tooltip": (
-                            "Reinhard is the general-purpose one; wavelet changes low "
-                            "frequencies only and leaves texture alone; AdaIN is the "
-                            "per-channel sRGB version and is most direct on material from the "
-                            "same source; MMD follows non-Gaussian distributions; histogram "
-                            "matching aligns the distributions exactly and is the easiest to "
-                            "overdo; multivariate Gaussian also corrects channel correlations; "
-                            "the two entries built around a histogram match are three-step "
-                            "chains with more accurate marginals; the GPU method is the same "
-                            "math as Reinhard, faster on big pictures; mean-only moves nothing "
-                            "but the average color."
-                        ),
-                    },
-                ),
-                "strength": (
-                    "FLOAT",
-                    {
-                        "default": 1.0,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "How much of the result is mixed in: 0 is the original, 1 is a full "
-                            "match, and around 0.5 usually looks most natural while keeping "
-                            "half of the original's character."
-                        ),
-                    },
-                ),
-                "ref_mode": (
-                    list(REF_MODES),
-                    {
-                        "default": REF_MODES[0],
-                        "tooltip": (
-                            "How a reference batch is read: all frames pooled into one sample "
-                            "pool, the first frame only, or frame by frame against the target "
-                            "(the reference cycles when it runs short)."
-                        ),
-                    },
-                ),
-                "src_mode": (
-                    list(SRC_MODES),
-                    {
-                        "default": SRC_MODES[0],
-                        "tooltip": (
-                            "How the source statistics are computed for a target batch: per "
-                            "frame - one set per frame, closest for a single still; uniform - "
-                            "one set for the whole batch, so differences between frames survive "
-                            "and the picture does not flicker (use this for video or "
-                            "sequences). With a single frame the two are identical."
-                        ),
-                    },
-                ),
-                "scope": (
-                    list(SCOPES),
-                    {
-                        "default": SCOPES[0],
-                        "tooltip": (
-                            "What gets matched: all - both luminance and chroma; chroma only - "
-                            "keeps the original's light-and-dark structure and swaps only the "
-                            "hue (compositing, or when exposure must not move); luminance only "
-                            "- keeps the original's hue and swaps contrast and overall "
-                            "brightness."
-                        ),
-                    },
-                ),
-                "feather": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 256,
-                        "step": 1,
-                        "tooltip": "Feather width of the mask, in pixels: 0 is a hard edge; with a mask, 8-32 makes the seam disappear.",
-                    },
-                ),
-                "mask_use": (
-                    list(MASK_USES),
-                    {
-                        "default": MASK_USES[0],
-                        "tooltip": (
-                            "How the mask is used: result only - it limits where the match "
-                            "applies while the statistics still come from the whole picture; "
-                            "target stats too - the target's mean, standard deviation and "
-                            "histogram also come from inside the mask, so pasting a subject "
-                            "onto another background stops the background from diluting its "
-                            "statistics."
-                        ),
-                    },
-                ),
-                "detail": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.05,
-                        "tooltip": (
-                            "Detail restore: brings high frequencies (texture, grain, edge "
-                            "sharpness) back to the original's level - what the match smoothed "
-                            "away is put back, what it boosted is pulled down. Try 0.3-0.6 when "
-                            "histogram matching turns gradients into bands or blows up noise in "
-                            "a low-contrast picture; 0 leaves it alone. Only the difference is "
-                            "restored, so overall brightness does not move."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "mask": (
-                    "MASK",
-                    {"tooltip": "Where the match applies: white areas are matched, black areas keep the original; leave it unwired for the whole picture."},
-                ),
-                "ref_mask": (
-                    "MASK",
-                    {
-                        "tooltip": (
-                            "Statistics area on the reference: only white pixels take part. "
-                            "Wire one when the reference carries large irrelevant areas (sky, "
-                            "background, a watermark) so the color is not dragged toward them."
-                        )
-                    },
-                ),
-            },
-        }
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("IMAGE",)
-    OUTPUT_TOOLTIPS = (
-        "The matched image, same size and batch count as the target.",
-    )
-    FUNCTION = "color_match"
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_ColorMatch",
+            display_name="Color Match",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("image", tooltip="The target image to recolor; a batch is processed frame by frame, and an alpha channel is passed through."),
+                io.Image.Input("reference", tooltip="The reference the color is taken from. It need not match the target's size; only its statistics are used."),
+                io.Combo.Input("method", options=list(METHODS), default="reinhard",
+                    tooltip="Reinhard is the general-purpose one; wavelet changes low frequencies only and leaves texture alone; AdaIN is the per-channel sRGB version and is most direct on material from the same source; MMD follows non-Gaussian distributions; histogram matching aligns the distributions exactly and is the easiest to overdo; multivariate Gaussian also corrects channel correlations; the two entries built around a histogram match are three-step chains with more accurate marginals; the GPU method is the same math as Reinhard, faster on big pictures; mean-only moves nothing but the average color."),
+                io.Float.Input("strength", default=1.0, min=0.0, max=1.0, step=0.1,
+                    tooltip="How much of the result is mixed in: 0 is the original, 1 is a full match, and around 0.5 usually looks most natural while keeping half of the original's character."),
+                io.Combo.Input("ref_mode", options=list(REF_MODES), default=REF_MODES[0],
+                    tooltip="How a reference batch is read: all frames pooled into one sample pool, the first frame only, or frame by frame against the target (the reference cycles when it runs short)."),
+                io.Combo.Input("src_mode", options=list(SRC_MODES), default=SRC_MODES[0],
+                    tooltip="How the source statistics are computed for a target batch: per frame - one set per frame, closest for a single still; uniform - one set for the whole batch, so differences between frames survive and the picture does not flicker (use this for video or sequences). With a single frame the two are identical."),
+                io.Combo.Input("scope", options=list(SCOPES), default=SCOPES[0],
+                    tooltip="What gets matched: all - both luminance and chroma; chroma only - keeps the original's light-and-dark structure and swaps only the hue (compositing, or when exposure must not move); luminance only - keeps the original's hue and swaps contrast and overall brightness."),
+                io.Int.Input("feather", default=0, min=0, max=256, step=1,
+                    tooltip="Feather width of the mask, in pixels: 0 is a hard edge; with a mask, 8-32 makes the seam disappear."),
+                io.Combo.Input("mask_use", options=list(MASK_USES), default=MASK_USES[0],
+                    tooltip="How the mask is used: result only - it limits where the match applies while the statistics still come from the whole picture; target stats too - the target's mean, standard deviation and histogram also come from inside the mask, so pasting a subject onto another background stops the background from diluting its statistics."),
+                io.Float.Input("detail", default=0.0, min=0.0, max=1.0, step=0.05,
+                    tooltip="Detail restore: brings high frequencies (texture, grain, edge sharpness) back to the original's level - what the match smoothed away is put back, what it boosted is pulled down. Try 0.3-0.6 when histogram matching turns gradients into bands or blows up noise in a low-contrast picture; 0 leaves it alone. Only the difference is restored, so overall brightness does not move."),
+                io.Mask.Input("mask", optional=True,
+                    tooltip="Where the match applies: white areas are matched, black areas keep the original; leave it unwired for the whole picture."),
+                io.Mask.Input("ref_mask", optional=True,
+                    tooltip="Statistics area on the reference: only white pixels take part. Wire one when the reference carries large irrelevant areas (sky, background, a watermark) so the color is not dragged toward them."),
+            ],
+            outputs=[
+                io.Image.Output("IMAGE", tooltip="The matched image, same size and batch count as the target."),
+            ],
+        )
 
     # ---- 参考侧 -------------------------------------------------------------
 
@@ -1066,9 +957,25 @@ class QGColorMatch:
 
     # ---- 入口 ---------------------------------------------------------------
 
-    def color_match(self, image, reference, method, strength, ref_mode,
-                    src_mode="per-frame", scope="all", feather=0, mask=None,
-                    mask_use="result-only", detail=0.0, ref_mask=None):
+    @classmethod
+    def execute(cls, image, reference, method, strength, ref_mode,
+                src_mode="per-frame", scope="all", feather=0, mask=None,
+                mask_use="result-only", detail=0.0, ref_mask=None):
+        # V1 装饰器 coerce 五个下拉值，V3 显式保留。
+        method = coerce("QG_ColorMatch", "method", method)
+        ref_mode = coerce("QG_ColorMatch", "ref_mode", ref_mode)
+        src_mode = coerce("QG_ColorMatch", "src_mode", src_mode)
+        scope = coerce("QG_ColorMatch", "scope", scope)
+        mask_use = coerce("QG_ColorMatch", "mask_use", mask_use)
+        # 原 color_match 实例方法（大量 self. 辅助方法）逐字不动，实例化调用。
+        return io.NodeOutput(*cls()._color_match(
+            image, reference, method, strength, ref_mode,
+            src_mode=src_mode, scope=scope, feather=feather, mask=mask,
+            mask_use=mask_use, detail=detail, ref_mask=ref_mask))
+
+    def _color_match(self, image, reference, method, strength, ref_mode,
+                     src_mode="per-frame", scope="all", feather=0, mask=None,
+                     mask_use="result-only", detail=0.0, ref_mask=None):
         if not torch.is_tensor(image) or not torch.is_tensor(reference):
             raise TypeError("image / reference must be IMAGE tensors")
 

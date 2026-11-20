@@ -34,7 +34,9 @@ below is what it reads.
 
 import math
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 RATIO_OPTIONS = [
     "original",
@@ -76,8 +78,9 @@ RATIO_VALUES = {
 }
 
 
-@combo_legacy("QG_RatioResolution")
-class QGRatioResolution:
+# V1 @combo_legacy("QG_RatioResolution")：ratio/mode 有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce，与 V1 等价。
+class QGRatioResolution(io.ComfyNode):
     """Work out the width / height for a target ratio."""
 
     DESCRIPTION = (
@@ -95,160 +98,48 @@ class QGRatioResolution:
         "宽高", "百万像素", "尺寸", "倍数取整", "qg",
     ]
     CATEGORY = "QG-tools/Image"
-    OUTPUT_NODE = False
-    FUNCTION = "calculate"
-    RETURN_TYPES = ("STRING", "INT", "INT")
-    RETURN_NAMES = ("ratio", "width", "height")
-    OUTPUT_TOOLTIPS = (
-        "The aspect ratio as text: the reduced one for original / custom, the dropdown label otherwise.",
-        "Computed width, already rounded to the multiple.",
-        "Computed height, already rounded to the multiple.",
-    )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        # 🔴 每个输入都写成 "名字": ( 换行 + 字典逐键换行：verify_bilingual /
-        # verify_combo_i18n 靠正则找输入名，`"tooltip":` 留在行尾会让它们把所有
-        # 输入误判成一个叫 tooltip 的输入（ImageScale / MaskDetect 都踩过）。
-        return {
-            "required": {
-                "ratio": (
-                    RATIO_OPTIONS,
-                    {
-                        "default": "original",
-                        "tooltip": (
-                            "Target aspect ratio. 'original' follows the image you "
-                            "connect, 'custom' uses the two custom widgets below."
-                        ),
-                    },
-                ),
-                "mode": (
-                    MODE_OPTIONS,
-                    {
-                        "default": "long-side",
-                        "tooltip": (
-                            "How the size is pinned down. long-side / short-side / "
-                            "width / height all use 'fixed edge'; total-pixels uses "
-                            "'megapixels'; long-side-range follows the incoming image's "
-                            "long edge clamped between min and max (needs an image)."
-                        ),
-                    },
-                ),
-                "fixed_edge": (
-                    "INT",
-                    {
-                        "default": 1024,
-                        "min": 8,
-                        "max": 10240,
-                        "step": 1,
-                        "tooltip": (
-                            "Target edge length for the long-side / short-side / "
-                            "width / height modes; unused by the others."
-                        ),
-                    },
-                ),
-                "megapixels": (
-                    "FLOAT",
-                    {
-                        "default": 2.0,
-                        "min": 0.2,
-                        "max": 50.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "Target area for the total-pixels mode, in megapixels of "
-                            "1024x1024 (same as ComfyUI's official Resolution "
-                            "Selector); unused by the others."
-                        ),
-                    },
-                ),
-                "long_edge_min": (
-                    "INT",
-                    {
-                        "default": 512,
-                        "min": 8,
-                        "max": 10240,
-                        "step": 1,
-                        "tooltip": (
-                            "Shortest long edge allowed by the long-side-range mode. "
-                            "Swapped with the maximum automatically when it is larger."
-                        ),
-                    },
-                ),
-                "long_edge_max": (
-                    "INT",
-                    {
-                        "default": 2048,
-                        "min": 8,
-                        "max": 10240,
-                        "step": 1,
-                        "tooltip": (
-                            "Longest long edge allowed by the long-side-range mode."
-                        ),
-                    },
-                ),
-                "custom_width": (
-                    "INT",
-                    {
-                        "default": 1024,
-                        "min": 8,
-                        "max": 10240,
-                        "step": 1,
-                        "tooltip": (
-                            "Width used directly by the 'custom' ratio (still "
-                            "rounded to the multiple)."
-                        ),
-                    },
-                ),
-                "custom_height": (
-                    "INT",
-                    {
-                        "default": 1024,
-                        "min": 8,
-                        "max": 10240,
-                        "step": 1,
-                        "tooltip": (
-                            "Height used directly by the 'custom' ratio (still "
-                            "rounded to the multiple)."
-                        ),
-                    },
-                ),
-                "multiple": (
-                    "INT",
-                    {
-                        "default": 16,
-                        "min": 0,
-                        "max": 1024,
-                        "step": 1,
-                        "tooltip": (
-                            "Round each side to the nearest multiple of this. A "
-                            "result smaller than one multiple still gets a full "
-                            "multiple; 0 rounds to whole pixels."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "image": (
-                    "IMAGE",
-                    {
-                        "tooltip": (
-                            "Optional. 'original' reads its size as the base ratio "
-                            "(1:1 when unwired); long-side-range reads its long edge "
-                            "and clamps it (1536 when unwired)."
-                        ),
-                    },
-                ),
-            },
-        }
-
-    @classmethod
-    def VALIDATE_INPUTS(cls, ratio=None, mode=None):
-        # Both dropdowns used to hold Chinese values; the English keys and their
-        # old strings live in _qg_combo_legacy.LEGACY. Naming them here lets
-        # ComfyUI skip the "value must be in the list" check, so an old saved
-        # workflow (or a hand-written API call) still runs through coerce.
-        # Not **kwargs: that would switch off min/max for the numeric inputs.
+    def validate_inputs(cls, ratio=None, mode=None):
+        # 两个下拉旧存档含中文值；具名跳过列表校验，值由 execute 开头 coerce 换回。
         return True
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_RatioResolution",
+            display_name="Ratio Resolution",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Combo.Input("ratio", options=RATIO_OPTIONS, default="original",
+                    tooltip="Target aspect ratio. 'original' follows the image you connect, 'custom' uses the two custom widgets below."),
+                io.Combo.Input("mode", options=MODE_OPTIONS, default="long-side",
+                    tooltip="How the size is pinned down. long-side / short-side / width / height all use 'fixed edge'; total-pixels uses 'megapixels'; long-side-range follows the incoming image's long edge clamped between min and max (needs an image)."),
+                io.Int.Input("fixed_edge", default=1024, min=8, max=10240, step=1,
+                    tooltip="Target edge length for the long-side / short-side / width / height modes; unused by the others."),
+                io.Float.Input("megapixels", default=2.0, min=0.2, max=50.0, step=0.1,
+                    tooltip="Target area for the total-pixels mode, in megapixels of 1024x1024 (same as ComfyUI's official Resolution Selector); unused by the others."),
+                io.Int.Input("long_edge_min", default=512, min=8, max=10240, step=1,
+                    tooltip="Shortest long edge allowed by the long-side-range mode. Swapped with the maximum automatically when it is larger."),
+                io.Int.Input("long_edge_max", default=2048, min=8, max=10240, step=1,
+                    tooltip="Longest long edge allowed by the long-side-range mode."),
+                io.Int.Input("custom_width", default=1024, min=8, max=10240, step=1,
+                    tooltip="Width used directly by the 'custom' ratio (still rounded to the multiple)."),
+                io.Int.Input("custom_height", default=1024, min=8, max=10240, step=1,
+                    tooltip="Height used directly by the 'custom' ratio (still rounded to the multiple)."),
+                io.Int.Input("multiple", default=16, min=0, max=1024, step=1,
+                    tooltip="Round each side to the nearest multiple of this. A result smaller than one multiple still gets a full multiple; 0 rounds to whole pixels."),
+                io.Image.Input("image", optional=True,
+                    tooltip="Optional. 'original' reads its size as the base ratio (1:1 when unwired); long-side-range reads its long edge and clamps it (1536 when unwired)."),
+            ],
+            outputs=[
+                io.String.Output("ratio", tooltip="The aspect ratio as text: the reduced one for original / custom, the dropdown label otherwise."),
+                io.Int.Output("width", tooltip="Computed width, already rounded to the multiple."),
+                io.Int.Output("height", tooltip="Computed height, already rounded to the multiple."),
+            ],
+        )
 
     @staticmethod
     def _image_size(image):
@@ -296,8 +187,9 @@ class QGRatioResolution:
         divisor = math.gcd(width, height)
         return f"{width // divisor}:{height // divisor}"
 
-    def calculate(
-        self,
+    @classmethod
+    def execute(
+        cls,
         ratio,
         mode,
         fixed_edge,
@@ -309,16 +201,19 @@ class QGRatioResolution:
         multiple,
         image=None,
     ):
+        # V1 装饰器 coerce 两个下拉值，V3 显式保留。
+        ratio = coerce("QG_RatioResolution", "ratio", ratio)
+        mode = coerce("QG_RatioResolution", "mode", mode)
         if ratio == "custom":
             width = float(custom_width)
             height = float(custom_height)
         else:
-            ratio_w, ratio_h = self._ratio(ratio, image)
+            ratio_w, ratio_h = cls._ratio(ratio, image)
             ratio_w = max(1.0, float(ratio_w))
             ratio_h = max(1.0, float(ratio_h))
 
             if mode == "long-side-range":
-                src_w, src_h = self._image_size(image)
+                src_w, src_h = cls._image_size(image)
                 src_long = (max(1536, src_w, src_h) if (src_w <= 1 or src_h <= 1)
                             else max(src_w, src_h))
                 smallest = max(8, int(long_edge_min))
@@ -351,19 +246,20 @@ class QGRatioResolution:
                 scale = float(fixed_edge) / max(ratio_w, ratio_h)
                 width, height = ratio_w * scale, ratio_h * scale
 
-        final_w = self._round_to_multiple(width, multiple)
-        final_h = self._round_to_multiple(height, multiple)
+        final_w = cls._round_to_multiple(width, multiple)
+        final_h = cls._round_to_multiple(height, multiple)
         if ratio in ("original", "custom"):
-            ratio_text = self._simplest_ratio(final_w, final_h)
+            ratio_text = cls._simplest_ratio(final_w, final_h)
         else:
             ratio_text = str(ratio)
         ratio_number = round(float(final_w) / float(final_h), 10)
         # Hand the real numbers to the frontend through the ui channel: when the
         # image size only becomes readable mid-run, the canvas would otherwise
         # keep showing the preview it could not compute.
-        return {
-            "result": (ratio_text, final_w, final_h),
-            "ui": {
+        # V1 {"result":..., "ui":...} → V3 io.NodeOutput(*result, ui=...)。
+        return io.NodeOutput(
+            ratio_text, final_w, final_h,
+            ui={
                 "ratio_resolution": [{
                     "width": final_w,
                     "height": final_h,
@@ -371,7 +267,7 @@ class QGRatioResolution:
                     "ratio_string": ratio_text,
                 }]
             },
-        }
+        )
 
 
 NODE_CLASS_MAPPINGS = {"QG_RatioResolution": QGRatioResolution}

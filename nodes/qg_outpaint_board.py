@@ -50,8 +50,10 @@ import math
 import torch
 import torch.nn.functional as F
 
+from comfy_api.latest import io
+
 from ._qg_color_helpers import parse_fill_color
-from ._qg_combo_legacy import combo_legacy
+from ._qg_combo_legacy import coerce
 from ._qg_tensor_helpers import as_image_batch
 
 # Hard stop, not a real limit: it only keeps a typo (999999) from asking for a
@@ -174,91 +176,12 @@ def _fit_mask(mask, batch, h, w, device):
 # ----------------------------------------------------------------------
 # Node
 # ----------------------------------------------------------------------
-@combo_legacy("QG_OutpaintBoard")
-class QGOutpaintBoard:
+# V1 @combo_legacy("QG_OutpaintBoard")：unit 有中文遗留值需 coerce。
+# V3 去装饰器，run 内 coerce，与 V1 等价。
+class QGOutpaintBoard(io.ComfyNode):
 
     SEARCH_ALIASES = ["outpaint", "canvas", "pad", "extend", "扩图", "外扩", "补边", "qg"]
 
-    @classmethod
-    def VALIDATE_INPUTS(cls, unit=None):
-        # Listed by name so ComfyUI skips the "value must be in the list" check:
-        # this node ships with English option values, but the panel and the
-        # legacy table both hand back Chinese ones in older workflows.
-        return True
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": ("IMAGE", {
-                    "tooltip": "The picture to grow. Padding is added around it; the "
-                               "picture itself is copied into the bigger canvas, never "
-                               "resampled or cropped.",
-                }),
-                "unit": (["pixels", "percent"], {
-                    "default": "pixels",
-                    "tooltip": "pixels: the four side values are literal pixels. "
-                               "percent: left/right read against the width, "
-                               "top/bottom against the height.",
-                }),
-                "left": ("INT", {
-                    "default": 0, "min": 0, "max": PAD_LIMIT, "step": 1,
-                    "tooltip": "How far to grow the left side. pixels: literal pixels; "
-                               "percent: a share of the width. 0 = none.",
-                }),
-                "right": ("INT", {
-                    "default": 0, "min": 0, "max": PAD_LIMIT, "step": 1,
-                    "tooltip": "How far to grow the right side. pixels: literal pixels; "
-                               "percent: a share of the width. 0 = none.",
-                }),
-                "top": ("INT", {
-                    "default": 0, "min": 0, "max": PAD_LIMIT, "step": 1,
-                    "tooltip": "How far to grow the top side. pixels: literal pixels; "
-                               "percent: a share of the height. 0 = none.",
-                }),
-                "bottom": ("INT", {
-                    "default": 0, "min": 0, "max": PAD_LIMIT, "step": 1,
-                    "tooltip": "How far to grow the bottom side. pixels: literal pixels; "
-                               "percent: a share of the height. 0 = none.",
-                }),
-                "max_output_side": ("INT", {
-                    "default": 0, "min": 0, "max": PAD_LIMIT, "step": 128,
-                    "tooltip": "0 = no ceiling. When the canvas would go past it, "
-                               "only the padding is trimmed - the picture is never "
-                               "cropped or rescaled. A picture already over the "
-                               "limit drops all padding and says so.",
-                }),
-                "divisible_by": ("INT", {
-                    "default": 0, "min": 0, "max": 256, "step": 1,
-                    "tooltip": "0 = leave the canvas alone. Above 1 the canvas is "
-                               "rounded up to a multiple of this, and the extra "
-                               "goes on the right and bottom, so the picture keeps "
-                               "its position. 8 / 16 / 32 / 64 are the usual picks.",
-                }),
-                "pad_color": ("STRING", {
-                    "default": "#808080",
-                    "tooltip": "Fill for the new area. Takes #RRGGBB, #ABC, a "
-                               "colour name such as gray, 128,128,128, or 0.5.",
-                }),
-            },
-            "optional": {
-                "mask": ("MASK", {
-                    "tooltip": "Optional existing repaint mask. It is copied into the "
-                               "output mask inside the frame; every new pixel is 1.0.",
-                }),
-            },
-        }
-
-    RETURN_TYPES = ("IMAGE", "MASK", "BOOLEAN")
-    RETURN_NAMES = ("image", "mask", "has_padding")
-    OUTPUT_TOOLTIPS = (
-        "The padded image; the original pixels are copied in untouched, "
-        "never resampled.",
-        "A mask that is 1 over the newly added area and keeps the input mask "
-        "inside the original frame.",
-        "True when padding was added on at least one side.",
-    )
-    FUNCTION = "run"
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Grow the canvas outwards and hand back both the padded picture and a "
@@ -268,10 +191,54 @@ class QGOutpaintBoard:
         "cursor."
     )
 
-    def run(self, **kw):
+    @classmethod
+    def validate_inputs(cls, unit=None):
+        # unit 中文遗留值在 LEGACY 表；具名跳过列表校验，值由 run 内 coerce 换回。
+        return True
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_OutpaintBoard",
+            display_name="Outpaint Board",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("image", tooltip="The picture to grow. Padding is added around it; the picture itself is copied into the bigger canvas, never resampled or cropped."),
+                io.Combo.Input("unit", options=["pixels", "percent"], default="pixels",
+                    tooltip="pixels: the four side values are literal pixels. percent: left/right read against the width, top/bottom against the height."),
+                io.Int.Input("left", default=0, min=0, max=PAD_LIMIT, step=1,
+                    tooltip="How far to grow the left side. pixels: literal pixels; percent: a share of the width. 0 = none."),
+                io.Int.Input("right", default=0, min=0, max=PAD_LIMIT, step=1,
+                    tooltip="How far to grow the right side. pixels: literal pixels; percent: a share of the width. 0 = none."),
+                io.Int.Input("top", default=0, min=0, max=PAD_LIMIT, step=1,
+                    tooltip="How far to grow the top side. pixels: literal pixels; percent: a share of the height. 0 = none."),
+                io.Int.Input("bottom", default=0, min=0, max=PAD_LIMIT, step=1,
+                    tooltip="How far to grow the bottom side. pixels: literal pixels; percent: a share of the height. 0 = none."),
+                io.Int.Input("max_output_side", default=0, min=0, max=PAD_LIMIT, step=128,
+                    tooltip="0 = no ceiling. When the canvas would go past it, only the padding is trimmed - the picture is never cropped or rescaled. A picture already over the limit drops all padding and says so."),
+                io.Int.Input("divisible_by", default=0, min=0, max=256, step=1,
+                    tooltip="0 = leave the canvas alone. Above 1 the canvas is rounded up to a multiple of this, and the extra goes on the right and bottom, so the picture keeps its position. 8 / 16 / 32 / 64 are the usual picks."),
+                io.String.Input("pad_color", default="#808080",
+                    tooltip="Fill for the new area. Takes #RRGGBB, #ABC, a colour name such as gray, 128,128,128, or 0.5."),
+                io.Mask.Input("mask", optional=True,
+                    tooltip="Optional existing repaint mask. It is copied into the output mask inside the frame; every new pixel is 1.0."),
+            ],
+            outputs=[
+                io.Image.Output("image", tooltip="The padded image; the original pixels are copied in untouched, never resampled."),
+                io.Mask.Output("mask", tooltip="A mask that is 1 over the newly added area and keeps the input mask inside the original frame."),
+                io.Boolean.Output("has_padding", tooltip="True when padding was added on at least one side."),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, **kw):
+        # V1 @combo_legacy 对 unit 的 coerce 在此显式保留（中文遗留值 → 英文）。
         image = kw["image"]
         mask_in = kw.get("mask")
         unit = kw.get("unit") or "pixels"
+        unit = coerce("QG_OutpaintBoard", "unit", unit)
 
         # 3 维有两种可能：单张 (H,W,C)，或者一批灰度帧 (B,H,W)。判据在共享助手
         # 里（看最后一维宽度）—— 手写 unsqueeze(0) 会把灰度批当成一张很高的图，
@@ -320,7 +287,7 @@ class QGOutpaintBoard:
               % (w, h, out_w, out_h, l, r, t, b,
                  "#%02X%02X%02X" % rgb255))
 
-        return (out, out_mask, bool(has_pad))
+        return io.NodeOutput(out, out_mask, bool(has_pad))
 
 
 NODE_CLASS_MAPPINGS = {"QG_OutpaintBoard": QGOutpaintBoard}

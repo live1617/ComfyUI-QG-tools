@@ -10,10 +10,10 @@
 // options when it opens and hands the chosen value back through onChange.
 // Pure decisions live in media_list.mjs for node:test; this file is the DOM.
 
-import { BRAND } from "./index.mjs?v=202611141000";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=202611141000";
-import { filterMedia, mediaLabel, moveHighlight } from "./media_list.mjs?v=202611141000";
-import { zh } from "./zh.mjs?v=202611141000";
+import { BRAND } from "./index.mjs?v=202611182145";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=202611182145";
+import { filterMedia, mediaLabel, moveHighlight } from "./media_list.mjs?v=202611182145";
+import { zh } from "./zh.mjs?v=202611182145";
 
 const CSS_ID = "qgtools-media-picker-css";
 const LIST_CAP = 400; // a crowded input folder shows this many; typing narrows it

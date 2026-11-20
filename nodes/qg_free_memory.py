@@ -41,6 +41,8 @@ tooltips and aliases are ours. Third-party notice: THIRD-PARTY-NOTICES.md.
 
 from __future__ import annotations
 
+from comfy_api.latest import io
+
 from ._qg_any_type import ANY
 
 # 通配类型走全包唯一实现。这里曾经自带一个只覆盖 ``__ne__`` 的 ``_Wildcard``，
@@ -91,7 +93,7 @@ def free_gpu_memory() -> list:
     return freed
 
 
-class QGFreeMemory:
+class QGFreeMemory(io.ComfyNode):
     """Free VRAM in the middle of a graph without breaking the wire."""
 
     CATEGORY = "QG-tools/Workflow"
@@ -106,36 +108,42 @@ class QGFreeMemory:
     SEARCH_ALIASES = ["free vram", "purge vram", "unload models", "empty cache", "释放显存", "清显存", "qg"]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "value": (
-                    WILDCARD,
-                    {
-                        # 通配输入不加 forceInput，前端会在画布上画一个填了也没用的
-                        # 文本框（QG_Exists / QG_RouteBlocker 都带着这个标志）。
-                        "forceInput": True,
-                        "tooltip": (
-                            "Any wire: image, latent, model, text, number. Memory "
-                            "is freed when this node runs, then the value carries "
-                            "on unchanged."
-                        ),
-                    },
+    def define_schema(cls):
+        # 通配输入不加 forceInput 的话前端会画一个填了也没用的文本框
+        #（QG_Exists / QG_RouteBlocker 都带着这个标志）。V3 的 AnyType.Input
+        # 没有 force_input 形参，得走 extra_dict 才能产出 V1 的 forceInput:true。
+        return io.Schema(
+            node_id="QG_FreeMemory",
+            display_name="Free Memory",
+            category="QG-tools/Workflow",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.AnyType.Input(
+                    "value",
+                    extra_dict={"forceInput": True},
+                    tooltip=(
+                        "Any wire: image, latent, model, text, number. Memory "
+                        "is freed when this node runs, then the value carries "
+                        "on unchanged."
+                    ),
                 ),
-            },
-        }
+            ],
+            outputs=[
+                io.AnyType.Output(
+                    "value",
+                    tooltip="The input, passed through untouched.",
+                ),
+            ],
+        )
 
-    RETURN_TYPES = (WILDCARD,)
-    RETURN_NAMES = ("value",)
-    OUTPUT_TOOLTIPS = ("The input, passed through untouched.",)
-    FUNCTION = "execute"
-
-    def execute(self, value):
+    @classmethod
+    def execute(cls, value):
         freed = free_gpu_memory()
         detail = ", ".join(freed) if freed else "nothing to free"
         # ASCII only: the banner rule applies to any console line we print.
         print("[QG-tools] Free Memory: %s." % detail)
-        return (value,)
+        return io.NodeOutput(value)
 
 
 NODE_CLASS_MAPPINGS = {"QG_FreeMemory": QGFreeMemory}

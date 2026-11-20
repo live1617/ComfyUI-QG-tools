@@ -43,6 +43,8 @@ from __future__ import annotations
 
 import re
 
+from comfy_api.latest import io
+
 from ._qg_any_type import ANY, family_of, is_blank
 
 # 上限写在这里，前端 web/any_switch/index.js 有同样一个数。改的话两边一起改：
@@ -70,7 +72,7 @@ def slot_order(values):
     return [("%s%02d" % (SLOT_PREFIX, index), by_index[index]) for index in sorted(by_index)]
 
 
-class QGAnySwitch:
+class QGAnySwitch(io.ComfyNode):
     CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "Merge several inputs of one type into one: the first connected input "
@@ -87,32 +89,36 @@ class QGAnySwitch:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def define_schema(cls):
         # 全部可选：一个都不接也能存盘，只是排不进队列（VALIDATE 拦的是
         # 执行期；这里不拦是为了让「先摆节点再连线」的搭图顺序不被卡）。
-        return {
-            "optional": {
-                "%s%02d" % (SLOT_PREFIX, index): (ANY, {
-                    "tooltip": (
+        # 16 个通配槽 any_01..any_16，与 V1 一一对应（存档键不变）。
+        return io.Schema(
+            node_id="QG_AnySwitch",
+            display_name="Any Switch",
+            category="QG-tools/Logic",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.AnyType.Input(
+                    "%s%02d" % (SLOT_PREFIX, index),
+                    optional=True,
+                    tooltip=(
                         "One of the inputs to pick from. The earliest connected "
                         "slot that is not empty wins; later slots are only used "
                         "when everything before them is empty. All slots that "
                         "carry something must be the same type."
                     ),
-                })
+                )
                 for index in range(1, MAX_INPUTS + 1)
-            },
-        }
-
-    RETURN_TYPES = (ANY,)
-    RETURN_NAMES = ("any",)
-    OUTPUT_TOOLTIPS = (
-        "The first connected input that is not empty, unchanged.",
-    )
-    FUNCTION = "switch"
+            ],
+            outputs=[
+                io.AnyType.Output("any", tooltip="The first connected input that is not empty, unchanged."),
+            ],
+        )
 
     @classmethod
-    def VALIDATE_INPUTS(cls, input_types=None):
+    def validate_inputs(cls, input_types=None):
         """让 ``*`` 输入跳过类型校验 —— 官方文档给的通配符写法。
 
         参数名必须**恰好**叫 ``input_types``：核心看到这个名字会做两件事，
@@ -127,7 +133,8 @@ class QGAnySwitch:
         """
         return True
 
-    def switch(self, **values):
+    @classmethod
+    def execute(cls, **values):
         slots = slot_order(values)
 
         if not slots:
@@ -159,7 +166,7 @@ class QGAnySwitch:
             )
 
         if carriers:
-            return (carriers[0][1],)
+            return io.NodeOutput(carriers[0][1])
 
         # 都接了线，但值全是空的。和「没接线」区别对待：这里上游跑过了。
         names = ", ".join(name for name, _value in slots)

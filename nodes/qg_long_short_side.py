@@ -14,6 +14,8 @@ cannot be read falls back to zeros so this node stays safe as a size fallback.
 
 from __future__ import annotations
 
+from comfy_api.latest import io
+
 
 def _as_int(value):
     """Best-effort non-negative int; None means "not usable"."""
@@ -30,7 +32,7 @@ def _as_int(value):
         return None
 
 
-class QGLongShortSide:
+class QGLongShortSide(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Report the long side, the short side and the width / height ratio of "
@@ -48,46 +50,52 @@ class QGLongShortSide:
         "width", "height", "landscape", "portrait", "measure",
         "长边", "短边", "长短边", "宽高比", "比值", "尺寸", "图像尺寸", "qg",
     ]
-    OUTPUT_NODE = False
-    FUNCTION = "compute"
-    RETURN_TYPES = ("INT", "INT", "FLOAT")
-    RETURN_NAMES = ("long_side", "short_side", "ratio")
-    OUTPUT_TOOLTIPS = (
-        "The larger of width and height, in pixels; 0 when nothing usable is connected.",
-        "The smaller of width and height, in pixels; 0 when nothing usable is connected.",
-        "Width / height as a decimal; 0.0 when the height is 0 or only one side was given.",
-    )
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_LongShortSide",
+            display_name="Long / Short Sides",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input(
+                    "image",
+                    optional=True,
+                    tooltip="A connected picture takes priority: its height "
+                            "and width are read from the tensor shape.",
+                ),
+                io.Int.Input(
+                    "width",
+                    optional=True,
+                    force_input=True,
+                    tooltip="Width in pixels, used when no image is connected.",
+                ),
+                io.Int.Input(
+                    "height",
+                    optional=True,
+                    force_input=True,
+                    tooltip="Height in pixels, used when no image is connected.",
+                ),
+            ],
+            outputs=[
+                io.Int.Output(
+                    "long_side",
+                    tooltip="The larger of width and height, in pixels; 0 when nothing usable is connected.",
+                ),
+                io.Int.Output(
+                    "short_side",
+                    tooltip="The smaller of width and height, in pixels; 0 when nothing usable is connected.",
+                ),
+                io.Float.Output(
+                    "ratio",
+                    tooltip="Width / height as a decimal; 0.0 when the height is 0 or only one side was given.",
+                ),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {},
-            "optional": {
-                "image": (
-                    "IMAGE",
-                    {
-                        "tooltip": "A connected picture takes priority: its height "
-                                   "and width are read from the tensor shape.",
-                    },
-                ),
-                "width": (
-                    "INT",
-                    {
-                        "forceInput": True,
-                        "tooltip": "Width in pixels, used when no image is connected.",
-                    },
-                ),
-                "height": (
-                    "INT",
-                    {
-                        "forceInput": True,
-                        "tooltip": "Height in pixels, used when no image is connected.",
-                    },
-                ),
-            },
-        }
-
-    def compute(self, image=None, width=None, height=None):
+    def execute(cls, image=None, width=None, height=None):
         try:
             w = h = None
             if image is not None:
@@ -122,10 +130,10 @@ class QGLongShortSide:
             long_side = max(w, h)
             short_side = min(w, h)
             ratio = float(w / h) if h and not single_value else 0.0
-            return (int(long_side), int(short_side), ratio)
+            return io.NodeOutput(int(long_side), int(short_side), ratio)
         except Exception as exc:  # keep this usable as a size fallback
             print("[QG-tools] Long / Short Sides: unusable input, returning zeros (%s)" % exc)
-            return (0, 0, 0.0)
+            return io.NodeOutput(0, 0, 0.0)
 
 
 NODE_CLASS_MAPPINGS = {"QG_LongShortSide": QGLongShortSide}

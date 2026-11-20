@@ -62,7 +62,9 @@ tooltips and aliases are ours. Third-party notice: THIRD-PARTY-NOTICES.md.
 
 import re
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 TEXT_FIELD = "text-field"
 EXTERNAL_LIST = "external-list"
@@ -82,8 +84,9 @@ def _split(value, delimiter, use_regex):
     return [piece.strip() for piece in pieces if piece.strip()]
 
 
-@combo_legacy("QG_TextSplit")
-class QGTextSplit:
+# V1 @combo_legacy("QG_TextSplit")：input_source 中文遗留值需 coerce（LEGACY 有此项）。
+# V3 去装饰器，execute 开头 coerce，与 V1 等价。
+class QGTextSplit(io.ComfyNode):
     CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Splits text (typed in, or a list from upstream) by a delimiter, plain "
@@ -98,107 +101,64 @@ class QGTextSplit:
     ]
 
     @classmethod
-    def VALIDATE_INPUTS(cls, input_source=None):
-        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
-        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
-        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+    def validate_inputs(cls, input_source=None):
+        # 老工作流里存的中文选项值靠 execute 开头的 coerce 换回英文；
+        # 具名列出选项 → ComfyUI 跳过列表校验，min/max 校验不受影响。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "input_source": (
-                    MODES,
-                    {"default": TEXT_FIELD, "tooltip": "text-field uses the single block of text below; external-list uses the texts wired in."},
-                ),
-                "text": (
-                    "STRING",
-                    {
-                        "default": "",
-                        "multiline": True,
-                        "tooltip": "The multi-line text to split, used in text-field mode only.",
-                    },
-                ),
-                "delimiter": (
-                    "STRING",
-                    {
-                        "default": "<think>",
-                        "tooltip": "The delimiter. With use_regex on it is read as a regular expression; the default suits cutting out a model's thinking block. A pattern with a capturing group keeps the delimiter in the results.",
-                    },
-                ),
-                "use_regex": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": "On: the delimiter is a regular expression. Off: it is split as a plain string.",
-                    },
-                ),
-                "segment_index": (
-                    "INT",
-                    {
-                        "default": 1,
-                        "min": 0,
-                        "max": 100,
-                        "step": 1,
-                        "tooltip": "Which segment the SEGMENT output returns, counting from 1; 0 returns an empty string. SEGMENT follows this index and nothing else.",
-                    },
-                ),
-                "list_index": (
-                    "INT",
-                    {
-                        "default": 1,
-                        "min": 0,
-                        "max": 100,
-                        "step": 1,
-                        "tooltip": "Which input text's full split the LIST output returns, counting from 1; 0 returns an empty list. LIST follows this index and nothing else.",
-                    },
-                ),
-                "total_index": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 100,
-                        "step": 1,
-                        "tooltip": "ALL output: 0 lists every segment, and N takes only segment N from each text.",
-                    },
-                ),
-            },
-            "optional": {
-                "texts": (
-                    "STRING",
-                    {
-                        "forceInput": True,
-                        "is_list": True,
-                        "tooltip": "The external list of texts, used in external-list mode only.",
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_TextSplit",
+            display_name="Text Split",
+            category="QG-tools/Text",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Combo.Input("input_source", options=MODES, default=TEXT_FIELD,
+                               tooltip="text-field uses the single block of text below; external-list uses the texts wired in."),
+                io.String.Input("text", default="", multiline=True,
+                                tooltip="The multi-line text to split, used in text-field mode only."),
+                io.String.Input("delimiter", default="<think>",
+                                tooltip="The delimiter. With use_regex on it is read as a regular expression; the default suits cutting out a model's thinking block. A pattern with a capturing group keeps the delimiter in the results."),
+                io.Boolean.Input("use_regex", default=False,
+                                 tooltip="On: the delimiter is a regular expression. Off: it is split as a plain string."),
+                io.Int.Input("segment_index", default=1, min=0, max=100, step=1,
+                             tooltip="Which segment the SEGMENT output returns, counting from 1; 0 returns an empty string. SEGMENT follows this index and nothing else."),
+                io.Int.Input("list_index", default=1, min=0, max=100, step=1,
+                             tooltip="Which input text's full split the LIST output returns, counting from 1; 0 returns an empty list. LIST follows this index and nothing else."),
+                io.Int.Input("total_index", default=0, min=0, max=100, step=1,
+                             tooltip="ALL output: 0 lists every segment, and N takes only segment N from each text."),
+                # is_list 输入：String 无专门形参，走 extra_dict（forceInput 同理）。
+                io.String.Input("texts", optional=True, force_input=True,
+                                extra_dict={"is_list": True},
+                                tooltip="The external list of texts, used in external-list mode only."),
+            ],
+            outputs=[
+                io.String.Output("ALL", is_output_list=True,
+                                 tooltip="Every segment from every input, concatenated (governed by total_index)."),
+                io.String.Output("LIST", is_output_list=True,
+                                 tooltip="The full split of the chosen input text (governed by list_index)."),
+                io.String.Output("SEGMENT",
+                                 tooltip="The single segment chosen (governed by segment_index)."),
+            ],
+        )
 
-    RETURN_TYPES = ("STRING", "STRING", "STRING")
-    RETURN_NAMES = ("ALL", "LIST", "SEGMENT")
-    OUTPUT_TOOLTIPS = (
-        "Every segment from every input, concatenated (governed by total_index).",
-        "The full split of the chosen input text (governed by list_index).",
-        "The single segment chosen (governed by segment_index).",
-    )
-    OUTPUT_IS_LIST = (True, True, False)
-    FUNCTION = "execute"
-
-    def execute(self, input_source, text, delimiter, use_regex,
+    @classmethod
+    def execute(cls, input_source, text, delimiter, use_regex,
                 segment_index, list_index, total_index, texts=None):
+        # V1 装饰器 coerce input_source（中文遗留值 → 英文），V3 显式保留。
+        input_source = coerce("QG_TextSplit", "input_source", input_source)
         if not delimiter:
-            return EMPTY
+            return io.NodeOutput(*EMPTY)
 
         if input_source == TEXT_FIELD:
             if not text:
-                return EMPTY
+                return io.NodeOutput(*EMPTY)
             sources = [text]
         else:
             if not texts:
-                return EMPTY
+                return io.NodeOutput(*EMPTY)
             sources = list(texts) if not isinstance(texts, str) else [texts]
 
         try:
@@ -240,7 +200,7 @@ class QGTextSplit:
             idx = segment_index - 1
             segment = pool[idx] if 0 <= idx < len(pool) else ""
 
-        return (all_out, list_out, segment)
+        return io.NodeOutput(all_out, list_out, segment)
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextSplit": QGTextSplit}

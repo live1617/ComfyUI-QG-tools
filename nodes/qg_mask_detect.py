@@ -39,6 +39,8 @@ only a mask, and its cut-off is 0.5 plus an adjustable percentage. Use
 
 import torch
 
+from comfy_api.latest import io
+
 # 有效像素判定：参考实现是严格 > 0.5，这里保持一致。
 ACTIVE_THRESHOLD = 0.5
 
@@ -85,57 +87,56 @@ def detect_mask(mask, min_ratio=3.0):
     return (bool(ratio >= limit),)
 
 
-class QGMaskDetect:
+class QGMaskDetect(io.ComfyNode):
     """判断遮罩有效区域占比是否达到阈值，输出一个 BOOLEAN。"""
 
-    DESCRIPTION = (
-        "Checks whether a mask covers enough area to be worth branching on: a "
-        "pixel counts when it is strictly above 0.5, the active ratio is taken "
-        "over the whole mask with every frame sharing one denominator, and the "
-        "answer is True when that ratio reaches the minimum. A minimum of 0 "
-        "skips the area test, so any single active pixel answers True; an "
-        "all-black mask is always False. Matches Goohaitools' mask-detect node "
-        "value for value, so the same numbers work in both."
-    )
-    SEARCH_ALIASES = [
-        "mask", "detect", "detection", "check", "exists", "has mask",
-        "boolean", "threshold", "ratio", "area", "遮罩", "蒙版",
-        "检测", "判断", "是否存在", "过滤", "面积", "占比", "阈值", "qg",
-    ]
-    CATEGORY = "QG-tools/Mask"
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("BOOLEAN",)
-    RETURN_NAMES = ("has_mask",)
-    OUTPUT_TOOLTIPS = (
-        "True when the active area reaches the minimum ratio; an empty mask "
-        "is always False.",
-    )
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_MaskDetect",
+            display_name="Mask Detect",
+            category="QG-tools/Mask",
+            description=(
+                "Checks whether a mask covers enough area to be worth branching on: a "
+                "pixel counts when it is strictly above 0.5, the active ratio is taken "
+                "over the whole mask with every frame sharing one denominator, and the "
+                "answer is True when that ratio reaches the minimum. A minimum of 0 "
+                "skips the area test, so any single active pixel answers True; an "
+                "all-black mask is always False. Matches Goohaitools' mask-detect node "
+                "value for value, so the same numbers work in both."
+            ),
+            search_aliases=[
+                "mask", "detect", "detection", "check", "exists", "has mask",
+                "boolean", "threshold", "ratio", "area", "遮罩", "蒙版",
+                "检测", "判断", "是否存在", "过滤", "面积", "占比", "阈值", "qg",
+            ],
+            inputs=[
+                io.Mask.Input(
+                    "mask",
+                    tooltip="The mask to test. A pixel counts when it is above 0.5; a batch is judged as a whole - one ratio across every frame, not one verdict per frame.",
+                ),
+                io.Float.Input(
+                    "min_ratio",
+                    default=3.0,
+                    min=0.0,
+                    max=10.0,
+                    step=0.1,
+                    display_mode=io.NumberDisplay.slider,
+                    tooltip="Smallest share of active pixels, in percent (0-10), for the answer to be True. 0 skips the area test and only asks whether any pixel is active. The same number means the same thing in Goohaitools' mask-detect node.",
+                ),
+            ],
+            outputs=[
+                io.Boolean.Output(
+                    id="has_mask",
+                    tooltip="True when the active area reaches the minimum ratio; an empty mask is always False.",
+                ),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "mask": (
-                    "MASK",
-                    {"tooltip": "The mask to test. A pixel counts when it is above 0.5; a batch is judged as a whole - one ratio across every frame, not one verdict per frame."},
-                ),
-                "min_ratio": (
-                    "FLOAT",
-                    {
-                        "default": 3.0,
-                        "min": 0.0,
-                        "max": 10.0,
-                        "step": 0.1,
-                        "display": "slider",
-                        "tooltip": "Smallest share of active pixels, in percent (0-10), for the answer to be True. 0 skips the area test and only asks whether any pixel is active. The same number means the same thing in Goohaitools' mask-detect node.",
-                    },
-                ),
-            },
-        }
-
-    def execute(self, mask, min_ratio=3.0):
-        return detect_mask(mask, min_ratio)
+    def execute(cls, mask, min_ratio=3.0):
+        (found,) = detect_mask(mask, min_ratio)
+        return io.NodeOutput(found)
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskDetect": QGMaskDetect}

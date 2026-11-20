@@ -30,7 +30,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=202611141000";
+import { chainCallback } from "./index.mjs?v=202611182145";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════
@@ -40,6 +40,8 @@ export const SIZES = {
     // —— 270：主体宽度，一屏并排最整齐 ——
     QG_ColorCorrect: { w: 270, minW: 140, h: 178, minH: 178 },
     QG_ColorMatch: { w: 270, minW: 140, h: 286, minH: 286 },
+    // 3 输入槽 + 6 控件，真机 computeSize 210x218（pinNodeWidth 钉到 280 宽只会更矮）。
+    QG_ColorMatchPro: { w: 280, minW: 140, h: 218, minH: 218 },
     QG_EmptyLatentResolution: { w: 210, minW: 140, h: 194, minH: 194 },
     QG_Exists: { w: 210, minW: 140, h: 46, minH: 46 },
     QG_FreeMemory: { w: 210, minW: 140, h: 26, minH: 26 },
@@ -79,6 +81,18 @@ export const SIZES = {
     QG_RouteBlocker: { w: 210, minW: 140, h: 82, minH: 82 },
     QG_SizeSelector: { w: 270, minW: 140, h: 310, minH: 310 },
     QG_TextConcat: { w: 270, minW: 140, h: 78, minH: 78 },
+    // 1 控件 + 1 输出，真机 computeSize 210x58；pinNodeWidth 钉宽只会更矮。
+    // 3 输入槽 + 6 控件（透明度滑条 / 扩展 / 模糊 / 匹配开关 / 图像×2），真机待测。
+    QG_ImageMergeMask: { w: 270, minW: 160, h: 210, minH: 210 },
+    // 4 必填控件 + 1 可选输入 + 1 输出，真机待测。
+    QG_ColorImage: { w: 270, minW: 160, h: 190, minH: 190 },
+    // 2 可选输入槽 + 4 控件 + 2 输出槽，真机待测。
+    QG_ImageScaleRange: { w: 270, minW: 160, h: 190, minH: 190 },
+
+
+    QG_StringConstant: { w: 270, minW: 140, h: 58, minH: 58 },
+    // 多行控件 + 布尔开关 + 1 输出，真机 computeSize 210x112。
+    QG_StringConstantMultiline: { w: 270, minW: 140, h: 112, minH: 112 },
     QG_TextReplace: { w: 270, minW: 140, h: 202, minH: 202 },
 
     // —— 400：带多行输入框，270 打不动字 ——

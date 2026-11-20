@@ -40,6 +40,26 @@ export const NODE_ALIASES = {
     QG_TextSplit: [
         "text split", "textsplit", "split text", "split by delimiter", "string split", "chunk text", "text", "文本按分隔符分割", "分割文本", "拆分文本", "切分", "打散",
     ],
+    QG_ImageScaleRange: [
+        "image scale range", "scale to range", "resize range", "limit size", "scale range",
+        "图像缩放范围", "范围缩放", "图像缩放", "限制尺寸", "长边缩放",
+    ],
+    QG_ColorImage: [
+        "solid color image", "color image", "solid color", "blank image", "fill color",
+        "纯色图像", "纯色图", "生成纯色", "颜色图像", "纯色底",
+    ],
+    QG_ImageMergeMask: [
+        "image merge mask", "merge image", "image composite", "mask overlay", "paste by mask",
+        "图像合并", "遮罩合并", "叠加图像", "按遮罩合成",
+    ],
+    QG_StringConstant: [
+        "string constant", "stringconstant", "text constant", "string value", "fixed text",
+        "字符串常量", "字符串", "文本常量", "常量",
+    ],
+    QG_StringConstantMultiline: [
+        "string constant multiline", "multiline string constant", "multiline text constant",
+        "多行字符串常量", "多行文本常量", "多行常量",
+    ],
     QG_TextConcat: [
         "text concat", "textconcat", "concatenate", "concat text", "merge text", "join text", "combine text", "string concat", "text", "文本合并", "合并文本", "拼接文本", "连接文本",
     ],
@@ -154,6 +174,11 @@ export const NODE_ALIASES = {
     ],
     QG_ColorCorrect: [
         "color correct", "colour correct", "color corrector", "color correction", "colour correction", "colorcorrection", "color grade", "colour grade", "color grading", "grading", "color adjust", "color balance", "temperature", "white balance", "tint", "hue", "hue rotate", "brightness", "contrast", "saturation", "desaturate", "gamma", "exposure", "image", "颜色校正", "校色", "色彩校正", "调色",
+    ],
+    QG_ColorMatchPro: [
+        "color match pro", "colour match pro", "colormatchpro", "color match", "color transfer",
+        "mkl", "hm", "reinhard", "mvgd", "histogram match", "wavelet", "adain",
+        "keep luma", "mask feather", "颜色匹配 Pro", "颜色匹配", "颜色迁移", "配色", "保留明暗", "蒙版羽化",
     ],
     QG_ColorMatch: [
         "color match", "colour match", "color matching", "colour matching", "color transfer", "colour transfer", "colortransfer", "match color", "match colour", "match reference color", "recolor", "recolour", "palette transfer", "color harmonization", "colour harmonization", "color harmonisation", "reinhard", "mkl", "histogram match", "hist match", "reference color", "color palette", "image", "color", "颜色匹配", "配色", "色彩匹配", "统一色调",

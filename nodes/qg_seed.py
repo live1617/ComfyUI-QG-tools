@@ -19,10 +19,12 @@ display name localized, tooltips and comments rewritten.
 Third-party notice: THIRD-PARTY-NOTICES.md.
 """
 
+from comfy_api.latest import io
+
 MAX_SEED = 0xFFFFFFFFFFFFFFFF
 
 
-class QGSeed:
+class QGSeed(io.ComfyNode):
     CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "One seed on its own INT wire, so several samplers share a number and a "
@@ -37,39 +39,44 @@ class QGSeed:
     SEARCH_ALIASES = ["seed", "random seed", "last seed", "种子", "随机", "qg"]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "seed": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": MAX_SEED,
-                        # ComfyUI 认这个键就会自动挂一个「生成后控制」控件；
-                        # 前端把它藏起来，改由卡片上的「随机值 / 固定 / Step」驱动。
-                        "control_after_generate": True,
-                        "tooltip": (
-                            "The seed sent downstream. The card's Random / Fixed / Step switch "
-                            "decides what happens after each queue: Random draws a new one, "
-                            "Fixed keeps it, Step adds or subtracts 1."
-                        ),
-                    },
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_Seed",
+            display_name="Seed",
+            category="QG-tools/Logic",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Int.Input(
+                    "seed",
+                    default=0,
+                    min=0,
+                    max=MAX_SEED,
+                    # ComfyUI 认这个键就会自动挂一个「生成后控制」控件；
+                    # 前端把它藏起来，改由卡片上的「随机值 / 固定 / Step」驱动。
+                    control_after_generate=True,
+                    tooltip=(
+                        "The seed sent downstream. The card's Random / Fixed / Step switch "
+                        "decides what happens after each queue: Random draws a new one, "
+                        "Fixed keeps it, Step adds or subtracts 1."
+                    ),
                 ),
-            },
-        }
+            ],
+            outputs=[
+                # "SEED" 是存档键（大写），必须显式写 id，否则回落成 INT。
+                io.Int.Output(
+                    "SEED",
+                    tooltip="The seed this run actually used.",
+                ),
+            ],
+        )
 
-    RETURN_TYPES = ("INT",)
-    RETURN_NAMES = ("SEED",)
-    OUTPUT_TOOLTIPS = (
-        "The seed this run actually used.",
-    )
-    FUNCTION = "emit"
-
-    def emit(self, seed):
+    @classmethod
+    def execute(cls, seed):
         # ui 回包就是前端的「上次运行」：这一次排队用的值，哪怕随机值模式
-        # 已经把框里的数字换成下一枚了。
-        return {"ui": {"seed": [seed]}, "result": (seed,)}
+        # 已经把框里的数字换成下一枚了。V3 用 NodeOutput(ui=...) 传，执行引擎
+        # 会转成 V1 的 {"ui": ..., "result": ...} 回包，行为一致。
+        return io.NodeOutput(seed, ui={"seed": [seed]})
 
 
 NODE_CLASS_MAPPINGS = {"QG_Seed": QGSeed}

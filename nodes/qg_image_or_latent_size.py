@@ -71,6 +71,8 @@ tooltips and aliases are ours. Third-party notice: THIRD-PARTY-NOTICES.md.
 
 import torch
 
+from comfy_api.latest import io
+
 # A last dimension in this set reads as a channel count, not as a width.
 _CHANNEL_COUNTS = (1, 3, 4)
 
@@ -157,7 +159,7 @@ def _measure_latent(samples):
             int(shape[0]))
 
 
-class QGImageOrLatentSize:
+class QGImageOrLatentSize(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Read the width, height and count of whatever you connect: an IMAGE, a "
@@ -172,29 +174,36 @@ class QGImageOrLatentSize:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {},
-            "optional": {
-                "input": ("*", {
-                    "forceInput": True,
-                    "tooltip": "Connect an IMAGE, a MASK or a LATENT; the node outputs its width, height and frame count.",
-                }),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_ImageOrLatentSize",
+            display_name="Image or Latent Size",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                # V1 的字面量 '*' + forceInput → V3 AnyType + extra_dict
+                io.AnyType.Input(
+                    "input",
+                    optional=True,
+                    extra_dict={"forceInput": True},
+                    tooltip="Connect an IMAGE, a MASK or a LATENT; the node outputs its width, height and frame count.",
+                ),
+            ],
+            outputs=[
+                io.Int.Output("WIDTH", tooltip="Width of what you connected (a Latent is already scaled by 8)."),
+                io.Int.Output("HEIGHT", tooltip="Height of what you connected (a Latent is already scaled by 8)."),
+                io.Int.Output(
+                    "COUNT",
+                    tooltip="Batch dimension - the frame count. A single (H,W) mask counts as 1; for a Latent this is samples' first dimension.",
+                ),
+            ],
+        )
 
-    RETURN_TYPES = ("INT", "INT", "INT")
-    RETURN_NAMES = ("WIDTH", "HEIGHT", "COUNT")
-    OUTPUT_TOOLTIPS = (
-        "Width of what you connected (a Latent is already scaled by 8).",
-        "Height of what you connected (a Latent is already scaled by 8).",
-        "Batch dimension - the frame count. A single (H,W) mask counts as 1; for a Latent this is samples' first dimension.",
-    )
-    FUNCTION = "execute"
-
-    def execute(self, input=None):
+    @classmethod
+    def execute(cls, input=None):
         if input is None:
-            return (0, 0, 0)
+            return io.NodeOutput(0, 0, 0)
 
         if isinstance(input, dict):
             if "samples" not in input:
@@ -203,9 +212,9 @@ class QGImageOrLatentSize:
                     "Image or Latent Size: got a dict without a samples key (keys: %s); "
                     "that is not a LATENT - LATENT looks like {'samples': tensor}" % keys
                 )
-            return _measure_latent(input["samples"])
+            return io.NodeOutput(*_measure_latent(input["samples"]))
 
-        return _measure(_shape_of(input))
+        return io.NodeOutput(*_measure(_shape_of(input)))
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageOrLatentSize": QGImageOrLatentSize}

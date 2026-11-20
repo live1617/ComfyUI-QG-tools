@@ -24,8 +24,10 @@ both menu entries never show up twice.
 
 from __future__ import annotations
 
+from comfy_api.latest import io
 
-class QGSetPoint:
+
+class QGSetPoint(io.ComfyNode):
     """Name a wire: one input on the left, one output on the right."""
 
     CATEGORY = "QG-tools/Workflow"
@@ -41,21 +43,26 @@ class QGSetPoint:
         "named link", "wireless", "reroute", "设置点", "设置节点", "命名连线",
         "无线连接", "qg",
     ]
-    OUTPUT_NODE = False
+    @classmethod
+    def define_schema(cls):
+        # 零输入零输出：端口由前端 addInput / addOutput（通配类型，接什么变什么），
+        # 节点是 isVirtualNode，不进 prompt、从不执行。
+        return io.Schema(
+            node_id="QG_SetPoint",
+            display_name="Set Point",
+            category="QG-tools/Workflow",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[],
+            outputs=[],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        # 端口由前端自己 addInput / addOutput（通配类型，接什么变什么）。
-        return {"required": {}}
-
-    RETURN_TYPES = ()
-    FUNCTION = "noop"
-
-    def noop(self):
-        return ()
+    def execute(cls):
+        return io.NodeOutput()
 
 
-class QGGetPoint:
+class QGGetPoint(io.ComfyNode):
     """Read the value of a named Set Point without drawing a long wire."""
 
     CATEGORY = "QG-tools/Workflow"
@@ -70,17 +77,22 @@ class QGGetPoint:
         "get point", "getpoint", "get node", "getnode", "named link",
         "wireless", "reroute", "获取点", "获取节点", "取值", "无线连接", "qg",
     ]
-    OUTPUT_NODE = False
+    @classmethod
+    def define_schema(cls):
+        # 零输入零输出：端口由前端管理，isVirtualNode，不进 prompt。
+        return io.Schema(
+            node_id="QG_GetPoint",
+            display_name="Get Point",
+            category="QG-tools/Workflow",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[],
+            outputs=[],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {}}
-
-    RETURN_TYPES = ()
-    FUNCTION = "noop"
-
-    def noop(self):
-        return ()
+    def execute(cls):
+        return io.NodeOutput()
 
 
 NODE_CLASS_MAPPINGS = {

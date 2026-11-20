@@ -59,6 +59,8 @@
 
 import torch
 
+from comfy_api.latest import io
+
 # 参考实现的收缩保护系数：与「0.9 × 矩形像素数」比较，见 shrink_guard()。
 MAX_SHRINK_RATIO = 0.9
 ACTIVE_THRESHOLD = 0.5
@@ -190,89 +192,104 @@ def analyze_mask(mask, expand_top=0, expand_bottom=0,
 # 节点外壳
 # ---------------------------------------------------------------------------
 
-class QGMaskAnalysis:
+_DESCRIPTION = (
+    "Measure the non-zero bounding box of a mask, grow or shrink each of "
+    "its four sides by a percentage, and paint that rectangle solid white. "
+    "Positive values grow outward, negative values pull inward (the shrink "
+    "guard matches the original Mask Analysis node, so the same numbers can "
+    "be pasted between them). Pixels count as painted at >= 0.5, a batch "
+    "uses the combined extent of every frame, and the node also returns the "
+    "canvas size, the rectangle size and the rectangle centre."
+)
+
+
+class QGMaskAnalysis(io.ComfyNode):
     """量出遮罩的非零外接矩形，四边按百分比扩缩，输出白矩形与各项尺寸。"""
 
-    DESCRIPTION = (
-        "Measure the non-zero bounding box of a mask, grow or shrink each of "
-        "its four sides by a percentage, and paint that rectangle solid white. "
-        "Positive values grow outward, negative values pull inward (the shrink "
-        "guard matches the original Mask Analysis node, so the same numbers can "
-        "be pasted between them). Pixels count as painted at >= 0.5, a batch "
-        "uses the combined extent of every frame, and the node also returns the "
-        "canvas size, the rectangle size and the rectangle centre."
-    )
-    SEARCH_ALIASES = [
-        "mask", "analyze", "analysis", "bbox", "bounding box", "expand",
-        "extend", "shrink", "center", "遮罩", "蒙版", "分析", "扩展",
-        "收缩", "外接矩形", "中心", "qg",
-    ]
-    CATEGORY = "QG-tools/Mask"
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("MASK", "INT", "INT", "INT", "INT", "INT", "INT")
-    RETURN_NAMES = (
-        "mask", "canvas_width", "canvas_height",
-        "mask_width", "mask_height", "center_x", "center_y",
-    )
-    OUTPUT_TOOLTIPS = (
-        "A mask with the measured rectangle painted solid white on the "
-        "original canvas.",
-        "Width of the canvas in pixels.",
-        "Height of the canvas in pixels.",
-        "Width of the rectangle in pixels after the four side adjustments; "
-        "0 when the mask is empty.",
-        "Height of the rectangle in pixels after the four side adjustments; "
-        "0 when the mask is empty.",
-        "Horizontal centre of the rectangle in pixels.",
-        "Vertical centre of the rectangle in pixels.",
-    )
+    @classmethod
+    def define_schema(cls):
+        side_tt_full = (
+            "How far the %s edge grows outward, as a percentage of the mask %s. "
+            "Negative values pull it inward; when the two sides together shrink "
+            "too much they are scaled down, exactly like the original Mask "
+            "Analysis node, so the same numbers work in both."
+        )
+        return io.Schema(
+            node_id="QG_MaskAnalysis",
+            display_name="Mask Analysis",
+            category="QG-tools/Mask",
+            description=_DESCRIPTION,
+            search_aliases=[
+                "mask", "analyze", "analysis", "bbox", "bounding box", "expand",
+                "extend", "shrink", "center", "遮罩", "蒙版", "分析", "扩展",
+                "收缩", "外接矩形", "中心", "qg",
+            ],
+            inputs=[
+                io.Mask.Input(
+                    "mask",
+                    tooltip=(
+                        "The mask to measure. Pixels count as painted at >= 0.5; a batch "
+                        "uses the combined non-zero extent of every frame and keeps every "
+                        "frame in the output."
+                    ),
+                ),
+                io.Int.Input(
+                    "expand_top", default=0, min=-90, max=1000, step=1,
+                    tooltip=side_tt_full % ("top", "height"),
+                ),
+                io.Int.Input(
+                    "expand_bottom", default=0, min=-90, max=1000, step=1,
+                    tooltip=side_tt_full % ("bottom", "height"),
+                ),
+                io.Int.Input(
+                    "expand_left", default=0, min=-90, max=1000, step=1,
+                    tooltip=side_tt_full % ("left", "width"),
+                ),
+                io.Int.Input(
+                    "expand_right", default=0, min=-90, max=1000, step=1,
+                    tooltip=side_tt_full % ("right", "width"),
+                ),
+            ],
+            outputs=[
+                io.Mask.Output(
+                    id="mask",
+                    tooltip=(
+                        "A mask with the measured rectangle painted solid white on the "
+                        "original canvas."
+                    ),
+                ),
+                io.Int.Output(id="canvas_width", tooltip="Width of the canvas in pixels."),
+                io.Int.Output(id="canvas_height", tooltip="Height of the canvas in pixels."),
+                io.Int.Output(
+                    id="mask_width",
+                    tooltip=(
+                        "Width of the rectangle in pixels after the four side adjustments; "
+                        "0 when the mask is empty."
+                    ),
+                ),
+                io.Int.Output(
+                    id="mask_height",
+                    tooltip=(
+                        "Height of the rectangle in pixels after the four side adjustments; "
+                        "0 when the mask is empty."
+                    ),
+                ),
+                io.Int.Output(
+                    id="center_x",
+                    tooltip="Horizontal centre of the rectangle in pixels.",
+                ),
+                io.Int.Output(
+                    id="center_y",
+                    tooltip="Vertical centre of the rectangle in pixels.",
+                ),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "mask": (
-                    "MASK",
-                    {
-                        "tooltip": "The mask to measure. Pixels count as painted at >= 0.5; a batch uses the combined non-zero extent of every frame and keeps every frame in the output.",
-                    },
-                ),
-                "expand_top": (
-                    "INT",
-                    {
-                        "default": 0, "min": -90, "max": 1000, "step": 1,
-                        "tooltip": "How far the top edge grows outward, as a percentage of the mask height. Negative values pull it inward; when the two sides together shrink too much they are scaled down, exactly like the original Mask Analysis node, so the same numbers work in both.",
-                    },
-                ),
-                "expand_bottom": (
-                    "INT",
-                    {
-                        "default": 0, "min": -90, "max": 1000, "step": 1,
-                        "tooltip": "How far the bottom edge grows outward, as a percentage of the mask height. Negative values pull it inward; when the two sides together shrink too much they are scaled down, exactly like the original Mask Analysis node, so the same numbers work in both.",
-                    },
-                ),
-                "expand_left": (
-                    "INT",
-                    {
-                        "default": 0, "min": -90, "max": 1000, "step": 1,
-                        "tooltip": "How far the left edge grows outward, as a percentage of the mask width. Negative values pull it inward; when the two sides together shrink too much they are scaled down, exactly like the original Mask Analysis node, so the same numbers work in both.",
-                    },
-                ),
-                "expand_right": (
-                    "INT",
-                    {
-                        "default": 0, "min": -90, "max": 1000, "step": 1,
-                        "tooltip": "How far the right edge grows outward, as a percentage of the mask width. Negative values pull it inward; when the two sides together shrink too much they are scaled down, exactly like the original Mask Analysis node, so the same numbers work in both.",
-                    },
-                ),
-            },
-        }
-
-    def execute(self, mask, expand_top=0, expand_bottom=0,
+    def execute(cls, mask, expand_top=0, expand_bottom=0,
                 expand_left=0, expand_right=0):
-        return analyze_mask(mask, expand_top, expand_bottom,
-                            expand_left, expand_right)
+        return io.NodeOutput(*analyze_mask(mask, expand_top, expand_bottom,
+                                           expand_left, expand_right))
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskAnalysis": QGMaskAnalysis}

@@ -5,7 +5,7 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { zhPair } from "../shared/zh.mjs?v=202611141000";
+import { zhPair } from "../shared/zh.mjs?v=202611182145";
 
 const NODE_CLASS = "QG_GoogleTranslateText";
 

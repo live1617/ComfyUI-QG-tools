@@ -102,28 +102,36 @@ class _NoSourceBadgeMeta(type):
         super().__setattr__(name, value)
 
 
-class QGRunTimer(metaclass=_NoSourceBadgeMeta):
+from comfy_api.latest import io
+
+
+class QGRunTimer(io.ComfyNode, metaclass=_NoSourceBadgeMeta):
     """显示本次工作流从入队到结束的实时耗时（无输入、无输出、无控件）。"""
 
     RELATIVE_PYTHON_MODULE = "nodes"
 
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {},
-            "hidden": {"unique_id": "UNIQUE_ID"},
-        }
-
-    RETURN_TYPES = ()
-    FUNCTION = "tick"
-    CATEGORY = "QG-tools/Display"
-    OUTPUT_NODE = True
     DESCRIPTION = "A canvas stopwatch for the whole run: a dark panel with elapsed time and a status dot. Right-click to switch themes and font colour. Font served from /qg/timer/font."
     SEARCH_ALIASES = ["timer", "stopwatch", "elapsed", "计时器", "秒表", "耗时", "运行时间"]
 
-    def tick(self, unique_id=None):
+    @classmethod
+    def define_schema(cls):
+        # 零输入零输出 + OUTPUT_NODE；hidden unique_id 显式声明（基类另注入 prompt/extra_pnginfo）。
+        return io.Schema(
+            node_id="QG_RunTimer",
+            display_name="Run Timer",
+            category="QG-tools/Display",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[],
+            outputs=[],
+            hidden=[io.Hidden.unique_id],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, unique_id=None):
         # 前端负责一切绘制与交互，这里只回一个空 UI 结果，保证节点可执行/缓存。
-        return {"ui": {}, "result": ()}
+        return io.NodeOutput()
 
 
 NODE_CLASS_MAPPINGS = {"QG_RunTimer": QGRunTimer}

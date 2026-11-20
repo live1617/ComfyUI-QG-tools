@@ -29,18 +29,18 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611141000";
-import { BRAND, notifyQgChange } from "../shared/index.mjs?v=202611141000";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=202611141000";
-import { gearIconSvg } from "../shared/settings_menu.mjs?v=202611141000";
+import { sizeFor } from "../shared/node_width.mjs?v=202611182145";
+import { BRAND, notifyQgChange } from "../shared/index.mjs?v=202611182145";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=202611182145";
+import { gearIconSvg } from "../shared/settings_menu.mjs?v=202611182145";
 import {
     detachDomWidget,
     installModeWatcher,
     onRenderModeSwitch,
     vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=202611141000";
-import { zh, zhPair, wantsChinese } from "../shared/zh.mjs?v=202611141000";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611141000";
+} from "../shared/vue_mode.mjs?v=202611182145";
+import { zh, zhPair, wantsChinese } from "../shared/zh.mjs?v=202611182145";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611182145";
 
 const NODE_TYPE = "QG_ExportImage";
 const CSS_ID = "qgtools-export-css";

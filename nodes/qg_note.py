@@ -23,8 +23,10 @@ search menu. With this definition, "add node -> QG-tools -> Note" works.
 
 from __future__ import annotations
 
+from comfy_api.latest import io
 
-class QGNote:
+
+class QGNote(io.ComfyNode):
     CATEGORY = "QG-tools/Workflow"
     DESCRIPTION = (
         "A sticky note or title card on the canvas. Double-click to edit the "
@@ -52,19 +54,24 @@ class QGNote:
         "孤海注释",
         "qg",
     ]
-    OUTPUT_NODE = False
+    @classmethod
+    def define_schema(cls):
+        # 零输入零输出：文本放在前端 properties 里，节点不进 prompt 图。
+        # 不设任何 widget，避免节点上多出一个输入框。
+        return io.Schema(
+            node_id="QG_Note",
+            display_name="Note",
+            category="QG-tools/Workflow",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[],
+            outputs=[],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        # 不设任何 widget：文本放在 properties 里，避免节点上多出一个输入框
-        return {"required": {}}
-
-    RETURN_TYPES = ()
-    FUNCTION = "noop"
-
-    def noop(self):
+    def execute(cls):
         # 正常不会执行；保留一个完整的节点类，便于静态检查与单元测试
-        return ()
+        return io.NodeOutput()
 
 
 NODE_CLASS_MAPPINGS = {"QG_Note": QGNote}

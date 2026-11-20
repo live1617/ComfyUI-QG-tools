@@ -48,12 +48,22 @@ leaving black bars, which is padding rather than matching. Resizing each mask
 before this node is the way to keep a ratio.
 
 Only the standard library plus torch is used -- no new dependency.
+
+V3 migration (2026-11-19): V1 -> V3 via ``io.ComfyNode``. Schema is built in
+``define_schema``; ``execute`` is a classmethod returning ``io.NodeOutput``.
+The ``@combo_legacy`` decorator is dropped (it wraps ``cls.FUNCTION``, which
+in V3 is the base class's ``EXECUTE_NORMALIZED``) and replaced by an explicit
+``coerce()`` call at the top of ``execute``, preserving legacy Chinese combo
+values from saved workflows. ``validate_inputs`` is the V3 spelling of the old
+``VALIDATE_INPUTS`` and keeps the same named-argument trick.
 """
 
 import torch
 import torch.nn.functional as F
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 from ._qg_tensor_helpers import as_mask_batch
 
 LEFT_RIGHT = "left-right"
@@ -102,8 +112,7 @@ def _align_batches(a, b):
     return _repeat_to(a, longest), _repeat_to(b, longest)
 
 
-@combo_legacy("QG_MaskConcat")
-class QGMaskConcat:
+class QGMaskConcat(io.ComfyNode):
     CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
         "Joins two masks into one, either left-right or top-bottom. Turn on "
@@ -115,49 +124,61 @@ class QGMaskConcat:
         "batch is repeated to match the longer one."
     )
     SEARCH_ALIASES = ["mask", "concat", "join", "遮罩", "拼接", "合并", "qg"]
+    OUTPUT_NODE = False
 
     @classmethod
-    def VALIDATE_INPUTS(cls, direction=None):
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_MaskConcat",
+            display_name="Mask Concat",
+            category="QG-tools/Mask",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Mask.Input(
+                    "mask1",
+                    tooltip="The first mask. Several frames are fine and stay several frames.",
+                ),
+                io.Mask.Input(
+                    "mask2",
+                    tooltip="The second mask, of any size.",
+                ),
+                io.Boolean.Input(
+                    "match_size",
+                    default=False,
+                    tooltip="On: stretch the smaller mask to the bigger one's size, which also "
+                            "changes its aspect ratio. Off: both keep their own size and the "
+                            "leftover area stays black.",
+                ),
+                io.Combo.Input(
+                    "direction",
+                    options=list(DIRECTIONS),
+                    default=LEFT_RIGHT,
+                    tooltip="Left-right joins them side by side; top-bottom stacks them "
+                            "vertically. Both lay the first mask at the top-left corner.",
+                ),
+            ],
+            outputs=[
+                io.Mask.Output(
+                    "MASK",
+                    tooltip="The joined mask as (B, H, W): one frame when both inputs had one, "
+                            "otherwise as many frames as the longer input.",
+                ),
+            ],
+        )
+
+    @classmethod
+    def validate_inputs(cls, direction=None):
         # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
         # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
         # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "mask1": ("MASK", {"tooltip": "The first mask. Several frames are fine and stay several frames."}),
-                "mask2": ("MASK", {"tooltip": "The second mask, of any size."}),
-                "match_size": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": "On: stretch the smaller mask to the bigger one's size, which also "
-                                   "changes its aspect ratio. Off: both keep their own size and the "
-                                   "leftover area stays black.",
-                    },
-                ),
-                "direction": (
-                    DIRECTIONS,
-                    {
-                        "default": LEFT_RIGHT,
-                        "tooltip": "Left-right joins them side by side; top-bottom stacks them "
-                                   "vertically. Both lay the first mask at the top-left corner.",
-                    },
-                ),
-            },
-        }
-
-    RETURN_TYPES = ("MASK",)
-    RETURN_NAMES = ("MASK",)
-    OUTPUT_TOOLTIPS = (
-        "The joined mask as (B, H, W): one frame when both inputs had one, "
-        "otherwise as many frames as the longer input.",
-    )
-    FUNCTION = "execute"
-
-    def execute(self, mask1, mask2, match_size, direction):
+    def execute(cls, mask1, mask2, match_size, direction):
+        # 🔴 V3 不能套 @combo_legacy（它按 cls.FUNCTION 找方法，而 V3 的 FUNCTION
+        # 是基类给的 EXECUTE_NORMALIZED）。直接在这里 coerce，语义与 V1 装饰器一致。
+        direction = coerce("QG_MaskConcat", "direction", direction)
         a = _as_batch(mask1)
         b = _as_batch(mask2)
 
@@ -198,7 +219,7 @@ class QGMaskConcat:
         else:
             out[:, :height1, :width1] = a
             out[:, :height2, width1:width1 + width2] = b
-        return (out,)
+        return io.NodeOutput(out)
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskConcat": QGMaskConcat}

@@ -56,8 +56,10 @@ Only numpy / torch are used -- no new dependency.
 
 import torch
 
+from comfy_api.latest import io
+
 from ._qg_color_helpers import CHANNEL_UNSET, as_rgb_triple, channel_inputs, mix_channels
-from ._qg_combo_legacy import combo_legacy
+from ._qg_combo_legacy import coerce
 from ._qg_tensor_helpers import as_image_batch, as_mask_batch, match_size
 
 COLOR_MAP = {
@@ -90,8 +92,10 @@ def _fill_batch(mask, count):
     return mask[:count]
 
 
-@combo_legacy("QG_MaskColorize")
-class QGMaskColorize:
+# V1 挂 @combo_legacy("QG_MaskColorize")：LEGACY 表有真中文遗留值（黑/白/灰/红/绿/蓝）。
+# V3 不能套该装饰器（它按 cls.FUNCTION 找方法，V3 的 FUNCTION 是基类给的 EXECUTE_NORMALIZED），
+# 改在 execute 开头 coerce()，语义与 V1 装饰器一致。
+class QGMaskColorize(io.ComfyNode):
     CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
         "Paints a flat colour into the masked area of an image. Pick one of six "
@@ -107,62 +111,66 @@ class QGMaskColorize:
     SEARCH_ALIASES = ["mask", "colorize", "paint", "遮罩", "上色", "涂色", "qg"]
 
     @classmethod
-    def VALIDATE_INPUTS(cls, color_name=None):
+    def validate_inputs(cls, color_name=None):
         # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
         # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
-        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+        # 真正的换值在 execute 开头的 coerce() 里做，数字的 min/max 校验不受影响。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": ("IMAGE", {"tooltip": "The base image; every frame of a batch is painted."}),
-                "mask": (
-                    "MASK",
-                    {
-                        "tooltip": (
-                            "The mask: white areas (above 0.5) take the color, black areas keep "
-                            "the image. One mask paints every frame; a shorter batch repeats to "
-                            "fill. Must be the same width and height as the image."
-                        )
-                    },
+    def define_schema(cls):
+        # 三个通道 tooltip 从 helper 取，保证与 V1 逐字一致（helper 是唯一真相源）。
+        ch = channel_inputs()
+        return io.Schema(
+            node_id="QG_MaskColorize",
+            display_name="Mask Colorize",
+            category="QG-tools/Mask",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("image", tooltip="The base image; every frame of a batch is painted."),
+                io.Mask.Input(
+                    "mask",
+                    tooltip=(
+                        "The mask: white areas (above 0.5) take the color, black areas keep "
+                        "the image. One mask paints every frame; a shorter batch repeats to "
+                        "fill. Must be the same width and height as the image."
+                    ),
                 ),
-                "color_name": (
-                    list(COLOR_MAP.keys()),
-                    {"default": "white", "tooltip": "One of the built-in colors; a wired RGB triple wins over it."},
+                io.Combo.Input(
+                    "color_name",
+                    options=list(COLOR_MAP.keys()),
+                    default="white",
+                    tooltip="One of the built-in colors; a wired RGB triple wins over it.",
                 ),
-            },
-            "optional": {
-                "color_rgb": (
-                    "*",
-                    {
-                        # 不加 forceInput 画布上会多画一个填了也没用的文本框 ——
-                        # 通配输入的通病，本包里出现过六次。
-                        "forceInput": True,
-                        "tooltip": "Optional custom color, as [R, G, B]. All three at or below 1 means "
-                                   "a 0-1 triple; anything else is read as 0-255. Wins over both the "
-                                   "picker and the three boxes below.",
-                    },
+                # 通配输入 + forceInput（AnyType 无 force_input 形参，走 extra_dict）。
+                io.AnyType.Input(
+                    "color_rgb",
+                    optional=True,
+                    extra_dict={"forceInput": True},
+                    tooltip="Optional custom color, as [R, G, B]. All three at or below 1 means "
+                            "a 0-1 triple; anything else is read as 0-255. Wins over both the "
+                            "picker and the three boxes below.",
                 ),
-                # 三个通道分开填：能只改一路，也能不连线就自定义颜色。
-                # 默认 -1 = 这一路沿用「内置颜色」，所以老存档（没有这三个值）
-                # 行为完全不变，还是按 color_name 上色。
-                # 🔴 位置必须在 color_rgb **之后**，否则老工作流的
-                # widgets_values 会跟控件错位、link 会指到错的槽。
-                **channel_inputs(),
-            },
-        }
+                # 三个通道分开填：默认 -1 = 沿用内置颜色；位置必须在 color_rgb 之后。
+                io.Int.Input("r", optional=True, default=CHANNEL_UNSET, min=CHANNEL_UNSET, max=255,
+                             tooltip=ch["r"][1]["tooltip"]),
+                io.Int.Input("g", optional=True, default=CHANNEL_UNSET, min=CHANNEL_UNSET, max=255,
+                             tooltip=ch["g"][1]["tooltip"]),
+                io.Int.Input("b", optional=True, default=CHANNEL_UNSET, min=CHANNEL_UNSET, max=255,
+                             tooltip=ch["b"][1]["tooltip"]),
+            ],
+            outputs=[
+                io.Image.Output("IMAGE", tooltip="The image with the masked area painted."),
+            ],
+        )
 
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("IMAGE",)
-    OUTPUT_TOOLTIPS = (
-        "The image with the masked area painted.",
-    )
-    FUNCTION = "execute"
-
-    def execute(self, image, mask, color_name, color_rgb=None,
+    @classmethod
+    def execute(cls, image, mask, color_name="white", color_rgb=None,
                 r=CHANNEL_UNSET, g=CHANNEL_UNSET, b=CHANNEL_UNSET):
+        # 🔴 V3 不能套 @combo_legacy（它按 cls.FUNCTION 找方法）；直接 coerce，
+        # 老存档里的中文色名（黑/白/灰/红/绿/蓝）换成英文，语义与 V1 装饰器一致。
+        color_name = coerce("QG_MaskColorize", "color_name", color_name)
         # 维度归一化与尺寸检查都走 `_qg_tensor_helpers`：同样的判断散在八个
         # 节点里各写了一遍，而且写的不是同一件事（见那个文件的说明）。
         image, _ = as_image_batch(image, "Mask Colorize: base image")
@@ -182,7 +190,7 @@ class QGMaskColorize:
         # 直接把 (3,) 广播进混合，省掉一张整幅的纯色图。
         color = torch.tensor(triple, dtype=image.dtype, device=image.device) / 255.0
         out = image * (1.0 - mask) + color * mask
-        return (out.clamp(0.0, 1.0),)
+        return io.NodeOutput(out.clamp(0.0, 1.0))
 
 
 NODE_CLASS_MAPPINGS = {"QG_MaskColorize": QGMaskColorize}

@@ -75,6 +75,8 @@ except Exception:  # pragma: no cover
     ExecutionBlocker = None
 from server import PromptServer
 
+from comfy_api.latest import io
+
 from ._qg_any_type import ANY, WILDCARD_NAMES
 
 NODE_TYPE = "QG_DisplayAny"
@@ -306,7 +308,7 @@ def _declared_type(prompt, unique_id, extra_pnginfo):
     return declared
 
 
-class QGDisplayAny:
+class QGDisplayAny(io.ComfyNode):
     CATEGORY = "QG-tools/Display"
     DESCRIPTION = (
         "Show whatever is wired into it — text, image, mask, audio, video or any "
@@ -323,29 +325,27 @@ class QGDisplayAny:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "optional": {"Any": (ANY, {
-                "tooltip": (
-                    "The value to show. Anything can be wired here; the node "
-                    "picks a renderer from the upstream's declared type, or from "
-                    "the value's own shape when the type is unknown. The value "
-                    "comes straight back out unchanged."
-                ),
-            })},
-            "hidden": {"prompt": "PROMPT", "unique_id": "UNIQUE_ID", "extra_pnginfo": "EXTRA_PNGINFO"},
-        }
-
-    RETURN_TYPES = (ANY,)
-    RETURN_NAMES = ("Any",)
-    OUTPUT_TOOLTIPS = (
-        "The same value that came in, untouched.",
-    )
-    FUNCTION = "display"
-    OUTPUT_NODE = True
+    def define_schema(cls):
+        # hidden prompt/unique_id/extra_pnginfo 供预览取连线与类型声明。
+        return io.Schema(
+            node_id="QG_DisplayAny",
+            display_name="Display Any",
+            category="QG-tools/Display",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.AnyType.Input("Any", optional=True,
+                    tooltip="The value to show. Anything can be wired here; the node picks a renderer from the upstream's declared type, or from the value's own shape when the type is unknown. The value comes straight back out unchanged."),
+            ],
+            outputs=[
+                io.AnyType.Output("Any", tooltip="The same value that came in, untouched."),
+            ],
+            hidden=[io.Hidden.prompt, io.Hidden.unique_id, io.Hidden.extra_pnginfo],
+            is_output_node=True,
+        )
 
     @classmethod
-    def VALIDATE_INPUTS(cls, input_types=None):
+    def validate_inputs(cls, input_types=None):
         """让 ``*`` 输入跳过声明类型比对 —— 官方给通配符规定的写法。
 
         参数名必须恰好叫 ``input_types``：核心看到它会跳过
@@ -356,7 +356,8 @@ class QGDisplayAny:
         """
         return True
 
-    def display(self, Any=None, prompt=None, unique_id=None, extra_pnginfo=None):
+    @classmethod
+    def execute(cls, Any=None, prompt=None, unique_id=None, extra_pnginfo=None):
         wired = False
         if prompt and unique_id in prompt:
             wired = is_link(prompt[unique_id].get("inputs", {}).get("Any"))
@@ -365,32 +366,26 @@ class QGDisplayAny:
         # 显示旧图 —— 前端出「未激活分支」占位即可，值仍原样透传给更下游（让
         # 下游也一起跳过，等价于「false 分支不运行」）。
         if ExecutionBlocker is not None and isinstance(Any, ExecutionBlocker):
-            return {
-                "ui": {"qg_display": [{
-                    "type": "ANY",
-                    "text": "",
-                    "images": [],
-                    "audio": [],
-                    "video": [],
-                    "notice": {"code": NOTICE_INACTIVE},
-                }]},
-                "result": (Any,),
-            }
+            return io.NodeOutput(Any, ui={"qg_display": [{
+                "type": "ANY",
+                "text": "",
+                "images": [],
+                "audio": [],
+                "video": [],
+                "notice": {"code": NOTICE_INACTIVE},
+            }]})
 
         # 没接线时 Any 是 None，接了线但上游返回 None 时也是 None。前者该说
         # 「没接输入」，后者该说「值就是 None」—— 靠 prompt 里有没有 link 分开。
         if not wired and Any is None:
-            return {
-                "ui": {"qg_display": [{
-                    "type": "ANY",
-                    "text": "",
-                    "images": [],
-                    "audio": [],
-                    "video": [],
-                    "notice": {"code": NOTICE_NO_INPUT},
-                }]},
-                "result": (Any,),
-            }
+            return io.NodeOutput(Any, ui={"qg_display": [{
+                "type": "ANY",
+                "text": "",
+                "images": [],
+                "audio": [],
+                "video": [],
+                "notice": {"code": NOTICE_NO_INPUT},
+            }]})
 
         kind = preview_kind(Any, _declared_type(prompt, unique_id, extra_pnginfo))
         payload = {"type": kind, "text": describe(Any), "images": [], "audio": [], "video": [], "notice": None}
@@ -414,7 +409,7 @@ class QGDisplayAny:
         # 文本被截断也要说一声，否则用户会以为上游就吐了这么多。
         if payload["notice"] is None and isinstance(Any, str) and len(Any) > TEXT_LIMIT:
             payload["notice"] = {"code": NOTICE_TEXT_TRUNCATED, "total": len(Any), "shown": TEXT_LIMIT}
-        return {"ui": {"qg_display": [payload]}, "result": (Any,)}
+        return io.NodeOutput(Any, ui={"qg_display": [payload]})
 
 
 NODE_CLASS_MAPPINGS = {NODE_TYPE: QGDisplayAny}

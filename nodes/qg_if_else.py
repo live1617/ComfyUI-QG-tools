@@ -40,43 +40,15 @@ Only the standard library is used -- no new dependency.
 """
 
 
+from comfy_api.latest import io
+
 from ._qg_any_type import ANY
 
 # 没接线时参数就是这个对象；接上了但还没求值才是 None。两者必须分得开。
 _MISSING = object()
 
 
-class QGIfElse:
-    @classmethod
-    def INPUT_TYPES(cls):
-        # 两路都是可选：只接一路也成立（那一路总是被选中），两路都接才看
-        # 上面的开关。旧的搬运版把两路写成必填，少接一路在验证阶段就被拒。
-        return {
-            "required": {
-                "boolean": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "The condition. True passes on_true through, false passes on_false. Only consulted when both routes are connected.",
-                }),
-            },
-            "optional": {
-                "on_true": (ANY, {
-                    "lazy": True,
-                    "tooltip": "Value passed through when the condition is true. Not evaluated otherwise. Leave it unconnected to always use on_false.",
-                }),
-                "on_false": (ANY, {
-                    "lazy": True,
-                    "tooltip": "Value passed through when the condition is false. Not evaluated otherwise. Leave it unconnected to always use on_true.",
-                }),
-            },
-        }
-
-    RETURN_TYPES = (ANY,)
-    RETURN_NAMES = ("any",)
-    OUTPUT_TOOLTIPS = (
-        "The value from the branch the condition picked, passed through "
-        "unchanged; the other branch is never executed.",
-    )
-    FUNCTION = "execute"
+class QGIfElse(io.ComfyNode):
     CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "Boolean if/else branch. Passes the on_true input through when the "
@@ -88,7 +60,43 @@ class QGIfElse:
     )
 
     @classmethod
-    def VALIDATE_INPUTS(cls, boolean=False, on_true=_MISSING, on_false=_MISSING):
+    def define_schema(cls):
+        # 两路都是可选：只接一路也成立（那一路总是被选中），两路都接才看
+        # 上面的开关。通配输入用 io.AnyType（*），不加 forceInput。
+        return io.Schema(
+            node_id="QG_IfElse",
+            display_name="If / Else",
+            category="QG-tools/Logic",
+            description=cls.DESCRIPTION,
+            inputs=[
+                io.Boolean.Input(
+                    "boolean",
+                    default=False,
+                    tooltip="The condition. True passes on_true through, false passes on_false. Only consulted when both routes are connected.",
+                ),
+                io.AnyType.Input(
+                    "on_true",
+                    optional=True,
+                    lazy=True,
+                    tooltip="Value passed through when the condition is true. Not evaluated otherwise. Leave it unconnected to always use on_false.",
+                ),
+                io.AnyType.Input(
+                    "on_false",
+                    optional=True,
+                    lazy=True,
+                    tooltip="Value passed through when the condition is false. Not evaluated otherwise. Leave it unconnected to always use on_true.",
+                ),
+            ],
+            outputs=[
+                io.AnyType.Output(
+                    "any",
+                    tooltip="The value from the branch the condition picked, passed through unchanged; the other branch is never executed.",
+                ),
+            ],
+        )
+
+    @classmethod
+    def validate_inputs(cls, boolean=False, on_true=_MISSING, on_false=_MISSING):
         # 必须在这里拦：两路全空时 check_lazy_status 会一直索要一个根本不存在
         # 的输入，执行器就把这个节点反复调度到超时。校验早于懒状态，所以拦得住。
         if on_true is _MISSING and on_false is _MISSING:
@@ -109,17 +117,18 @@ class QGIfElse:
         taken, name = (on_true, "on_true") if boolean else (on_false, "on_false")
         return [name] if taken is None else None
 
-    def execute(self, boolean=False, on_true=_MISSING, on_false=_MISSING):
+    @classmethod
+    def execute(cls, boolean=False, on_true=_MISSING, on_false=_MISSING):
         if on_true is _MISSING and on_false is _MISSING:
             raise ValueError(
                 "If/Else: both branches are empty; connect at least the true or the false "
                 "input - this node passes one of the two through."
             )
         if on_false is _MISSING:
-            return (on_true,)
+            return io.NodeOutput(on_true)
         if on_true is _MISSING:
-            return (on_false,)
-        return (on_true if boolean else on_false,)
+            return io.NodeOutput(on_false)
+        return io.NodeOutput(on_true if boolean else on_false)
 
 
 NODE_CLASS_MAPPINGS = {"QG_IfElse": QGIfElse}

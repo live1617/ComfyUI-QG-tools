@@ -11,11 +11,21 @@ _batch_helpers.py 的 merge_batches），代码零复用：尺寸不一致的三
     把 a 缩到 b 的尺寸、或直接报错（两个尺寸都写在错误里）；
   * 通道数不一致直接报错 —— 悄悄补/丢一个 alpha 通道不是本节点该做的事；
   * b 的 device / dtype 对齐到 a，然后才拼接。
+
+V3 migration (2026-11-18): V1 -> V3 via ``io.ComfyNode``. Schema is built in
+``define_schema``; ``execute`` is a classmethod returning ``io.NodeOutput``.
+The ``@combo_legacy`` decorator is dropped (it wraps ``cls.FUNCTION``, which
+in V3 is the base class's ``EXECUTE_NORMALIZED``) and replaced by an explicit
+``coerce()`` call at the top of ``execute``, preserving legacy Chinese combo
+values from saved workflows. ``validate_inputs`` is the V3 spelling of the old
+``VALIDATE_INPUTS`` and keeps the same named-argument trick.
 """
 
 import torch
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 MISMATCH_MODES = ("resize_to_a", "resize_to_b", "error")
 
@@ -37,8 +47,7 @@ def _resize_bhwc(frames, height, width):
     return resized.permute(0, 2, 3, 1).contiguous()
 
 
-@combo_legacy("QG_BatchMerge")
-class QGBatchMerge:
+class QGBatchMerge(io.ComfyNode):
     """两个批次拼成一个：a 的帧在前，尺寸不一致按 on_mismatch 处理。"""
 
     CATEGORY = "QG-tools/Image"
@@ -53,45 +62,55 @@ class QGBatchMerge:
         "merge", "batch", "join", "concat", "combine", "合并", "批次", "拼接", "qg",
     ]
     OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("images",)
-    OUTPUT_TOOLTIPS = ("One batch: a's frames followed by b's.",)
 
     @classmethod
-    def VALIDATE_INPUTS(cls, on_mismatch=None):
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_BatchMerge",
+            display_name="Batch Merge",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input(
+                    "a",
+                    tooltip="The first batch; its frames come first in the result.",
+                ),
+                io.Image.Input(
+                    "b",
+                    tooltip="The second batch, appended after a's frames.",
+                ),
+                io.Combo.Input(
+                    "on_mismatch",
+                    options=list(MISMATCH_MODES),
+                    default="resize_to_a",
+                    tooltip=(
+                        "When the sizes differ: resize_to_a resizes b's frames to "
+                        "a's size, resize_to_b resizes a's to b's, error stops with "
+                        "both sizes named. Sizes that already match skip this."
+                    ),
+                ),
+            ],
+            outputs=[
+                io.Image.Output(
+                    "images",
+                    tooltip="One batch: a's frames followed by b's.",
+                ),
+            ],
+        )
+
+    @classmethod
+    def validate_inputs(cls, on_mismatch=None):
         # on_mismatch 的译名在 nodes/_qg_combo_legacy.py 的 LEGACY 表里。这里具名报
         # 上去，让 ComfyUI 跳过「值必须在列表里」那道检查 —— 中文界面显示的是
         # 「缩到 A 的尺寸」，直接往 API 里塞中文也不会炸。不写 **kwargs。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "a": (
-                    "IMAGE",
-                    {"tooltip": "The first batch; its frames come first in the result."},
-                ),
-                "b": (
-                    "IMAGE",
-                    {"tooltip": "The second batch, appended after a's frames."},
-                ),
-                "on_mismatch": (
-                    list(MISMATCH_MODES),
-                    {
-                        "default": "resize_to_a",
-                        "tooltip": (
-                            "When the sizes differ: resize_to_a resizes b's frames to "
-                            "a's size, resize_to_b resizes a's to b's, error stops with "
-                            "both sizes named. Sizes that already match skip this."
-                        ),
-                    },
-                ),
-            },
-        }
-
-    def execute(self, a, b, on_mismatch="resize_to_a"):
+    def execute(cls, a, b, on_mismatch="resize_to_a"):
+        # 🔴 V3 不能套 @combo_legacy（它按 cls.FUNCTION 找方法，而 V3 的 FUNCTION
+        # 是基类给的 EXECUTE_NORMALIZED）。直接在这里 coerce，语义与 V1 装饰器一致。
+        on_mismatch = coerce("QG_BatchMerge", "on_mismatch", on_mismatch)
         _require_batch(a, "Batch Merge")
         _require_batch(b, "Batch Merge")
         mode = str(on_mismatch)
@@ -121,7 +140,7 @@ class QGBatchMerge:
                 merged_b = _resize_bhwc(merged_b, *size_a)
             else:
                 merged_a = _resize_bhwc(merged_a, *size_b)
-        return (torch.cat((merged_a, merged_b), dim=0),)
+        return io.NodeOutput(torch.cat((merged_a, merged_b), dim=0))
 
 
 NODE_CLASS_MAPPINGS = {"QG_BatchMerge": QGBatchMerge}

@@ -29,7 +29,9 @@ import torch
 import torch.nn.functional as functional
 from PIL import Image, ImageColor
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 TARGET_MODES = (
     "megapixels",
@@ -290,8 +292,9 @@ def _pad_to(output, left, top, right, bottom, rgb):
     return canvas, new_area
 
 
-@combo_legacy("QG_ImageFitResize")
-class QGImageFitResize:
+# V1 @combo_legacy("QG_ImageFitResize")：4 下拉有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce 四值，与 V1 等价。
+class QGImageFitResize(io.ComfyNode):
     """图像 + 遮罩一起缩放到目标预算/边长/宽高，输出缩放图、遮罩与最终宽高。"""
 
     CATEGORY = "QG-tools/Image"
@@ -307,157 +310,94 @@ class QGImageFitResize:
         "letterbox", "divisible", "anchor", "图像", "缩放", "适配", "预算", "百万像素",
         "裁剪", "填充", "倍数", "锚点", "qg",
     ]
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT")
-    RETURN_NAMES = ("image", "mask", "width", "height")
-    OUTPUT_TOOLTIPS = (
-        "The resized image batch.",
-        "The mask through the same resize/crop/pad geometry; pad bars are 1.0 "
-        "(a ready outpaint mask). All zeros when no mask is wired.",
-        "Output width in pixels.",
-        "Output height in pixels.",
-    )
-
     @classmethod
-    def VALIDATE_INPUTS(cls, target_mode=None, keep_proportion=None, interpolation=None,
+    def validate_inputs(cls, target_mode=None, keep_proportion=None, interpolation=None,
                         anchor=None):
-        # 四个下拉的译名在 nodes/_qg_combo_legacy.py 的 LEGACY 表里。这里具名报上去，
-        # 让 ComfyUI 跳过「值必须在列表里」那道检查 —— 中文界面显示的是「适应画布」，
-        # 直接往 API 里塞中文也不会炸。不写 **kwargs：那会把宽 / 高 / 整除数这些
-        # 数字的 min/max 一起关掉。
+        # 四个下拉的译名在 LEGACY 表里；具名跳过「值必须在列表里」。
+        # 不写 **kwargs：那会把宽/高/整除数的 min/max 一起关掉。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": (
-                    "IMAGE",
-                    {
-                        "tooltip": "Image batch to resize, as [B,H,W,C].",
-                    },
-                ),
-                "target_mode": (
-                    list(TARGET_MODES),
-                    {
-                        "default": "megapixels",
-                        "tooltip": "What sets the output size: megapixels reads the pixel budget, "
-                                   "longest_edge / shortest_edge read the edge length, "
-                                   "width_height reads the two size fields, scale_factor multiplies "
-                                   "the source. Each mode only reads its own field.",
-                    },
-                ),
-                "megapixels": (
-                    "FLOAT",
-                    {
-                        "default": 1.0, "min": 0.0, "max": 64.0, "step": 0.01,
-                        "tooltip": "Pixel budget in megapixels (megapixels mode). The image scales "
-                                   "with its aspect kept until width x height is about this many "
-                                   "million pixels. 0 keeps the source size.",
-                    },
-                ),
-                "edge_length": (
-                    "INT",
-                    {
-                        "default": 1024, "min": 0, "max": 16384, "step": 1,
-                        "tooltip": "Target length for the longest_edge / shortest_edge modes; that "
-                                   "edge lands exactly here and the other keeps the aspect. "
-                                   "0 keeps the source size.",
-                    },
-                ),
-                "width": (
-                    "INT",
-                    {
-                        "default": 0, "min": 0, "max": 16384, "step": 1,
-                        "tooltip": "Target width (width_height mode). 0 keeps the source width, or "
-                                   "follows the height to keep the aspect when only height is set.",
-                    },
-                ),
-                "height": (
-                    "INT",
-                    {
-                        "default": 0, "min": 0, "max": 16384, "step": 1,
-                        "tooltip": "Target height (width_height mode). 0 keeps the source height, or "
-                                   "follows the width to keep the aspect when only width is set.",
-                    },
-                ),
-                "scale_factor": (
-                    "FLOAT",
-                    {
-                        "default": 0.5, "min": 0.0, "max": 16.0, "step": 0.01,
-                        "tooltip": "Multiplier for the scale_factor mode: 0.5 halves both sides, "
-                                   "2.0 doubles them. 0 keeps the source size.",
-                    },
-                ),
-                "keep_proportion": (
-                    list(PROPORTION_MODES),
-                    {
-                        "default": "fit",
-                        "tooltip": "How a width_height box that disagrees with the source aspect is "
-                                   "met: stretch distorts to the exact box; fit shrinks the box to "
-                                   "the aspect (no bars, output may be smaller); cover_crop fills "
-                                   "the box and centre-crops the overflow; pad fits inside and fills "
-                                   "the rest with fill_color, marking the bars in the mask. The "
-                                   "other target modes derive the box from the source, so they "
-                                   "always behave like fit.",
-                    },
-                ),
-                "anchor": (
-                    list(ANCHORS),
-                    {
-                        "default": "center",
-                        "tooltip": "Which side of the spare space survives: center (default), top, "
-                                   "bottom, left, right. Applies to cover_crop (which part of the "
-                                   "overflow is kept) and to pad (which side the bars go on); "
-                                   "stretch and fit have no spare space, so it does nothing there. "
-                                   "A single value only moves its own axis - top/bottom keep the "
-                                   "horizontal centre, left/right keep the vertical centre.",
-                    },
-                ),
-                "divisible_by": (
-                    "INT",
-                    {
-                        "default": 1, "min": 1, "max": 1024, "step": 1,
-                        "tooltip": "Snaps each output dimension to the nearest multiple of this "
-                                   "(never below one step). Set 16 for WAN, 8 for most latent "
-                                   "spaces. 1 leaves sizes exactly as computed.",
-                    },
-                ),
-                "interpolation": (
-                    list(INTERPOLATIONS),
-                    {
-                        "default": "lanczos",
-                        "tooltip": "Resampling filter: lanczos is the sharpest all-rounder, bicubic "
-                                   "and bilinear are softer, nearest-exact keeps hard pixels (pixel "
-                                   "art, masks) on the same half-pixel grid as the rest of ComfyUI, "
-                                   "area is best for strong downscales.",
-                    },
-                ),
-                "fill_color": (
-                    "STRING",
-                    {
-                        "default": "#000000",
-                        "tooltip": "Bar colour for pad mode: #RGB / #RRGGBB / R,G,B (0-255 or 0..1) "
-                                   "/ one grayscale number / a CSS colour name. Ignored by the "
-                                   "other modes.",
-                    },
-                ),
-            },
-            "optional": {
-                "mask": (
-                    "MASK",
-                    {
-                        "tooltip": "Optional mask carried through the exact same resize, crop and pad "
-                                   "geometry as the image.",
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_ImageFitResize",
+            display_name="Image Fit Resize",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("image", tooltip="Image batch to resize, as [B,H,W,C]."),
+                io.Combo.Input("target_mode", options=list(TARGET_MODES), default="megapixels",
+                    tooltip="What sets the output size: megapixels reads the pixel budget, "
+                            "longest_edge / shortest_edge read the edge length, "
+                            "width_height reads the two size fields, scale_factor multiplies "
+                            "the source. Each mode only reads its own field."),
+                io.Float.Input("megapixels", default=1.0, min=0.0, max=64.0, step=0.01,
+                    tooltip="Pixel budget in megapixels (megapixels mode). The image scales "
+                            "with its aspect kept until width x height is about this many "
+                            "million pixels. 0 keeps the source size."),
+                io.Int.Input("edge_length", default=1024, min=0, max=16384, step=1,
+                    tooltip="Target length for the longest_edge / shortest_edge modes; that "
+                            "edge lands exactly here and the other keeps the aspect. "
+                            "0 keeps the source size."),
+                io.Int.Input("width", default=0, min=0, max=16384, step=1,
+                    tooltip="Target width (width_height mode). 0 keeps the source width, or "
+                            "follows the height to keep the aspect when only height is set."),
+                io.Int.Input("height", default=0, min=0, max=16384, step=1,
+                    tooltip="Target height (width_height mode). 0 keeps the source height, or "
+                            "follows the width to keep the aspect when only width is set."),
+                io.Float.Input("scale_factor", default=0.5, min=0.0, max=16.0, step=0.01,
+                    tooltip="Multiplier for the scale_factor mode: 0.5 halves both sides, "
+                            "2.0 doubles them. 0 keeps the source size."),
+                io.Combo.Input("keep_proportion", options=list(PROPORTION_MODES), default="fit",
+                    tooltip="How a width_height box that disagrees with the source aspect is "
+                            "met: stretch distorts to the exact box; fit shrinks the box to "
+                            "the aspect (no bars, output may be smaller); cover_crop fills "
+                            "the box and centre-crops the overflow; pad fits inside and fills "
+                            "the rest with fill_color, marking the bars in the mask. The "
+                            "other target modes derive the box from the source, so they "
+                            "always behave like fit."),
+                io.Combo.Input("anchor", options=list(ANCHORS), default="center",
+                    tooltip="Which side of the spare space survives: center (default), top, "
+                            "bottom, left, right. Applies to cover_crop (which part of the "
+                            "overflow is kept) and to pad (which side the bars go on); "
+                            "stretch and fit have no spare space, so it does nothing there. "
+                            "A single value only moves its own axis - top/bottom keep the "
+                            "horizontal centre, left/right keep the vertical centre."),
+                io.Int.Input("divisible_by", default=1, min=1, max=1024, step=1,
+                    tooltip="Snaps each output dimension to the nearest multiple of this "
+                            "(never below one step). Set 16 for WAN, 8 for most latent "
+                            "spaces. 1 leaves sizes exactly as computed."),
+                io.Combo.Input("interpolation", options=list(INTERPOLATIONS), default="lanczos",
+                    tooltip="Resampling filter: lanczos is the sharpest all-rounder, bicubic "
+                            "and bilinear are softer, nearest-exact keeps hard pixels (pixel "
+                            "art, masks) on the same half-pixel grid as the rest of ComfyUI, "
+                            "area is best for strong downscales."),
+                io.String.Input("fill_color", default="#000000",
+                    tooltip="Bar colour for pad mode: #RGB / #RRGGBB / R,G,B (0-255 or 0..1) "
+                            "/ one grayscale number / a CSS colour name. Ignored by the "
+                            "other modes."),
+                io.Mask.Input("mask", optional=True,
+                    tooltip="Optional mask carried through the exact same resize, crop and pad "
+                            "geometry as the image."),
+            ],
+            outputs=[
+                io.Image.Output("image", tooltip="The resized image batch."),
+                io.Mask.Output("mask", tooltip="The mask through the same resize/crop/pad geometry; pad bars are 1.0 (a ready outpaint mask). All zeros when no mask is wired."),
+                io.Int.Output("width", tooltip="Output width in pixels."),
+                io.Int.Output("height", tooltip="Output height in pixels."),
+            ],
+        )
 
-    def execute(self, image, target_mode, megapixels, edge_length, width, height,
+    @classmethod
+    def execute(cls, image, target_mode, megapixels, edge_length, width, height,
                 scale_factor, keep_proportion, divisible_by, interpolation, fill_color,
                 anchor="center", mask=None):
+        # V1 装饰器 coerce 四个下拉值，V3 显式保留。
+        target_mode = coerce("QG_ImageFitResize", "target_mode", target_mode)
+        keep_proportion = coerce("QG_ImageFitResize", "keep_proportion", keep_proportion)
+        interpolation = coerce("QG_ImageFitResize", "interpolation", interpolation)
+        anchor = coerce("QG_ImageFitResize", "anchor", anchor)
         # image 在 INPUT_TYPES 里是 **required**，到不了 None 分支。只接遮罩做缩放
         # 请用 QG_ImageScale（那个节点的 image / mask 都是选填）—— 这里曾经写过
         # 「只接遮罩就造黑图占位」的分支，但 required 让它永远进不去，纯属自欺，
@@ -527,14 +467,14 @@ class QGImageFitResize:
             )
 
         if (resize_w, resize_h) == (canvas_w, canvas_h):
-            return (output, work_mask if work_mask is not None else zeros_mask(), canvas_w, canvas_h)
+            return io.NodeOutput(output, work_mask if work_mask is not None else zeros_mask(), canvas_w, canvas_h)
 
         if resize_w >= canvas_w and resize_h >= canvas_h:  # cover_crop
             x0, y0 = plan["crop_x"], plan["crop_y"]
             output = output[:, y0:y0 + canvas_h, x0:x0 + canvas_w, :].contiguous()
             if work_mask is not None:
                 work_mask = work_mask[:, y0:y0 + canvas_h, x0:x0 + canvas_w].contiguous()
-            return (output, work_mask if work_mask is not None else zeros_mask(), canvas_w, canvas_h)
+            return io.NodeOutput(output, work_mask if work_mask is not None else zeros_mask(), canvas_w, canvas_h)
 
         # pad
         rgb = _parse_color(fill_color)
@@ -548,11 +488,11 @@ class QGImageFitResize:
         bottom = canvas_h - resize_h - top
         output, new_area = _pad_to(output, left, top, right, bottom, rgb)
         if work_mask is None:
-            return (output, new_area, canvas_w, canvas_h)
+            return io.NodeOutput(output, new_area, canvas_w, canvas_h)
         # 源区遮罩放在生成区遮罩里面（新边条保持 1.0）
         merged = new_area.clone()
         merged[:, top:top + resize_h, left:left + resize_w] = work_mask
-        return (output, merged.clamp_(0.0, 1.0), canvas_w, canvas_h)
+        return io.NodeOutput(output, merged.clamp_(0.0, 1.0), canvas_w, canvas_h)
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageFitResize": QGImageFitResize}

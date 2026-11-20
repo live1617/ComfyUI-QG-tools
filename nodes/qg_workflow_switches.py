@@ -27,8 +27,10 @@ Third-party notice: THIRD-PARTY-NOTICES.md.
 
 from __future__ import annotations
 
+from comfy_api.latest import io
 
-class QGWorkflowSwitches:
+
+class QGWorkflowSwitches(io.ComfyNode):
     CATEGORY = "QG-tools/Workflow"
     DESCRIPTION = (
         "Switch parts of a workflow off and on from one small card. Select "
@@ -61,16 +63,23 @@ class QGWorkflowSwitches:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {}}
+    def define_schema(cls):
+        # 零输入零输出：整张卡片是纯前端面板，前端把它标成 virtual 不进 prompt。
+        return io.Schema(
+            node_id="QG_WorkflowSwitches",
+            display_name="Workflow Switches",
+            category="QG-tools/Workflow",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[],
+            outputs=[],
+        )
 
-    RETURN_TYPES = ()
-    FUNCTION = "noop"
-
-    def noop(self):
+    @classmethod
+    def execute(cls):
         # Never reached: the frontend keeps the node out of the prompt, and
         # with no outputs nothing could ask for it.
-        return ()
+        return io.NodeOutput()
 
 
 NODE_CLASS_MAPPINGS = {"QG_WorkflowSwitches": QGWorkflowSwitches}

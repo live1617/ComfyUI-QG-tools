@@ -51,7 +51,9 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 _H_POSITIONS = ("center", "left", "right")
 _V_POSITIONS = ("center", "top", "bottom")
@@ -284,8 +286,9 @@ def _image_watermark(base, mark_src, size_pct, opacity, h_pos, v_pos,
     return _composite(base, mark, (x, y))
 
 
-@combo_legacy("QG_AddWatermark")
-class QGAddWatermark:
+# V1 @combo_legacy("QG_AddWatermark")：font/h_position/v_position 有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce 三值，与 V1 等价。
+class QGAddWatermark(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Stamps a text or image watermark onto an image: text size as a "
@@ -299,106 +302,71 @@ class QGAddWatermark:
         "图像", "水印", "文字", "字体", "透明度", "平铺", "角度", "偏移",
         "居中", "logo", "签名", "qg",
     ]
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
-    OUTPUT_TOOLTIPS = (
-        "The watermarked image: a single frame with the stamp composited onto "
-        "the first input frame.",
-    )
-
     @classmethod
-    def VALIDATE_INPUTS(cls, font=None, h_position=None, v_position=None):
-        # All three are combo boxes whose saved values may not be in the current
-        # list: the anchors changed from Chinese to English keys (old workflows),
-        # and the font list depends on what is installed on this machine (a
-        # workflow built elsewhere). Naming them here skips ComfyUI's "value must
-        # be in the list" check; the real conversion happens in combo_legacy and
-        # a missing font falls back to the default face. Not **kwargs - that
-        # would also switch off min/max for the numeric inputs.
+    def validate_inputs(cls, font=None, h_position=None, v_position=None):
+        # 三个下拉的存档值可能不在当前列表（锚点曾中文→英文、字体随机器不同）。
+        # 具名跳过「值必须在列表里」；真正换值在 execute 开头 coerce。
+        # 不写 **kwargs：那会关掉数字输入的 min/max 校验。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def define_schema(cls):
         fonts = _font_choices()
         installed = set(fonts)
         default_font = next(
             (f for f in ("NotoSansSC-VF", "msyh", "simhei") if f in installed),
             fonts[0])
+        return io.Schema(
+            node_id="QG_AddWatermark",
+            display_name="Add Watermark",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("image", tooltip="The image to watermark, shaped [B,H,W,C]. Only the first frame is used, matching the reference node - the output is a single frame."),
+                io.String.Input("watermark_text", default="Watermark", tooltip="Text to draw. Ignored when an image watermark is connected."),
+                io.Combo.Input("font", options=fonts, default=default_font,
+                    tooltip="Typeface for the text watermark. Lists the plugin's own fonts/ folder plus the system fonts; a name that is not installed falls back to the default face, so an old workflow still runs."),
+                io.Int.Input("size_percent", default=5, min=0, max=100, step=1,
+                    tooltip="Text size as a percentage of the base image height. For an image watermark this is a percentage of the watermark's own size instead - two different bases, both matching the reference."),
+                io.Int.Input("opacity", default=50, min=0, max=100, step=1,
+                    tooltip="Watermark opacity in percent; 100 is fully opaque."),
+                io.Combo.Input("h_position", options=list(_H_POSITIONS),
+                    tooltip="Horizontal cell of the nine-cell anchor. The X offset below is applied relative to this cell."),
+                io.Combo.Input("v_position", options=list(_V_POSITIONS),
+                    tooltip="Vertical cell of the nine-cell anchor. The Y offset below is applied relative to this cell."),
+                io.Int.Input("x_offset", default=0, min=0, max=50, step=1,
+                    tooltip="Horizontal shift as a percentage of the base width, measured away from the chosen cell (positive always moves inward)."),
+                io.Int.Input("y_offset", default=0, min=0, max=50, step=1,
+                    tooltip="Vertical shift as a percentage of the base height, measured away from the chosen cell (positive always moves inward)."),
+                io.String.Input("text_color", default="#FFFFFF",
+                    tooltip="Text colour as #RRGGBB. Click the swatch on the node to pick one, or type the hex. The same value works in the reference node's colour input."),
+                io.Boolean.Input("tile", default=False,
+                    tooltip="Repeat the watermark across the whole image. The anchor and both offsets are ignored in this mode; the spacing below sets the gap."),
+                io.Int.Input("angle", default=0, min=-90, max=90, step=1,
+                    tooltip="Rotation in degrees, positive counter-clockwise."),
+                io.Int.Input("spacing", default=10, min=0, max=50, step=1,
+                    tooltip="Gap between tiles as a percentage of the base height. Only used when tiling is on."),
+                io.Boolean.Input("alpha_output", default=False,
+                    tooltip="Keep the alpha channel and return RGBA. Off returns RGB, matching the reference."),
+                io.Image.Input("watermark_image", optional=True,
+                    tooltip="Optional image watermark. When connected every text setting is ignored: this image is scaled by the percentage above and stamped instead. Also first frame only."),
+            ],
+            outputs=[
+                io.Image.Output("image", tooltip="The watermarked image: a single frame with the stamp composited onto the first input frame."),
+            ],
+        )
 
-        return {
-            "required": {
-                "image": (
-                    "IMAGE",
-                    {"tooltip": "The image to watermark, shaped [B,H,W,C]. Only the first frame is used, matching the reference node - the output is a single frame."},
-                ),
-                "watermark_text": (
-                    "STRING",
-                    {"default": "Watermark", "tooltip": "Text to draw. Ignored when an image watermark is connected."},
-                ),
-                "font": (
-                    fonts,
-                    {"default": default_font, "tooltip": "Typeface for the text watermark. Lists the plugin's own fonts/ folder plus the system fonts; a name that is not installed falls back to the default face, so an old workflow still runs."},
-                ),
-                "size_percent": (
-                    "INT",
-                    {"default": 5, "min": 0, "max": 100, "step": 1, "tooltip": "Text size as a percentage of the base image height. For an image watermark this is a percentage of the watermark's own size instead - two different bases, both matching the reference."},
-                ),
-                "opacity": (
-                    "INT",
-                    {"default": 50, "min": 0, "max": 100, "step": 1, "tooltip": "Watermark opacity in percent; 100 is fully opaque."},
-                ),
-                "h_position": (
-                    _H_POSITIONS,
-                    {"tooltip": "Horizontal cell of the nine-cell anchor. The X offset below is applied relative to this cell."},
-                ),
-                "v_position": (
-                    _V_POSITIONS,
-                    {"tooltip": "Vertical cell of the nine-cell anchor. The Y offset below is applied relative to this cell."},
-                ),
-                "x_offset": (
-                    "INT",
-                    {"default": 0, "min": 0, "max": 50, "step": 1, "tooltip": "Horizontal shift as a percentage of the base width, measured away from the chosen cell (positive always moves inward)."},
-                ),
-                "y_offset": (
-                    "INT",
-                    {"default": 0, "min": 0, "max": 50, "step": 1, "tooltip": "Vertical shift as a percentage of the base height, measured away from the chosen cell (positive always moves inward)."},
-                ),
-                "text_color": (
-                    "STRING",
-                    {"default": "#FFFFFF", "tooltip": "Text colour as #RRGGBB. Click the swatch on the node to pick one, or type the hex. The same value works in the reference node's colour input."},
-                ),
-                "tile": (
-                    "BOOLEAN",
-                    {"default": False, "tooltip": "Repeat the watermark across the whole image. The anchor and both offsets are ignored in this mode; the spacing below sets the gap."},
-                ),
-                "angle": (
-                    "INT",
-                    {"default": 0, "min": -90, "max": 90, "step": 1, "tooltip": "Rotation in degrees, positive counter-clockwise."},
-                ),
-                "spacing": (
-                    "INT",
-                    {"default": 10, "min": 0, "max": 50, "step": 1, "tooltip": "Gap between tiles as a percentage of the base height. Only used when tiling is on."},
-                ),
-                "alpha_output": (
-                    "BOOLEAN",
-                    {"default": False, "tooltip": "Keep the alpha channel and return RGBA. Off returns RGB, matching the reference."},
-                ),
-            },
-            "optional": {
-                "watermark_image": (
-                    "IMAGE",
-                    {"tooltip": "Optional image watermark. When connected every text setting is ignored: this image is scaled by the percentage above and stamped instead. Also first frame only."},
-                ),
-            },
-        }
-
-    def execute(self, image, watermark_text="Watermark", font=None,
+    @classmethod
+    def execute(cls, image, watermark_text="Watermark", font=None,
                 size_percent=5, opacity=50, h_position="center",
                 v_position="center", x_offset=0, y_offset=0,
                 text_color="#FFFFFF", tile=False, angle=0, spacing=10,
                 alpha_output=False, watermark_image=None):
+        # V1 装饰器 coerce 三个下拉值，V3 显式保留。
+        font = coerce("QG_AddWatermark", "font", font)
+        h_position = coerce("QG_AddWatermark", "h_position", h_position)
+        v_position = coerce("QG_AddWatermark", "v_position", v_position)
         base = _to_pil(image)
         if base.mode in ("RGB", "L"):
             base = base.convert("RGBA")
@@ -414,7 +382,7 @@ class QGAddWatermark:
 
         if not alpha_output and result.mode == "RGBA":
             result = result.convert("RGB")
-        return (_to_tensor(result),)
+        return io.NodeOutput(_to_tensor(result))
 
 
 NODE_CLASS_MAPPINGS = {"QG_AddWatermark": QGAddWatermark}

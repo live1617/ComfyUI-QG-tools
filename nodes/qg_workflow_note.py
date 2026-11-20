@@ -22,8 +22,10 @@ Third-party notice: THIRD-PARTY-NOTICES.md.
 
 from __future__ import annotations
 
+from comfy_api.latest import io
 
-class QGWorkflowNote:
+
+class QGWorkflowNote(io.ComfyNode):
     CATEGORY = "QG-tools/Workflow"
     DESCRIPTION = (
         "A workflow card for sharing: a big title, a Markdown how-to, the "
@@ -49,32 +51,36 @@ class QGWorkflowNote:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "note": (
-                    "STRING",
-                    {
-                        "default": "{}",
-                        "multiline": True,
-                        "tooltip": (
-                            "The card as JSON: title, subtitle, author, "
-                            "Markdown body, model rows, node-pack rows and "
-                            "links. The pencil on the card edits it; this "
-                            "field is the storage behind that editor."
-                        ),
-                    },
+    def define_schema(cls):
+        # 零输出：整张卡片是纯前端呈现，node 不进 prompt 图。note 是隐藏的
+        # JSON 存档控件，前端铅笔编辑器写回这里。
+        return io.Schema(
+            node_id="QG_WorkflowNote",
+            display_name="Workflow Note",
+            category="QG-tools/Workflow",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.String.Input(
+                    "note",
+                    multiline=True,
+                    default="{}",
+                    tooltip=(
+                        "The card as JSON: title, subtitle, author, "
+                        "Markdown body, model rows, node-pack rows and "
+                        "links. The pencil on the card edits it; this "
+                        "field is the storage behind that editor."
+                    ),
                 ),
-            },
-        }
+            ],
+            outputs=[],
+        )
 
-    RETURN_TYPES = ()
-    FUNCTION = "noop"
-
-    def noop(self, note):
+    @classmethod
+    def execute(cls, note="{}"):
         # Never reached: with no outputs and OUTPUT_NODE unset the node is
         # not part of any prompt. Kept so the class is a complete node.
-        return ()
+        return io.NodeOutput()
 
 
 NODE_CLASS_MAPPINGS = {"QG_WorkflowNote": QGWorkflowNote}

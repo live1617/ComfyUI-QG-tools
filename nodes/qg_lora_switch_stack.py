@@ -33,6 +33,8 @@ from ._qg_lora_helpers import (
     unreadable_lora_rows,
 )
 
+from comfy_api.latest import io
+
 # How many rows the node offers, and therefore how many on_N inputs INPUT_TYPES
 # declares. Static on purpose: slot count is part of the contract, and the
 # frontend hides the unused rows instead of adding or removing inputs.
@@ -76,7 +78,7 @@ def _merge_slots(rows_data: Any, on_slots: dict[str, Any]) -> str:
     return json.dumps(merged)
 
 
-class QGLoraSwitchStack:
+class QGLoraSwitchStack(io.ComfyNode):
     CATEGORY = "QG-tools/Loaders"
     DESCRIPTION = (
         "Applies a stack of LoRAs where each row's toggle can be driven from "
@@ -91,75 +93,41 @@ class QGLoraSwitchStack:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "model": ("MODEL", {"tooltip": "The diffusion model the LoRA stack patches."}),
-                "rows_data": (
-                    "STRING",
-                    {
-                        "default": "[]",
-                        "multiline": False,
-                        "tooltip": (
-                            "Serialized rows of the stack, one entry per row "
-                            "(empty rows included). Edited by the rows on the "
-                            "node; edit those, not this value."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "clip": (
-                    "CLIP",
-                    {"tooltip": "Optional CLIP to patch; without it, CLIP strengths are ignored."},
-                ),
-                **{
-                    "on_%d" % slot: (
-                        "BOOLEAN",
-                        {
-                            "forceInput": True,
-                            "tooltip": (
-                                "Row %d's switch, wired from the graph. A wire "
-                                "overrides the row's own toggle; unwired, the "
-                                "toggle decides." % slot
-                            ),
-                        },
-                    )
-                    for slot in range(1, SLOT_COUNT + 1)
-                },
-                "trigger_separator": (
-                    "STRING",
-                    {
-                        "default": ", ",
-                        "tooltip": "Joins the enabled rows' trigger words into the triggers output.",
-                    },
-                ),
-                "on_missing": (
-                    list(MISSING_MODES),
-                    {
-                        "default": "error",
-                        "tooltip": (
-                            "What happens when a row's file cannot be found: "
-                            "error stops the run before sampling and names the "
-                            "file, skip warns and applies the rest."
-                        ),
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        # 24 个 on_N 是 BOOLEAN forceInput 可选槽。
+        on_inputs = [
+            io.Boolean.Input("on_%d" % slot, optional=True, extra_dict={"forceInput": True},
+                tooltip="Row %d's switch, wired from the graph. A wire overrides the row's own toggle; unwired, the toggle decides." % slot)
+            for slot in range(1, SLOT_COUNT + 1)
+        ]
+        return io.Schema(
+            node_id="QG_LoraSwitchStack",
+            display_name="LoRA Switch Stack",
+            category="QG-tools/Loaders",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Model.Input("model", tooltip="The diffusion model the LoRA stack patches."),
+                io.String.Input("rows_data", default="[]",
+                    tooltip="Serialized rows of the stack, one entry per row (empty rows included). Edited by the rows on the node; edit those, not this value."),
+                io.Clip.Input("clip", optional=True,
+                    tooltip="Optional CLIP to patch; without it, CLIP strengths are ignored."),
+                *on_inputs,
+                io.String.Input("trigger_separator", optional=True, default=", ",
+                    tooltip="Joins the enabled rows' trigger words into the triggers output."),
+                io.Combo.Input("on_missing", optional=True, options=list(MISSING_MODES), default="error",
+                    tooltip="What happens when a row's file cannot be found: error stops the run before sampling and names the file, skip warns and applies the rest."),
+            ],
+            outputs=[
+                io.Model.Output("model", tooltip="The model with every enabled LoRA applied in row order."),
+                io.Clip.Output("clip", tooltip="The CLIP with every enabled LoRA applied in row order."),
+                io.String.Output("triggers", tooltip="Enabled rows' trigger words, deduplicated and joined with trigger_separator. A row skipped for a missing file adds none."),
+            ],
+        )
 
-    RETURN_TYPES = ("MODEL", "CLIP", "STRING")
-    RETURN_NAMES = ("model", "clip", "triggers")
-    OUTPUT_TOOLTIPS = (
-        "The model with every enabled LoRA applied in row order.",
-        "The CLIP with every enabled LoRA applied in row order.",
-        "Enabled rows' trigger words, deduplicated and joined with "
-        "trigger_separator. A row skipped for a missing file adds none.",
-    )
-    FUNCTION = "load_loras"
-
-    def load_loras(
-        self,
+    @classmethod
+    def execute(
+        cls,
         model,
         rows_data: str,
         clip=None,
@@ -172,10 +140,10 @@ class QGLoraSwitchStack:
         model, clip = apply_lora_stack(model, clip, rows, on_missing=on_missing, missing=missing)
         skipped = {id(row) for row in missing}
         worded = [row for row in rows if id(row) not in skipped]
-        return model, clip, collect_trigger_words(worded, str(trigger_separator))
+        return io.NodeOutput(model, clip, collect_trigger_words(worded, str(trigger_separator)))
 
     @classmethod
-    def VALIDATE_INPUTS(cls, rows_data, on_missing="error"):
+    def validate_inputs(cls, rows_data, on_missing="error"):
         # Checks the stored stack only - not the wired on_N switches. Naming
         # those would make ComfyUI skip its own validation for every input it
         # was not told about, and the only thing they can do here is turn a row

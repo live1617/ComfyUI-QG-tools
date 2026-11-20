@@ -14,11 +14,11 @@ _batch_helpers.py 的 select_every_nth），代码零复用：边界校验、fps
 
 import torch
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
 
 
-@combo_legacy("QG_BatchEveryNth")
-class QGBatchEveryNth:
+# V1 的 @combo_legacy("QG_BatchEveryNth") 是 no-op（LEGACY 表无此项），V3 直接去掉。
+class QGBatchEveryNth(io.ComfyNode):
     """每 n 帧抽一张，先跳过 offset 帧；顺带把 fps 除以 n。"""
 
     CATEGORY = "QG-tools/Image"
@@ -33,55 +33,56 @@ class QGBatchEveryNth:
     SEARCH_ALIASES = [
         "nth", "every", "skip", "thin", "frames", "抽帧", "批次", "间隔", "qg",
     ]
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("IMAGE", "FLOAT")
-    RETURN_NAMES = ("images", "fps")
-    OUTPUT_TOOLTIPS = (
-        "The kept frames, in their original order.",
-        "The wired fps divided by nth, so the kept frames still span the same "
-        "time; 0 when no fps is wired.",
-    )
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_BatchEveryNth",
+            display_name="Batch Every Nth",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("images", tooltip="The [B,H,W,C] IMAGE batch to thin out."),
+                io.Int.Input(
+                    "nth",
+                    default=2,
+                    min=1,
+                    max=4096,
+                    step=1,
+                    tooltip="Keep one frame in every nth: 2 keeps every other frame.",
+                ),
+                io.Int.Input(
+                    "offset",
+                    default=0,
+                    min=0,
+                    max=2147483647,
+                    step=1,
+                    tooltip="Frames to skip before the first kept frame; "
+                            "must be smaller than the batch's frame count.",
+                ),
+                # V1 的 forceInput → V3 force_input=True（Float 是 WidgetInput 子类，支持此形参）
+                io.Float.Input(
+                    "fps",
+                    optional=True,
+                    force_input=True,
+                    tooltip=(
+                        "Optional: the batch's frame rate, such as a video "
+                        "loader's fps. The fps output divides it by nth."
+                    ),
+                ),
+            ],
+            outputs=[
+                io.Image.Output("images", tooltip="The kept frames, in their original order."),
+                io.Float.Output(
+                    "fps",
+                    tooltip="The wired fps divided by nth, so the kept frames still span the same "
+                            "time; 0 when no fps is wired.",
+                ),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "images": (
-                    "IMAGE",
-                    {"tooltip": "The [B,H,W,C] IMAGE batch to thin out."},
-                ),
-                "nth": (
-                    "INT",
-                    {
-                        "default": 2, "min": 1, "max": 4096, "step": 1,
-                        "tooltip": "Keep one frame in every nth: 2 keeps every other frame.",
-                    },
-                ),
-                "offset": (
-                    "INT",
-                    {
-                        "default": 0, "min": 0, "max": 2147483647, "step": 1,
-                        "tooltip": "Frames to skip before the first kept frame; "
-                                   "must be smaller than the batch's frame count.",
-                    },
-                ),
-            },
-            "optional": {
-                "fps": (
-                    "FLOAT",
-                    {
-                        "forceInput": True,
-                        "tooltip": (
-                            "Optional: the batch's frame rate, such as a video "
-                            "loader's fps. The fps output divides it by nth."
-                        ),
-                    },
-                ),
-            },
-        }
-
-    def execute(self, images, nth=2, offset=0, fps=None):
+    def execute(cls, images, nth=2, offset=0, fps=None):
         if not isinstance(images, torch.Tensor) or images.ndim != 4:
             raise ValueError("Batch Every Nth expected a [B,H,W,C] IMAGE batch.")
         count = int(images.shape[0])
@@ -99,7 +100,7 @@ class QGBatchEveryNth:
                 "contains %d." % (skip, count)
             )
         rate = float(fps) / step if fps else 0.0
-        return (images[skip::step], rate)
+        return io.NodeOutput(images[skip::step], rate)
 
 
 NODE_CLASS_MAPPINGS = {"QG_BatchEveryNth": QGBatchEveryNth}

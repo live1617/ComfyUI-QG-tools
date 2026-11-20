@@ -34,7 +34,9 @@ from __future__ import annotations
 
 import torch
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 from ._qg_execution_helpers import raise_if_interrupted, warn_once
 from ._qg_tensor_helpers import as_image_batch, as_mask_batch
 from ._qg_mask_crop_helpers import (
@@ -85,8 +87,10 @@ def _seam(seam) -> dict:
     return seam
 
 
-@combo_legacy("QG_MaskCrop")
-class QGMaskCrop:
+# V1 @combo_legacy("QG_MaskCrop")：size_mode/fill 有中文遗留值需 coerce。
+# V3 去装饰器，crop→execute 开头 coerce 两值，与 V1 等价。
+# 同文件的 QGCropRestore 已是 V3，本类迁 V3 后两节点同属 V3。
+class QGMaskCrop(io.ComfyNode):
     CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
         "Cuts the painted area out of a picture with room to spare, in a size a "
@@ -102,126 +106,57 @@ class QGMaskCrop:
     SEARCH_ALIASES = ["mask crop", "crop by mask", "crop to mask", "遮罩裁剪", "裁剪", "qg"]
 
     @classmethod
-    def VALIDATE_INPUTS(cls, size_mode=None, fill=None):
-        # size_mode（原始尺寸 / 正方形 / 自定义）与 fill（边缘主色 / 拉伸边缘 /
-        # 黑色）的中文标签在 nodes/_qg_combo_legacy.py 的 LEGACY 表里，值本身
-        # 是英文。这里只把选项名报上去跳过「值必须在列表里」。
+    @classmethod
+    def validate_inputs(cls, size_mode=None, fill=None):
+        # size_mode/fill 中文标签在 LEGACY 表；具名报上去跳过列表校验，值由 coerce 换回。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": (
-                    "IMAGE",
-                    {"tooltip": "The picture to cut from."},
-                ),
-                "mask": (
-                    "MASK",
-                    {
-                        "tooltip": "What to keep in frame. The whole batch shares the union of every frame's painted area."
-                    },
-                ),
-                "size_mode": (
-                    SIZE_MODES,
-                    {
-                        "default": "native",
-                        "tooltip": "native: the composed size. square: padded out to a square. custom: framed to the size below.",
-                    },
-                ),
-                "custom_width": (
-                    "INT",
-                    {
-                        "default": 1024,
-                        "min": 0,
-                        "max": 8192,
-                        "step": 8,
-                        "tooltip": "custom only. 0 means derive it from custom_height and the composed aspect.",
-                    },
-                ),
-                "custom_height": (
-                    "INT",
-                    {
-                        "default": 1024,
-                        "min": 0,
-                        "max": 8192,
-                        "step": 8,
-                        "tooltip": "custom only. 0 means derive it from custom_width and the composed aspect.",
-                    },
-                ),
-                "multiple": (
-                    "INT",
-                    {
-                        "default": 8,
-                        "min": 1,
-                        "max": 256,
-                        "step": 1,
-                        "tooltip": "Round the crop up to a whole multiple of this. 8 keeps latent sizes legal; 1 disables it.",
-                    },
-                ),
-                "pad_top": (
-                    "FLOAT",
-                    {
-                        "default": 1.4,
-                        "min": 1.0,
-                        "max": 4.0,
-                        "step": 0.05,
-                        "tooltip": "Room above the paint, as a multiplier of its short side. 1.0 hugs it.",
-                    },
-                ),
-                "pad_right": (
-                    "FLOAT",
-                    {"default": 1.4, "min": 1.0, "max": 4.0, "step": 0.05, "tooltip": "Room to the right, same unit."},
-                ),
-                "pad_bottom": (
-                    "FLOAT",
-                    {"default": 1.4, "min": 1.0, "max": 4.0, "step": 0.05, "tooltip": "Room below, same unit."},
-                ),
-                "pad_left": (
-                    "FLOAT",
-                    {"default": 1.4, "min": 1.0, "max": 4.0, "step": 0.05, "tooltip": "Room to the left, same unit."},
-                ),
-                "fill_holes": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": "Fill the gaps the paint closes all the way round before measuring it, so a bracelet or a window does not shrink the frame.",
-                    },
-                ),
-                "fill": (
-                    FILL_MODES,
-                    {
-                        "default": "edge",
-                        "tooltip": "How the room outside the picture gets painted: edge takes each side's most common colour, stretch repeats its outer row or column, black leaves it empty.",
-                    },
-                ),
-            }
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_MaskCrop",
+            display_name="Mask Crop",
+            category="QG-tools/Mask",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("image", tooltip="The picture to cut from."),
+                io.Mask.Input("mask", tooltip="What to keep in frame. The whole batch shares the union of every frame's painted area."),
+                io.Combo.Input("size_mode", options=SIZE_MODES, default="native",
+                    tooltip="native: the composed size. square: padded out to a square. custom: framed to the size below."),
+                io.Int.Input("custom_width", default=1024, min=0, max=8192, step=8,
+                    tooltip="custom only. 0 means derive it from custom_height and the composed aspect."),
+                io.Int.Input("custom_height", default=1024, min=0, max=8192, step=8,
+                    tooltip="custom only. 0 means derive it from custom_width and the composed aspect."),
+                io.Int.Input("multiple", default=8, min=1, max=256, step=1,
+                    tooltip="Round the crop up to a whole multiple of this. 8 keeps latent sizes legal; 1 disables it."),
+                io.Float.Input("pad_top", default=1.4, min=1.0, max=4.0, step=0.05,
+                    tooltip="Room above the paint, as a multiplier of its short side. 1.0 hugs it."),
+                io.Float.Input("pad_right", default=1.4, min=1.0, max=4.0, step=0.05,
+                    tooltip="Room to the right, same unit."),
+                io.Float.Input("pad_bottom", default=1.4, min=1.0, max=4.0, step=0.05,
+                    tooltip="Room below, same unit."),
+                io.Float.Input("pad_left", default=1.4, min=1.0, max=4.0, step=0.05,
+                    tooltip="Room to the left, same unit."),
+                io.Boolean.Input("fill_holes", default=False,
+                    tooltip="Fill the gaps the paint closes all the way round before measuring it, so a bracelet or a window does not shrink the frame."),
+                io.Combo.Input("fill", options=FILL_MODES, default="edge",
+                    tooltip="How the room outside the picture gets painted: edge takes each side's most common colour, stretch repeats its outer row or column, black leaves it empty."),
+            ],
+            outputs=[
+                io.Custom(SEAM_TYPE).Output("seam", tooltip="Everything Crop Restore needs to put the result back: the source picture, the rectangle and the size it was cut at."),
+                io.Image.Output("image", tooltip="The crop, ready for an upscale or a repaint."),
+                io.Mask.Output("mask", tooltip="The same crop's mask. Empty where the crop reaches outside the picture."),
+            ],
+        )
 
-    RETURN_TYPES = (SEAM_TYPE, "IMAGE", "MASK")
-    RETURN_NAMES = ("seam", "image", "mask")
-    OUTPUT_TOOLTIPS = (
-        "Everything Crop Restore needs to put the result back: the source picture, the rectangle and the size it was cut at.",
-        "The crop, ready for an upscale or a repaint.",
-        "The same crop's mask. Empty where the crop reaches outside the picture.",
-    )
-    FUNCTION = "crop"
-
-    def crop(
-        self,
-        image,
-        mask,
-        size_mode="native",
-        custom_width=1024,
-        custom_height=1024,
-        multiple=8,
-        pad_top=1.4,
-        pad_right=1.4,
-        pad_bottom=1.4,
-        pad_left=1.4,
-        fill_holes=False,
-        fill="edge",
-    ):
+    @classmethod
+    def execute(cls, image, mask, size_mode="native", custom_width=1024,
+                custom_height=1024, multiple=8, pad_top=1.4, pad_right=1.4,
+                pad_bottom=1.4, pad_left=1.4, fill_holes=False, fill="edge"):
+        # V1 装饰器 coerce 两个下拉值，V3 显式保留。
+        size_mode = coerce("QG_MaskCrop", "size_mode", size_mode)
+        fill = coerce("QG_MaskCrop", "fill", fill)
         image = _as_image(image)
         mask = _as_mask(mask)
         height, width = int(image.shape[1]), int(image.shape[2])
@@ -277,87 +212,66 @@ class QGMaskCrop:
             "image": image,
             "mask": work_mask,
         }
-        return (seam, cropped, cut_mask)
+        return io.NodeOutput(seam, cropped, cut_mask)
 
 
-class QGCropRestore:
-    CATEGORY = "QG-tools/Image"
-    DESCRIPTION = (
-        "Pastes a processed crop back where Mask Crop took it from. The crop is "
-        "resized back to the rectangle it was cut at, then blended over the "
-        "source picture through the mask, so every pixel outside the mask stays "
-        "bit-identical to the source. expand grows the mask before pasting (a "
-        "few pixels hide the seam of a repaint), feather softens that edge, and "
-        "colour_match shifts the patch's overall colour to match the source and "
-        "remove the brightness drift an upscale-and-back leaves behind. Only the "
-        "part of the rectangle inside the picture is written; a crop that hung "
-        "outside the frame keeps its filled room outside."
-    )
-    SEARCH_ALIASES = ["crop restore", "paste back", "stitch crop", "裁剪恢复", "贴回", "qg"]
+class QGCropRestore(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_CropRestore",
+            display_name="Crop Restore",
+            category="QG-tools/Image",
+            description=(
+                "Pastes a processed crop back where Mask Crop took it from. The crop is "
+                "resized back to the rectangle it was cut at, then blended over the "
+                "source picture through the mask, so every pixel outside the mask stays "
+                "bit-identical to the source. expand grows the mask before pasting (a "
+                "few pixels hide the seam of a repaint), feather softens that edge, and "
+                "colour_match shifts the patch's overall colour to match the source and "
+                "remove the brightness drift an upscale-and-back leaves behind. Only the "
+                "part of the rectangle inside the picture is written; a crop that hung "
+                "outside the frame keeps its filled room outside."
+            ),
+            search_aliases=["crop restore", "paste back", "stitch crop", "裁剪恢复", "贴回", "qg"],
+            inputs=[
+                # 自定义输入类型：V3 用 io.Custom("QGSeam") 才能序列化回该类型名，
+                # 与 V1 的 SEAM_TYPE 契约逐字一致；io.AnyType 会产出 "*" 破坏连线。
+                io.Custom("QGSeam").Input(
+                    "seam", tooltip="The seam output of Mask Crop."
+                ),
+                io.Image.Input(
+                    "image",
+                    tooltip="The crop after processing. Any size; it is resized back to the rectangle.",
+                ),
+                io.Int.Input(
+                    "expand", default=0, min=-256, max=256, step=1,
+                    tooltip="Grow the mask this many pixels before pasting; negative shrinks it. 4 to 16 hides a repaint seam.",
+                ),
+                io.Int.Input(
+                    "feather", default=8, min=0, max=256, step=1,
+                    tooltip="Soften the pasted edge over this many pixels. 0 gives a hard cut.",
+                ),
+                io.Float.Input(
+                    "colour_match", default=0.0, min=0.0, max=1.0, step=0.05,
+                    tooltip="Line the patch's median colour up with the source's. Fixes a brightness or cast drift, does not recolour a repaint.",
+                ),
+                io.Mask.Input(
+                    "mask", optional=True,
+                    tooltip="A mask for the processed crop (the crop's own mask, edited). Leave empty to reuse the painted area.",
+                ),
+                io.Image.Input(
+                    "background", optional=True,
+                    tooltip="Paste onto this instead of the source picture. Must be the source's size.",
+                ),
+            ],
+            outputs=[
+                io.Image.Output(id="image", tooltip="The source picture with the processed crop blended back in."),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "seam": (
-                    SEAM_TYPE,
-                    {"tooltip": "The seam output of Mask Crop."},
-                ),
-                "image": (
-                    "IMAGE",
-                    {"tooltip": "The crop after processing. Any size; it is resized back to the rectangle."},
-                ),
-                "expand": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": -256,
-                        "max": 256,
-                        "step": 1,
-                        "tooltip": "Grow the mask this many pixels before pasting; negative shrinks it. 4 to 16 hides a repaint seam.",
-                    },
-                ),
-                "feather": (
-                    "INT",
-                    {
-                        "default": 8,
-                        "min": 0,
-                        "max": 256,
-                        "step": 1,
-                        "tooltip": "Soften the pasted edge over this many pixels. 0 gives a hard cut.",
-                    },
-                ),
-                "colour_match": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.05,
-                        "tooltip": "Line the patch's median colour up with the source's. Fixes a brightness or cast drift, does not recolour a repaint.",
-                    },
-                ),
-            },
-            "optional": {
-                "mask": (
-                    "MASK",
-                    {
-                        "tooltip": "A mask for the processed crop (the crop's own mask, edited). Leave empty to reuse the painted area."
-                    },
-                ),
-                "background": (
-                    "IMAGE",
-                    {"tooltip": "Paste onto this instead of the source picture. Must be the source's size."},
-                ),
-            },
-        }
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
-    OUTPUT_TOOLTIPS = ("The source picture with the processed crop blended back in.",)
-    FUNCTION = "restore"
-
-    def restore(self, seam, image, expand=0, feather=8, colour_match=0.0, mask=None, background=None):
+    def execute(cls, seam, image, expand=0, feather=8, colour_match=0.0, mask=None, background=None):
         seam = _seam(seam)
         height, width = seam["size"]
         rect = seam["rect"]
@@ -401,7 +315,7 @@ class QGCropRestore:
             base = seam["image"]
 
         result = stitch_back(base, patch, blend, rect, float(colour_match))
-        return (result,)
+        return io.NodeOutput(result)
 
 
 NODE_CLASS_MAPPINGS = {

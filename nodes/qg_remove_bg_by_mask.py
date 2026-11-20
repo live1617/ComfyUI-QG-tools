@@ -46,6 +46,8 @@ import numpy as np
 import torch
 from PIL import Image
 
+from comfy_api.latest import io
+
 CATEGORY = "QG-tools/Mask"
 DEFAULT_STROKE_COLOR = "#364254"
 _FALLBACK_RGB = (54, 66, 84)
@@ -155,72 +157,73 @@ def _cut_with_pad(rgba, mask_u8, box):
     return sub_rgba, sub_mask
 
 
-class QGRemoveBackgroundByMask:
+class QGRemoveBackgroundByMask(io.ComfyNode):
     """按遮罩抠图：保留遮罩区域，挖掉其余部分。"""
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": (
-                    "IMAGE",
-                    {"tooltip": "Source image; all frames in a batch share one crop box so the output stays stackable."},
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_RemoveBGByMask",
+            display_name="Remove BG by Mask",
+            category="QG-tools/Mask",
+            description=(
+                "Cut out a subject using a mask: keep the pixels inside the mask and make everything else transparent. Optionally fill enclosed holes, crop to the subject bounding box with an adjustable margin, and add an outline. Returns an RGBA image, an RGB image composited over the stroke colour, and the mask actually used. A batch shares one crop box so every frame has the same size."
+            ),
+            search_aliases=[
+                "remove background", "cutout", "mask", "alpha", "stroke", "outline",
+                "抠图", "去背景", "遮罩", "描边", "裁边", "qg",
+            ],
+            inputs=[
+                io.Image.Input(
+                    "image",
+                    tooltip="Source image; all frames in a batch share one crop box so the output stays stackable.",
                 ),
-                "mask": (
-                    "MASK",
-                    {"tooltip": "Mask: values above 127 are kept, the rest is cut away. Resized to the image if sizes differ; the last mask is reused when the batch has fewer masks than images."},
+                io.Mask.Input(
+                    "mask",
+                    tooltip="Mask: values above 127 are kept, the rest is cut away. Resized to the image if sizes differ; the last mask is reused when the batch has fewer masks than images.",
                 ),
-                "fill_holes": (
-                    "BOOLEAN",
-                    {"default": True, "tooltip": "Fill enclosed holes surrounded by foreground (e.g. a ring made by an arm). Only interior gaps are filled; the outside background is untouched."},
+                io.Boolean.Input(
+                    "fill_holes", default=True,
+                    tooltip="Fill enclosed holes surrounded by foreground (e.g. a ring made by an arm). Only interior gaps are filled; the outside background is untouched.",
                 ),
-                "crop_to_mask": (
-                    "BOOLEAN",
-                    {"default": True, "tooltip": "Crop the empty border using the foreground bounding box, keeping just the subject area. Turn off to keep the original canvas."},
+                io.Boolean.Input(
+                    "crop_to_mask", default=True,
+                    tooltip="Crop the empty border using the foreground bounding box, keeping just the subject area. Turn off to keep the original canvas.",
                 ),
-                "crop_factor": (
-                    "FLOAT",
-                    {"default": 1.2, "min": 1.0, "max": 2.0, "step": 0.1,
-                     "tooltip": "How far to expand the crop box. 1.0 hugs the subject, 1.2 leaves some margin; larger values leave more empty space."},
+                io.Float.Input(
+                    "crop_factor", default=1.2, min=1.0, max=2.0, step=0.1,
+                    tooltip="How far to expand the crop box. 1.0 hugs the subject, 1.2 leaves some margin; larger values leave more empty space.",
                 ),
-                "stroke_width": (
-                    "INT",
-                    {"default": 0, "min": 0, "max": 512, "step": 1,
-                     "tooltip": "Width in pixels of the outline drawn outside the foreground edge; 0 disables it."},
+                io.Int.Input(
+                    "stroke_width", default=0, min=0, max=512, step=1,
+                    tooltip="Width in pixels of the outline drawn outside the foreground edge; 0 disables it.",
                 ),
-                "stroke_color": (
-                    "STRING",
-                    {"default": DEFAULT_STROKE_COLOR,
-                     "tooltip": "Outline colour, also used as the backdrop of the RGB output. Accepts #RRGGBB / #RGB / RRGGBB; invalid values fall back to the default instead of erroring."},
+                io.String.Input(
+                    "stroke_color", default=DEFAULT_STROKE_COLOR,
+                    # V1 该 STRING 输入没有 multiline 键；V3 默认注入 multiline=False，
+                    # 传 None 让 prune_dict 去掉它，保持与 V1 object_info 逐字段一致。
+                    multiline=None,
+                    tooltip="Outline colour, also used as the backdrop of the RGB output. Accepts #RRGGBB / #RGB / RRGGBB; invalid values fall back to the default instead of erroring.",
                 ),
-            },
-        }
+            ],
+            outputs=[
+                io.Image.Output(id="rgba", tooltip="RGBA cutout with a transparent background."),
+                io.Image.Output(id="rgb", tooltip="Opaque RGB version: transparent areas are filled with the stroke colour."),
+                io.Mask.Output(id="mask", tooltip="The single-channel mask after hole filling and cropping."),
+            ],
+        )
 
-    RETURN_TYPES = ("IMAGE", "IMAGE", "MASK")
-    RETURN_NAMES = ("rgba", "rgb", "mask")
-    OUTPUT_TOOLTIPS = (
-        "RGBA cutout with a transparent background.",
-        "Opaque RGB version: transparent areas are filled with the stroke colour.",
-        "The single-channel mask after hole filling and cropping.",
-    )
-    FUNCTION = "remove_background"
-    CATEGORY = "QG-tools/Mask"
-    DESCRIPTION = "Cut out a subject using a mask: keep the pixels inside the mask and make everything else transparent. Optionally fill enclosed holes, crop to the subject bounding box with an adjustable margin, and add an outline. Returns an RGBA image, an RGB image composited over the stroke colour, and the mask actually used. A batch shares one crop box so every frame has the same size."
-    SEARCH_ALIASES = [
-        "remove background", "cutout", "mask", "alpha", "stroke", "outline",
-        "抠图", "去背景", "遮罩", "描边", "裁边", "qg",
-    ]
-
-    def remove_background(self, image, mask, fill_holes=True, crop_to_mask=True,
-                          crop_factor=1.2, stroke_width=0,
-                          stroke_color=DEFAULT_STROKE_COLOR):
+    @classmethod
+    def execute(cls, image, mask, fill_holes=True, crop_to_mask=True,
+                crop_factor=1.2, stroke_width=0,
+                stroke_color=DEFAULT_STROKE_COLOR):
         stroke_width = max(0, int(stroke_width))
         crop_factor = float(crop_factor)
         if crop_factor < 1.0:
             crop_factor = 1.0
         bg_rgb = _hex_to_rgb(stroke_color)
 
-        frames = self._prepare(image, mask, fill_holes)
+        frames = cls._prepare(image, mask, fill_holes)
 
         # 空批次（批量切完是空的、上游没给画面）：返回同形状的空张量。
         # 原先会走到 np.stack([]) 抛 "need at least one array to stack"，
@@ -229,7 +232,7 @@ class QGRemoveBackgroundByMask:
             shape = getattr(image, "shape", ()) or ()
             height = int(shape[1]) if len(shape) >= 3 else 1
             width = int(shape[2]) if len(shape) >= 3 else 1
-            return (
+            return io.NodeOutput(
                 torch.zeros((0, height, width, 4)),
                 torch.zeros((0, height, width, 3)),
                 torch.zeros((0, height, width)),
@@ -270,9 +273,10 @@ class QGRemoveBackgroundByMask:
         rgb_batch = torch.from_numpy(
             np.stack(rgb_out).astype(np.float32) / 255.0)
         mask_batch = torch.from_numpy(np.stack(mask_out))
-        return (rgba_batch, rgb_batch, mask_batch)
+        return io.NodeOutput(rgba_batch, rgb_batch, mask_batch)
 
-    def _prepare(self, image, mask, fill_holes):
+    @classmethod
+    def _prepare(cls, image, mask, fill_holes):
         """把 batch 拆成 [(RGBA ndarray, mask uint8)]，尺寸统一、遮罩已对齐。"""
         arr = image if isinstance(image, np.ndarray) else image.cpu().numpy()
         if arr.ndim == 3:

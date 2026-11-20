@@ -15,7 +15,7 @@ _batch_helpers.py 的 split_batch），代码零复用：边界校验的措辞�
 
 import torch
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
 
 
 def _require_batch(frames, source):
@@ -28,8 +28,9 @@ def _require_batch(frames, source):
     return count
 
 
-@combo_legacy("QG_BatchSplit")
-class QGBatchSplit:
+# V1 这里挂了 @combo_legacy("QG_BatchSplit")，但 LEGACY 表中无此项、基准也无 COMBO
+# 遗留键——装饰器是 no-op（直接返回原类）。V3 迁移去掉这个空装饰器，无需 coerce()。
+class QGBatchSplit(io.ComfyNode):
     """按 1 起算的帧号把批次切成两段：1..index 出 a，其余出 b。"""
 
     CATEGORY = "QG-tools/Image"
@@ -42,38 +43,37 @@ class QGBatchSplit:
     SEARCH_ALIASES = [
         "split", "batch", "frames", "half", "拆分", "批次", "拆", "帧", "qg",
     ]
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("IMAGE", "IMAGE")
-    RETURN_NAMES = ("a", "b")
-    OUTPUT_TOOLTIPS = (
-        "Frames 1 through index.",
-        "The remaining frames.",
-    )
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_BatchSplit",
+            display_name="Batch Split",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("images", tooltip="The [B,H,W,C] IMAGE batch to split."),
+                io.Int.Input(
+                    "index",
+                    default=1,
+                    min=1,
+                    max=2147483647,
+                    step=1,
+                    tooltip=(
+                        "One-based split point: frames 1 through index go to a, "
+                        "the rest to b. With N frames the valid range is 1..N-1 "
+                        "so neither side ends up empty."
+                    ),
+                ),
+            ],
+            outputs=[
+                io.Image.Output("a", tooltip="Frames 1 through index."),
+                io.Image.Output("b", tooltip="The remaining frames."),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "images": (
-                    "IMAGE",
-                    {"tooltip": "The [B,H,W,C] IMAGE batch to split."},
-                ),
-                "index": (
-                    "INT",
-                    {
-                        "default": 1, "min": 1, "max": 2147483647, "step": 1,
-                        "tooltip": (
-                            "One-based split point: frames 1 through index go to a, "
-                            "the rest to b. With N frames the valid range is 1..N-1 "
-                            "so neither side ends up empty."
-                        ),
-                    },
-                ),
-            },
-        }
-
-    def execute(self, images, index):
+    def execute(cls, images, index):
         count = _require_batch(images, "Batch Split")
         number = int(index)
         if count < 2:
@@ -87,7 +87,7 @@ class QGBatchSplit:
                 "split point must be between 1 and %d so neither side is empty."
                 % (number, count, count - 1)
             )
-        return (images[:number], images[number:])
+        return io.NodeOutput(images[:number], images[number:])
 
 
 NODE_CLASS_MAPPINGS = {"QG_BatchSplit": QGBatchSplit}

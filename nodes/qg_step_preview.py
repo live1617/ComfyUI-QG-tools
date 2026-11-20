@@ -42,7 +42,9 @@ nothing, and it never runs on builds where the clean path works.
 
 from __future__ import annotations
 
-from ._qg_combo_legacy import coerce, combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 NODE_ID = "QG_StepPreview"
 
@@ -193,12 +195,12 @@ def install_handler():
 
 
 # ---------------------------------------------------------------- 节点
-@combo_legacy("QG_StepPreview")
-class QGStepPreview:
+# V1 @combo_legacy("QG_StepPreview")：method 有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce，与 V1 等价。
+class QGStepPreview(io.ComfyNode):
     """Per-workflow sampler previews."""
 
     CATEGORY = "QG-tools/Display"
-    OUTPUT_NODE = True
     DESCRIPTION = (
         "Turns sampler previews on for this one workflow, without touching the "
         "launch flags and without affecting other workflows on the server. Drop "
@@ -213,67 +215,41 @@ class QGStepPreview:
     )
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def define_schema(cls):
         # 模块加载与重新解析节点定义时都会走到这里，此时 PromptServer 必然已存在，
-        # 是补挂钩子的最后一道保险。
+        # 是补挂钩子的最后一道保险（保留 V1 INPUT_TYPES 里的调用）。
         install_handler()
-        return {
-            "required": {
-                "method": (
-                    METHODS,
-                    {
-                        "default": "auto",
-                        "tooltip": (
-                            "How preview frames are decoded.\n"
-                            "auto / latent2rgb: map the latent straight to RGB, "
-                            "no model is loaded, cheapest.\n"
-                            "taesd: decode with TAESD for a near-real picture; "
-                            "needs the taesd models in vae_approx.\n"
-                            "none: also switch off previews that the server had "
-                            "enabled globally."
-                        ),
-                    },
-                ),
-                "max_size": (
-                    "INT",
-                    {
-                        "default": 512,
-                        "min": 64,
-                        "max": 2048,
-                        "step": 64,
-                        "tooltip": (
-                            "Longest edge of the preview image, in pixels. Smaller "
-                            "sends far less data, which helps a lot over a slow "
-                            "connection. Previews only -- the saved image is "
-                            "untouched."
-                        ),
-                    },
-                ),
-                "hide_sampler": (
-                    "BOOLEAN",
-                    {
-                        "default": True,
-                        "tooltip": (
-                            "Hide the same frames on the sampler node and keep them "
-                            "here only. Front-end setting, nothing is sent to the "
-                            "server; the preview still runs, so the cost is the same."
-                        ),
-                    },
-                ),
-            },
-        }
-
-    RETURN_TYPES = ()
-    FUNCTION = "apply"
+        # 零输出 + OUTPUT_NODE=True（纯前端开关节点）。
+        return io.Schema(
+            node_id="QG_StepPreview",
+            display_name="Step Preview",
+            category="QG-tools/Display",
+            description=cls.DESCRIPTION,
+            inputs=[
+                io.Combo.Input("method", options=METHODS, default="auto",
+                    tooltip="How preview frames are decoded.\n"
+                            "auto / latent2rgb: map the latent straight to RGB, no model is loaded, cheapest.\n"
+                            "taesd: decode with TAESD for a near-real picture; needs the taesd models in vae_approx.\n"
+                            "none: also switch off previews that the server had enabled globally."),
+                io.Int.Input("max_size", default=512, min=64, max=2048, step=64,
+                    tooltip="Longest edge of the preview image, in pixels. Smaller sends far less data, which helps a lot over a slow connection. Previews only -- the saved image is untouched."),
+                io.Boolean.Input("hide_sampler", default=True,
+                    tooltip="Hide the same frames on the sampler node and keep them here only. Front-end setting, nothing is sent to the server; the preview still runs, so the cost is the same."),
+            ],
+            outputs=[],
+            is_output_node=True,
+        )
 
     @classmethod
-    def VALIDATE_INPUTS(cls, method=None, max_size=None, hide_sampler=None):
-        # 老工作流里可能存着中文选项值（"自动" 这类），按下标校验会直接
-        # 报 Value not in list。具名列出 → 跳过列表校验，真正的换值在
-        # combo_legacy 里做；max_size 的数值范围校验不受影响。
+    def validate_inputs(cls, method=None, max_size=None, hide_sampler=None):
+        # 老工作流里可能存着中文选项值（"自动" 这类），具名跳过列表校验，
+        # 真正的换值在 execute 开头 coerce；max_size 数值范围校验不受影响。
         return True
 
-    def apply(self, method, max_size, hide_sampler=True):
+    @classmethod
+    def execute(cls, method, max_size, hide_sampler=True):
+        # V1 装饰器 coerce method（中文遗留值 → 英文），V3 显式保留。
+        method = coerce("QG_StepPreview", "method", method)
         # hide_sampler 只是给前端看的（缩略图藏不藏由浏览器决定），
         # 后端不碰它；写进签名是为了让 FUNCTION 能收到全部入参。
         # 正常路径下 extra_data 已经生效，这里什么都不用做；
@@ -281,7 +257,7 @@ class QGStepPreview:
         if not (_HANDLER_INSTALLED and _HAS_OVERRIDE):
             if not install_handler():
                 _set_global_method(method)
-        return {}
+        return io.NodeOutput()
 
 
 # PromptServer 在 init_extra_nodes() 之前就已创建，所以这里通常一次就挂上。

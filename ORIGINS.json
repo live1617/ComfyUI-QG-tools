@@ -7,8 +7,8 @@
     "ported": "搬运 —— 整段照抄上游代码，只改类名 / 节点 ID / 分类 / 显示名 / 中文文案，逻辑一行没动"
   },
   "counts": {
-    "total": 65,
-    "original": 59,
+    "total": 71,
+    "original": 65,
     "ported": 6
   },
   "upstreams": {
@@ -409,6 +409,76 @@
       "note": "自写（10-30 换掉 v0.9.4 的搬运版）：ID / 输入名 / 槽名 / 分隔符是控件 / 不做 trim，全不变，老工作流照开。真改进是分得开「没接线」和「接了但是空」—— 搬运版两路默认都是 \"\"，于是判不出某一路是不是根本没接，分隔符照样吐：只接文本1 得 \"A-\"、只接文本2 得 \"-B\"、两路都不接得一个孤零零的 \"-\"。现在没接的那一路用 _MISSING 哨兵认出来，连同分隔符一起省掉；接了线但是空字符串仍算参与（空 + \"-\" + X 还是 \"-X\"）。🔴 判据依赖函数签名默认值是哨兵 —— ComfyUI 的 get_input_data 只返回 prompt 里真有的输入，没出现的交给 Python 用签名默认值补；哪天改成拿 INPUT_TYPES 的 default 填，这个区分会静默失效，_check_text_concat.py 里那条断言就是盯这个的。输出类型同时从 * 改成 STRING（原来名字写 STRING、类型是任意，自相矛盾）"
     },
     {
+      "id": "QG_ImageScaleRange",
+      "display": "图像缩放（范围）",
+      "file": "nodes/qg_image_scale_range.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "Goohaitools-comfyui",
+        "node": "图像缩放（范围）孤海",
+        "license": "GPL-3.0-or-later",
+        "relation": "idea"
+      },
+      "note": "自写按范围缩放节点：接口/五种限制模式/整除数对齐参考节点形态，代码独立重写、未搬 GPL 源码，不引 PIL/numpy，纯 torch。几何经真机跑孤海节点取黄金基准逐项校验（limit 五模式 + 整除数 cover 裁剪，13 组全中）。遮罩与图像同几何、保持连续 alpha。修缺陷：「宽度与高度」模式在极端长条下参考只放短边到最小却 pass 掉长边超最大，会吐 40960x1024 巨型图；这里约束冲突时优先不超最大尺寸。遮罩全黑/未接时按输出图尺寸造全黑遮罩。"
+    },
+    {
+      "id": "QG_ColorImage",
+      "display": "纯色图像",
+      "file": "nodes/qg_color_image.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI_LayerStyle",
+        "node": "LayerUtility: ColorImage V2",
+        "license": "GPL-3.0-or-later",
+        "relation": "idea"
+      },
+      "note": "自写纯色图像节点：接口/参数形态对齐参考节点（size 下拉 + custom 宽高 + 颜色 + 参考大小输入），代码独立重写、未搬 GPL 源码，不引 PIL/numpy，纯 torch 生成。尺寸三来源优先级：size_as 接图像/遮罩/latent 取宽高 > 预设档 1024x1024 > custom 自定义；颜色 #RRGGBB/#RGB 解析成 0..1 浮点。档位内置（参考从 custom_size.ini 读，本机无该文件）；增强：支持 latent 取尺寸、修掉参考只认 IMAGE 的限制。"
+    },
+    {
+      "id": "QG_ImageMergeMask",
+      "display": "图像合并（遮罩）",
+      "file": "nodes/qg_image_merge_mask.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "Goohaitools-comfyui",
+        "node": "孤海-图像合并（遮罩）",
+        "license": "GPL-3.0-or-later",
+        "relation": "idea"
+      },
+      "note": "自写按遮罩合成节点：接口/参数范围对齐参考节点形态（背景图/覆盖图/遮罩/透明度/遮罩扩展/模糊半径/匹配图像大小），代码独立重写、未搬 GPL 源码，不引入 PIL/numpy/cv2。纯 torch 合成 + 复用本包 grow_shrink_mask/blur_mask/resize helper；增强点：逐帧处理整个 batch（参考只取首帧）、遮罩连续 alpha 不量化、遮罩扩张画布外按 0。"
+    },
+    {
+      "id": "QG_StringConstant",
+      "display": "字符串常量",
+      "file": "nodes/qg_string_constant.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-KJNodes",
+        "node": "StringConstant",
+        "license": "GPL-3.0-or-later",
+        "relation": "idea"
+      },
+      "note": "自写单行字符串常量：一个 STRING 控件透传输出，值原样照抄不去空格。参考 KJNodes StringConstant 的节点形态（常量盒子），代码独立重写、未搬 GPL 源码，不引入任何依赖。ID / 分类 / 文案 / 搜索别名是本包自己的。"
+    },
+    {
+      "id": "QG_StringConstantMultiline",
+      "display": "字符串常量（多行）",
+      "file": "nodes/qg_string_constant_multiline.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-KJNodes",
+        "node": "StringConstantMultiline",
+        "license": "GPL-3.0-or-later",
+        "relation": "idea"
+      },
+      "note": "自写多行字符串常量：多行 STRING 控件 + strip_newlines 布尔开关（默认开，去掉所有换行含 CR 再去首尾空白；关则原样透传）。参考 KJNodes StringConstantMultiline 的节点形态，代码独立重写、未搬 GPL 源码。"
+    },
+    {
       "id": "QG_TextReplace",
       "display": "文本替换",
       "file": "nodes/qg_text_replace.py",
@@ -443,6 +513,14 @@
       "origin": "original",
       "upstream": null,
       "note": "十种方法都是公开算法的自写实现，代码未搬任何插件：Haar 小波 3 层只匹配低频子带、AdaIN 逐通道实例归一化（sRGB 上、单尺度）、RBF 核 MMD 拟合仿射映射、逐通道 CDF 分位匹配、Reinhard LAB 逐通道均值/标准差（2001）、LAB 3x3 协方差匹配（Pitié 2007 线性 MKL 的核心：白化再着色）、两种三步串联（直方图-多元高斯-直方图、直方图-MMD-直方图）、Reinhard 的整批 4D 实现、仅匹配均值；训练无关、纯 torch，出口走 LCh 保色相缩 chroma 而非逐通道硬裁；遮罩 / 羽化 / 强度 / 匹配范围 / 参考取帧 / 目标统计 / 遮罩用途 / 参考遮罩 / 细节回填是本插件自己的参数划分"
+    },
+    {
+      "id": "QG_ColorMatchPro",
+      "display": "颜色匹配 Pro",
+      "file": "nodes/qg_color_match_pro.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "原创整合版，界面沿用 ColorMatchPro 的九方法与控件划分；算法全部复用本插件 QG_ColorMatch 的纯 torch 自写实现（mkl→LAB 3x3 协方差映射，hm→逐通道分位匹配，hm-mkl-hm→直方图-MMD-直方图串联，其余同名直连），未搬任何外部代码、不依赖 color-matcher/kornia。参考恒取首帧、保留明暗、蒙版羽化、单帧失败回退与内置预览是本节点自己的参数划分。"
     },
     {
       "id": "QG_ImageScale",
@@ -749,7 +827,7 @@
         "license": "MIT",
         "relation": "idea"
       },
-      "note": "自写。上游整个 stitch() 就是 apply_stitch + stitch_blend_mask 两行，算法同样直接用搬进来的 helper，节点层只补输入校验和老存档容错：seam 为空串/None 时按 classic 走（VALIDATE_INPUTS 也要放行，否则老工作流排不进队列）。输出与上游逐像素一致（含 color_match、fix_edge_halo、seam=blend in 对 Crop 缝合数据降级这三种组合），四种交叉接线也一一验过：AusBoss 的 stitcher 喂本节点、本节点的 stitcher 喂 AusBoss 节点，结果全等"
+      "note": "自写。上游整个 stitch() 就是 apply_stitch + stitch_blend_mask 两行，算法同样直接用搬进来的 helper，节点层只补输入校验和老存档容错：seam 为空串/None 时按 classic 走（VALIDATE_INPUTS 也要放行，否则老工作流排不进队列）。输出与上游逐像素一致（含 color_match、fix_edge_halo、seam=blend in 对 Crop 缝合数据降级这三种组合），四种交叉接线也一一验过：AusBoss 的 stitcher 喂本节点、本节点的 stitcher 喂 AusBoss 节点，结果全等。2026-11-20 对齐 AusBoss 2.26 的 follow_changes（可选布尔，默认 False，classic + 普通 crop 才生效）：新增 optional BOOLEAN 输入与 QG 自写的 _qg_follow_changes_helpers.py（复用本包 _qg_realign_helpers 的 measure/crop_if_shift/warp_to_source + _resize_image，语义对齐上游但代码自写，非逐字搬运），在 apply_stitch 前先对齐裁剪图、再把贴回遮罩从框扩到相连的模型改动区。解决整图重绘模型（MiniMax H3 等）把靴子/盘沿/衣领画出框被切断的问题"
     },
     {
       "id": "QG_PromptLine",
@@ -1106,6 +1184,12 @@
       ]
     },
     {
+      "anchor": "## 颜色匹配 Pro（九方法整合 + 内置预览）",
+      "nodes": [
+        "QG_ColorMatchPro"
+      ]
+    },
+    {
       "anchor": "## 添加水印（文字或图像，九宫格定位 + 平铺 + 旋转）",
       "nodes": [
         "QG_AddWatermark"
@@ -1145,6 +1229,13 @@
       "anchor": "## 文本合并（两段拼一段）",
       "nodes": [
         "QG_TextConcat"
+      ]
+    },
+    {
+      "anchor": "## 字符串常量（单行 / 多行）",
+      "nodes": [
+        "QG_StringConstant",
+        "QG_StringConstantMultiline"
       ]
     },
     {
@@ -1279,6 +1370,24 @@
       "anchor": "## LoRA Switch Stack",
       "nodes": [
         "QG_LoraSwitchStack"
+      ]
+    },
+    {
+      "anchor": "## 图像缩放（范围）",
+      "nodes": [
+        "QG_ImageScaleRange"
+      ]
+    },
+    {
+      "anchor": "## 纯色图像",
+      "nodes": [
+        "QG_ColorImage"
+      ]
+    },
+    {
+      "anchor": "## 图像合并（遮罩）",
+      "nodes": [
+        "QG_ImageMergeMask"
       ]
     },
     {

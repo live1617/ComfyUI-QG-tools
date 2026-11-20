@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import torch
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 from ._qg_execution_helpers import raise_if_interrupted, warn_once
 from ._qg_mask_crop_helpers import mask_bounds
 
@@ -65,8 +67,9 @@ def _shift(mask: torch.Tensor, dx: int, dy: int) -> torch.Tensor:
     return out
 
 
-@combo_legacy("QG_MaskAlign")
-class QGMaskAlign:
+# V1 @combo_legacy("QG_MaskAlign")：三个下拉的 LEGACY 项是前端中文标签用，coerce 空操作。
+# V3 去装饰器，execute 开头 coerce 三值，与 V1 等价。
+class QGMaskAlign(io.ComfyNode):
     CATEGORY = "QG-tools/Mask"
     DESCRIPTION = (
         "Slides a painted area so it lines up with a reference mask, or with the "
@@ -81,65 +84,41 @@ class QGMaskAlign:
     SEARCH_ALIASES = ["mask align", "center mask", "遮罩对齐", "对齐", "居中", "qg"]
 
     @classmethod
-    def VALIDATE_INPUTS(cls, align_x=None, align_y=None, output=None):
-        # 三个下拉的中文标签（不移动 / 居中 / 左 …；对齐后的遮罩 / 外接矩形）
-        # 登记在 nodes/_qg_combo_legacy.py 的 LEGACY 表里。值本身是英文，
-        # 这里只把选项名报上去跳过「值必须在列表里」，别的输入照常校验。
+    def validate_inputs(cls, align_x=None, align_y=None, output=None):
+        # 三个下拉的中文标签登记在 LEGACY 表（前端用），值本身是英文；
+        # 具名报上去跳过「值必须在列表里」，别的输入照常校验。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "mask": (
-                    "MASK",
-                    {"tooltip": "The mask to move. Every frame moves by the same offset."},
-                ),
-                "align_x": (
-                    X_ANCHORS,
-                    {
-                        "default": "center",
-                        "tooltip": "Horizontal anchor. none leaves x alone.",
-                    },
-                ),
-                "align_y": (
-                    Y_ANCHORS,
-                    {
-                        "default": "center",
-                        "tooltip": "Vertical anchor. none leaves y alone.",
-                    },
-                ),
-                "output": (
-                    OUTPUTS,
-                    {
-                        "default": "aligned",
-                        "tooltip": "aligned: the paint, moved. bbox: a solid rectangle covering where it landed.",
-                    },
-                ),
-                "union_bbox": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": "bbox only: stretch the rectangle to cover the reference's too. No effect without a reference.",
-                    },
-                ),
-            },
-            "optional": {
-                "reference": (
-                    "MASK",
-                    {
-                        "tooltip": "What to line up against. Anything not fully transparent counts, whatever its brightness. Empty means the frame itself."
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_MaskAlign",
+            display_name="Mask Align",
+            category="QG-tools/Mask",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Mask.Input("mask", tooltip="The mask to move. Every frame moves by the same offset."),
+                io.Combo.Input("align_x", options=X_ANCHORS, default="center",
+                               tooltip="Horizontal anchor. none leaves x alone."),
+                io.Combo.Input("align_y", options=Y_ANCHORS, default="center",
+                               tooltip="Vertical anchor. none leaves y alone."),
+                io.Combo.Input("output", options=OUTPUTS, default="aligned",
+                               tooltip="aligned: the paint, moved. bbox: a solid rectangle covering where it landed."),
+                io.Boolean.Input("union_bbox", default=False,
+                                 tooltip="bbox only: stretch the rectangle to cover the reference's too. No effect without a reference."),
+                io.Mask.Input("reference", optional=True,
+                              tooltip="What to line up against. Anything not fully transparent counts, whatever its brightness. Empty means the frame itself."),
+            ],
+            outputs=[io.Mask.Output("mask", tooltip="The moved mask, same size as the one handed in.")],
+        )
 
-    RETURN_TYPES = ("MASK",)
-    RETURN_NAMES = ("mask",)
-    OUTPUT_TOOLTIPS = ("The moved mask, same size as the one handed in.",)
-    FUNCTION = "align"
-
-    def align(self, mask, align_x="center", align_y="center", output="aligned", union_bbox=False, reference=None):
+    @classmethod
+    def execute(cls, mask, align_x="center", align_y="center", output="aligned", union_bbox=False, reference=None):
+        # V1 装饰器 coerce 三个下拉值（英文为 no-op），V3 显式保留。
+        align_x = coerce("QG_MaskAlign", "align_x", align_x)
+        align_y = coerce("QG_MaskAlign", "align_y", align_y)
+        output = coerce("QG_MaskAlign", "output", output)
         mask = _as_mask(mask)
         height, width = int(mask.shape[-2]), int(mask.shape[-1])
 
@@ -149,7 +128,7 @@ class QGMaskAlign:
                 "Mask Align: nothing painted, returning the mask unchanged.",
                 _WARNED,
             )
-            return (mask,)
+            return io.NodeOutput(mask)
 
         ref_bounds = None
         if reference is not None:
@@ -193,9 +172,9 @@ class QGMaskAlign:
             out = torch.zeros_like(mask)
             if right >= left and bottom >= top:
                 out[:, top:bottom + 1, left:right + 1] = 1.0
-            return (out,)
+            return io.NodeOutput(out)
 
-        return (_shift(mask, dx, dy),)
+        return io.NodeOutput(_shift(mask, dx, dy))
 
 
 def _anchor_offset(anchor: str, ref_start: int, ref_size: int, own_size: int):

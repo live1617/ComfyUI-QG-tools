@@ -35,7 +35,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 from ._qg_media_helpers import (
     list_input_images,
     load_image_frames,
@@ -113,8 +115,9 @@ def _has_baked_colour(colour, clean, mask):
     return diff > 0.02      # ~5/255; a 50% tint of any palette colour is far above
 
 
-@combo_legacy("QG_LoadImage")
-class QGLoadImage:
+# V1 @combo_legacy("QG_LoadImage")：tint_color 中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce，与 V1 等价。
+class QGLoadImage(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Load an image from ComfyUI's input folder and get two things out: "
@@ -131,97 +134,55 @@ class QGLoadImage:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": (
-                    list_input_images(),
-                    {
-                        "image_upload": True,
-                        "tooltip": (
-                            "Choose or upload an image from ComfyUI's input "
-                            "folder. The mask editor writes its save back here."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "keep_alpha": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "label_on": "on",
-                        "label_off": "off",
-                        "tooltip": (
-                            "Off: a see-through pixel is composited over white, "
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_LoadImage",
+            display_name="Load Image",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                # 文件下拉 + image_upload：UploadType.image 产出 image_upload:True，
+                # image_folder=input 与 V1 的 ComfyUI 输入目录一致。
+                io.Combo.Input("image", options=list_input_images(),
+                    upload=io.UploadType.image, image_folder=io.FolderType.input,
+                    tooltip="Choose or upload an image from ComfyUI's input "
+                            "folder. The mask editor writes its save back here."),
+                io.Boolean.Input("keep_alpha", optional=True, default=False,
+                    extra_dict={"label_on": "on", "label_off": "off"},
+                    tooltip="Off: a see-through pixel is composited over white, "
                             "which is what a picture viewer shows. On: the frame "
                             "keeps four channels and the transparency is handed "
-                            "on as it is."
-                        ),
-                    },
-                ),
-                "tint_output": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "label_on": "on",
-                        "label_off": "off",
-                        "tooltip": (
-                            "Off: the picture comes out clean, the mask only on "
+                            "on as it is."),
+                io.Boolean.Input("tint_output", optional=True, default=False,
+                    extra_dict={"label_on": "on", "label_off": "off"},
+                    tooltip="Off: the picture comes out clean, the mask only on "
                             "the mask output. On: hand back the colours painted "
                             "in the mask editor -- every brush stroke keeps its "
                             "own colour, and the strength is the editor's "
                             "opacity slider. Files saved by older versions (no "
                             "colour baked in) fall back to the single colour "
-                            "below."
-                        ),
-                    },
-                ),
-                "tint_color": (
-                    list(TINT_COLORS),
-                    {
-                        "default": "green",
-                        "tooltip": (
-                            "The colour the mask is painted with when the "
+                            "below."),
+                io.Combo.Input("tint_color", optional=True, options=list(TINT_COLORS),
+                    default="green",
+                    tooltip="The colour the mask is painted with when the "
                             "tinted output is on. The mask editor writes its "
-                            "own choice back here when it saves."
-                        ),
-                    },
-                ),
-                "tint_alpha": (
-                    "INT",
-                    {
-                        "default": 50,
-                        "min": 0,
-                        "max": 100,
-                        "step": 5,
-                        "tooltip": (
-                            "How much of the colour is mixed in, in percent. "
-                            "50 keeps the picture readable underneath."
-                        ),
-                    },
-                ),
-            },
-        }
+                            "own choice back here when it saves."),
+                io.Int.Input("tint_alpha", optional=True, default=50, min=0, max=100, step=5,
+                    tooltip="How much of the colour is mixed in, in percent. "
+                            "50 keeps the picture readable underneath."),
+            ],
+            outputs=[
+                io.Image.Output("IMAGE", tooltip="The picture. A painted mask never shows up here unless the tinted output is turned on."),
+                io.Mask.Output("MASK", tooltip="1 where the mask is painted, 0 where it is not; always the picture's own size, never a 64 x 64 stand-in."),
+            ],
+        )
 
-    RETURN_TYPES = ("IMAGE", "MASK")
-    RETURN_NAMES = ("IMAGE", "MASK")
-    OUTPUT_TOOLTIPS = (
-        "The picture. A painted mask never shows up here unless the tinted "
-        "output is turned on.",
-        "1 where the mask is painted, 0 where it is not; always the picture's "
-        "own size, never a 64 x 64 stand-in.",
-    )
-    FUNCTION = "load_image"
-
-    def load_image(
-        self,
-        image,
-        keep_alpha=False,
-        tint_output=False,
-        tint_color="green",
-        tint_alpha=50,
-    ):
+    @classmethod
+    def execute(cls, image, keep_alpha=False, tint_output=False,
+                tint_color="green", tint_alpha=50):
+        # V1 装饰器 coerce tint_color（中文遗留值 → 英文），V3 显式保留。
+        tint_color = coerce("QG_LoadImage", "tint_color", tint_color)
         path = resolve_input_path(image)
         frames = load_image_frames(path)
 
@@ -302,13 +263,13 @@ class QGLoadImage:
                 # exactly the value it always had.
                 images.append(colour * base[..., None] + (1.0 - base)[..., None])
 
-        return (
+        return io.NodeOutput(
             torch.from_numpy(np.stack(images).astype(np.float32)),
             torch.from_numpy(np.stack(masks).astype(np.float32)),
         )
 
     @classmethod
-    def VALIDATE_INPUTS(cls, image, tint_color=None):
+    def validate_inputs(cls, image, tint_color=None):
         # tint_color 只是具名报上去，让 ComfyUI 跳过「值必须在列表里」这道检查
         # （老存档或中文界面存下的值可能是中文），真正的换值在 combo_legacy 里做。
         # ComfyUI 跳过它的列表检查时，也会把上传待扫描、遮罩编辑器存的

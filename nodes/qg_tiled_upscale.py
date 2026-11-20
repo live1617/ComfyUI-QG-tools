@@ -8,10 +8,12 @@ MIT 头注释保留、与上游逐字一致）；张量侧共享函数在 _qg_ti
 """
 from __future__ import annotations
 
+from comfy_api.latest import io
+
 from ._qg_tile_helpers import describe_plan, plan_tiles
 from ._qg_tile_image_helpers import STITCHER_KIND, _model_enlarge, _resample, _rgb
 
-class QGTiledUpscale:
+class QGTiledUpscale(io.ComfyNode):
     """按目标兆像素把图切成模型能逐块重绘的 tiles。"""
 
     CATEGORY = "QG-tools/Image"
@@ -28,87 +30,107 @@ class QGTiledUpscale:
         "tiled upscale", "tile upscale", "tiles", "split into tiles",
         "megapixels", "upscale", "切块", "分块", "放大", "超分", "qg",
     ]
-    OUTPUT_NODE = False
-    FUNCTION = "split"
-
-    RETURN_TYPES = ("IMAGE", "QG_TILE_STITCHER", "IMAGE", "INT", "INT", "STRING")
-    RETURN_NAMES = ("tiles", "stitcher", "before", "width", "height", "report")
-    OUTPUT_IS_LIST = (True, False, False, False, False, False)
-    OUTPUT_TOOLTIPS = (
-        "The tiles, one after another. Nodes after this run once per tile.",
-        "What Tiled Upscale Stitch needs to put the tiles back together.",
-        "Your picture enlarged the plain way to the finished size: the before picture.",
-        "Width of the finished picture in pixels.",
-        "Height of the finished picture in pixels.",
-        "What was done with your picture, in one or two sentences.",
-    )
+    @classmethod
+    def define_schema(cls):
+        # V1 的 OUTPUT_IS_LIST=(True,False,False,False,False,False) → 只给 tiles
+        # 这一路 io.Image.Output(is_output_list=True)，其余五路普通输出。
+        return io.Schema(
+            node_id="QG_TiledUpscale",
+            display_name="Tiled Upscale",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("image", tooltip="The picture to enlarge and cut into tiles."),
+                io.Float.Input(
+                    "megapixels",
+                    default=4.0,
+                    min=0.0,
+                    max=64.0,
+                    step=0.05,
+                    tooltip="Size of the finished picture, in megapixels. 0 keeps the picture's own size.",
+                ),
+                io.Custom("UPSCALE_MODEL").Input(
+                    "upscale_model",
+                    optional=True,
+                    tooltip=(
+                        "Optional. Enlarges the picture with an upscale model before it is "
+                        "cut into tiles. Unplugged, it is enlarged the plain way (lanczos)."
+                    ),
+                ),
+                io.Float.Input(
+                    "tile_megapixels",
+                    optional=True,
+                    default=2.0,
+                    min=0.25,
+                    max=16.0,
+                    step=0.05,
+                    tooltip=(
+                        "The most your model redraws at once. A picture up to about this "
+                        "size stays in one tile. 2 suits Qwen Image 2.1 and Krea 2; use 1 for SDXL."
+                    ),
+                ),
+                io.Int.Input(
+                    "overlap",
+                    optional=True,
+                    default=128,
+                    min=0,
+                    max=1024,
+                    step=8,
+                    tooltip="How many pixels neighbouring tiles share. The join is blended across this strip.",
+                ),
+                io.Int.Input(
+                    "multiple",
+                    optional=True,
+                    default=32,
+                    min=1,
+                    max=256,
+                    step=1,
+                    tooltip=(
+                        "Every tile's width and height is a multiple of this. 32 works with "
+                        "every model tried; Qwen Image 2.1 needs it."
+                    ),
+                ),
+                io.Float.Input(
+                    "max_growth",
+                    optional=True,
+                    default=8.0,
+                    min=1.0,
+                    max=64.0,
+                    step=0.5,
+                    tooltip=(
+                        "A small picture is redrawn at no more than this many times its own "
+                        "megapixels, and enlarged the plain way from there. Raise it to redraw "
+                        "a tiny picture at a big size anyway."
+                    ),
+                ),
+            ],
+            outputs=[
+                io.Image.Output(
+                    "tiles",
+                    is_output_list=True,
+                    tooltip="The tiles, one after another. Nodes after this run once per tile.",
+                ),
+                io.Custom("QG_TILE_STITCHER").Output(
+                    "stitcher",
+                    tooltip="What Tiled Upscale Stitch needs to put the tiles back together.",
+                ),
+                io.Image.Output(
+                    "before",
+                    tooltip="Your picture enlarged the plain way to the finished size: the before picture.",
+                ),
+                io.Int.Output("width", tooltip="Width of the finished picture in pixels."),
+                io.Int.Output("height", tooltip="Height of the finished picture in pixels."),
+                io.String.Output(
+                    "report",
+                    tooltip="What was done with your picture, in one or two sentences.",
+                ),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": ("IMAGE", {"tooltip": "The picture to enlarge and cut into tiles."}),
-                "megapixels": (
-                    "FLOAT",
-                    {
-                        "default": 4.0, "min": 0.0, "max": 64.0, "step": 0.05,
-                        "tooltip": "Size of the finished picture, in megapixels. 0 keeps the picture's own size.",
-                    },
-                ),
-            },
-            "optional": {
-                "upscale_model": (
-                    "UPSCALE_MODEL",
-                    {
-                        "tooltip": (
-                            "Optional. Enlarges the picture with an upscale model before it is "
-                            "cut into tiles. Unplugged, it is enlarged the plain way (lanczos)."
-                        ),
-                    },
-                ),
-                "tile_megapixels": (
-                    "FLOAT",
-                    {
-                        "default": 2.0, "min": 0.25, "max": 16.0, "step": 0.05,
-                        "tooltip": (
-                            "The most your model redraws at once. A picture up to about this "
-                            "size stays in one tile. 2 suits Qwen Image 2.1 and Krea 2; use 1 for SDXL."
-                        ),
-                    },
-                ),
-                "overlap": (
-                    "INT",
-                    {
-                        "default": 128, "min": 0, "max": 1024, "step": 8,
-                        "tooltip": "How many pixels neighbouring tiles share. The join is blended across this strip.",
-                    },
-                ),
-                "multiple": (
-                    "INT",
-                    {
-                        "default": 32, "min": 1, "max": 256, "step": 1,
-                        "tooltip": (
-                            "Every tile's width and height is a multiple of this. 32 works with "
-                            "every model tried; Qwen Image 2.1 needs it."
-                        ),
-                    },
-                ),
-                "max_growth": (
-                    "FLOAT",
-                    {
-                        "default": 8.0, "min": 1.0, "max": 64.0, "step": 0.5,
-                        "tooltip": (
-                            "A small picture is redrawn at no more than this many times its own "
-                            "megapixels, and enlarged the plain way from there. Raise it to redraw "
-                            "a tiny picture at a big size anyway."
-                        ),
-                    },
-                ),
-            },
-        }
-
-    def split(self, image, megapixels, upscale_model=None, tile_megapixels=2.0,
-              overlap=128, multiple=32, max_growth=8.0):
+    def execute(cls, image, megapixels, upscale_model=None, tile_megapixels=2.0,
+                overlap=128, multiple=32, max_growth=8.0):
         source = _rgb(image, "Tiled Upscale")
         height, width = int(source.shape[1]), int(source.shape[2])
         plan = plan_tiles(
@@ -129,7 +151,7 @@ class QGTiledUpscale:
         ]
         stitcher = {"kind": STITCHER_KIND, "version": 1, "plan": plan, "tiles": tiles}
         report = describe_plan(plan)
-        return (tiles, stitcher, before, result_width, result_height, report)
+        return io.NodeOutput(tiles, stitcher, before, result_width, result_height, report)
 
 
 NODE_CLASS_MAPPINGS = {"QG_TiledUpscale": QGTiledUpscale}

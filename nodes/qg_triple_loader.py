@@ -42,6 +42,8 @@ except ImportError:  # pragma: no cover - older / forked builds land here
         VAELoader,
     )
 
+from comfy_api.latest import io
+
 # Reuse the stock loader instances so every dropdown comes from this install.
 _unet_loader = UNETLoader()
 _clip_loader = CLIPLoader()
@@ -112,7 +114,7 @@ def _resolve_file(value: str, getter) -> str:
     raise ValueError("[QG-tools] Triple Loader: model file not found: \"%s\"" % value)
 
 
-class QGTripleLoader:
+class QGTripleLoader(io.ComfyNode):
     CATEGORY = "QG-tools/Loaders"
     DESCRIPTION = (
         "Loads the diffusion model, the text encoder and the VAE in one node. "
@@ -128,63 +130,46 @@ class QGTripleLoader:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "unet_name": (
-                    _unet_files(),
-                    {"tooltip": "UNET or diffusion model. The list shows full paths and the node shows the short filename."},
-                ),
-                "weight_dtype": (
-                    _unet_dtypes,
-                    {
-                        "tooltip": "Data type for the UNET weights; pick fp8_e4m3fn when VRAM is tight.",
-                        "default": "default",
-                    },
-                ),
-                "clip_name": (
-                    _clip_files(),
-                    {"tooltip": "CLIP or text encoder. The list shows full paths and the node shows the short filename."},
-                ),
-                "clip_type": (
-                    _clip_types,
-                    {
-                        "tooltip": "Text encoder type, chosen to match the model. The default matches ComfyUI's own CLIPLoader and takes the first entry in the list.",
-                        "default": _clip_types[0],
-                    },
-                ),
-                "device": (
-                    _clip_devices,
-                    {
-                        "tooltip": "Where the text encoder is loaded. cpu saves VRAM at the cost of speed.",
-                        "default": "default",
-                    },
-                ),
-                "vae_name": (
-                    _vae_files(),
-                    {"tooltip": "VAE. The list shows full paths and the node shows the short filename."},
-                ),
-            }
-        }
+    def define_schema(cls):
+        # 三个文件列表每次 define_schema 都重新读取（对应 V1 INPUT_TYPES 的
+        # 「刷新即更新」，新增模型无需重启）。
+        return io.Schema(
+            node_id="QG_TripleLoader",
+            display_name="Triple Loader",
+            category="QG-tools/Loaders",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Combo.Input("unet_name", options=_unet_files(),
+                    tooltip="UNET or diffusion model. The list shows full paths and the node shows the short filename."),
+                io.Combo.Input("weight_dtype", options=_unet_dtypes, default="default",
+                    tooltip="Data type for the UNET weights; pick fp8_e4m3fn when VRAM is tight."),
+                io.Combo.Input("clip_name", options=_clip_files(),
+                    tooltip="CLIP or text encoder. The list shows full paths and the node shows the short filename."),
+                io.Combo.Input("clip_type", options=_clip_types, default=_clip_types[0],
+                    tooltip="Text encoder type, chosen to match the model. The default matches ComfyUI's own CLIPLoader and takes the first entry in the list."),
+                io.Combo.Input("device", options=_clip_devices, default="default",
+                    tooltip="Where the text encoder is loaded. cpu saves VRAM at the cost of speed."),
+                io.Combo.Input("vae_name", options=_vae_files(),
+                    tooltip="VAE. The list shows full paths and the node shows the short filename."),
+            ],
+            outputs=[
+                io.Model.Output("MODEL", tooltip="The loaded diffusion model, ready for a sampler or a LoRA stack."),
+                io.Clip.Output("CLIP", tooltip="The loaded text encoder, ready for a CLIP Text Encode node."),
+                io.Vae.Output("VAE", tooltip="The loaded VAE, ready for a VAE Encode or VAE Decode node."),
+            ],
+        )
 
-    RETURN_TYPES = ("MODEL", "CLIP", "VAE")
-    RETURN_NAMES = ("MODEL", "CLIP", "VAE")
-    OUTPUT_TOOLTIPS = (
-        "The loaded diffusion model, ready for a sampler or a LoRA stack.",
-        "The loaded text encoder, ready for a CLIP Text Encode node.",
-        "The loaded VAE, ready for a VAE Encode or VAE Decode node.",
-    )
-    FUNCTION = "load_all"
-
-    # Parameter order must match INPUT_TYPES exactly (positional arguments).
-    def load_all(self, unet_name, weight_dtype, clip_name, clip_type, device, vae_name):
+    # Parameter order must match define_schema exactly (positional arguments).
+    @classmethod
+    def execute(cls, unet_name, weight_dtype, clip_name, clip_type, device, vae_name):
         unet_real = _resolve_file(unet_name, _unet_files)
         clip_real = _resolve_file(clip_name, _clip_files)
         vae_real = _resolve_file(vae_name, _vae_files)
         model = _unet_loader.load_unet(unet_real, weight_dtype)[0]
         clip = _clip_loader.load_clip(clip_real, type=clip_type, device=device)[0]
         vae = _vae_loader.load_vae(vae_real)[0]
-        return (model, clip, vae)
+        return io.NodeOutput(model, clip, vae)
 
 
 NODE_CLASS_MAPPINGS = {"QG_TripleLoader": QGTripleLoader}

@@ -33,7 +33,10 @@ to the COMBO output into the text box (``web/prompt_line/index.js``).
 """
 
 
-class QGPromptLine:
+from comfy_api.latest import io
+
+
+class QGPromptLine(io.ComfyNode):
     """Split a multi-line prompt into a list, one entry per line."""
 
     DESCRIPTION = (
@@ -50,76 +53,35 @@ class QGPromptLine:
         "string list", "提示词行", "提示词列表", "行", "多行", "组合",
         "列表", "qg",
     ]
-    CATEGORY = "QG-tools/Text"
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("STRING", "COMBO")
-    RETURN_NAMES = ("STRING", "COMBO")
-    OUTPUT_TOOLTIPS = (
-        "Every selected row as a list of strings.",
-        "The same rows, typed as options so the slot can drive a combo input.",
-    )
-    OUTPUT_IS_LIST = (True, True)
+    @classmethod
+    def define_schema(cls):
+        # 两路输出都是 is_output_list；COMBO 是 V1 的伪类型，用 io.Custom 表达。
+        return io.Schema(
+            node_id="QG_PromptLine",
+            display_name="Prompt Line",
+            category="QG-tools/Text",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.String.Input("prompt", multiline=True, default="text",
+                    tooltip="Multi-line text, one prompt per line; the output is the list of rows."),
+                io.Int.Input("start_index", default=0, min=0, max=9999, step=1,
+                    tooltip="Which row to start from (0 is the first). Past the last row it falls back to that last row."),
+                io.Int.Input("max_rows", default=1000, min=1, max=9999, step=1,
+                    tooltip="How many rows to take at most; fewer are returned when the text runs out."),
+                io.Boolean.Input("remove_empty_lines", default=True,
+                    tooltip="Drop blank and whitespace-only rows before the start index / max rows slice is applied."),
+            ],
+            outputs=[
+                io.String.Output("STRING", is_output_list=True,
+                    tooltip="Every selected row as a list of strings."),
+                io.Custom("COMBO").Output("COMBO", is_output_list=True,
+                    tooltip="The same rows, typed as options so the slot can drive a combo input."),
+            ],
+        )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        # 🔴 Each input is written as "name": ( on its own line with the dict
-        # spread over the following lines: verify_bilingual / verify_combo_i18n
-        # find input names with a regex, and leaving "tooltip": at the end of
-        # the line makes them treat every input as one called tooltip.
-        return {
-            "required": {
-                "prompt": (
-                    "STRING",
-                    {
-                        "multiline": True,
-                        "default": "text",
-                        "tooltip": (
-                            "Multi-line text, one prompt per line; the output is "
-                            "the list of rows."
-                        ),
-                    },
-                ),
-                "start_index": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 9999,
-                        "step": 1,
-                        "tooltip": (
-                            "Which row to start from (0 is the first). Past the "
-                            "last row it falls back to that last row."
-                        ),
-                    },
-                ),
-                "max_rows": (
-                    "INT",
-                    {
-                        "default": 1000,
-                        "min": 1,
-                        "max": 9999,
-                        "step": 1,
-                        "tooltip": (
-                            "How many rows to take at most; fewer are returned "
-                            "when the text runs out."
-                        ),
-                    },
-                ),
-                "remove_empty_lines": (
-                    "BOOLEAN",
-                    {
-                        "default": True,
-                        "tooltip": (
-                            "Drop blank and whitespace-only rows before the start "
-                            "index / max rows slice is applied."
-                        ),
-                    },
-                ),
-            },
-        }
-
-    def execute(self, prompt, start_index, max_rows, remove_empty_lines=True):
+    def execute(cls, prompt, start_index, max_rows, remove_empty_lines=True):
         lines = str(prompt).split("\n")
 
         if remove_empty_lines:
@@ -133,7 +95,7 @@ class QGPromptLine:
 
         rows = lines[start_index:end_index]
 
-        return (rows, rows)
+        return io.NodeOutput(rows, rows)
 
 
 NODE_CLASS_MAPPINGS = {"QG_PromptLine": QGPromptLine}

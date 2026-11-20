@@ -45,8 +45,10 @@ that still hold the Chinese ones and need translating before they run.
 Only core modules are used -- no new dependency.
 """
 
+from comfy_api.latest import io
+
 from ._qg_any_type import ANY
-from ._qg_combo_legacy import combo_legacy
+from ._qg_combo_legacy import coerce
 
 try:  # 旧版本 ComfyUI 没有这个模块；缺了就只有 empty 一种模式
     from comfy_execution.graph import ExecutionBlocker
@@ -60,8 +62,9 @@ MODE_CUT = "cut"
 _MISSING = object()
 
 
-@combo_legacy("QG_RouteBlocker")
-class QGRouteBlocker:
+# V1 @combo_legacy("QG_RouteBlocker")：mode 有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce，与 V1 等价。
+class QGRouteBlocker(io.ComfyNode):
     CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "A switch for one wire. Off passes the value through untouched. On, "
@@ -72,53 +75,33 @@ class QGRouteBlocker:
     )
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "block": ("BOOLEAN", {
-                    "default": False,
-                    "label_on": "阻断",
-                    "label_off": "通过",
-                    "tooltip": "Off passes the value straight through, as if this node were not on the wire; on "
-                               "hands it to the mode below, and stops the upstream from being evaluated at all. "
-                               "You can also wire in an upstream boolean and let the graph decide for itself.",
-                }),
-                "mode": ([MODE_NULL, MODE_CUT], {
-                    "default": MODE_NULL,
-                    "tooltip": "empty turns the value into None and passes it on, so downstream still runs and "
-                               "handles the empty value itself. cut emits an execution-blocking signal and "
-                               "the nodes behind it are skipped silently, the same as pressing Ctrl+M on this "
-                               "wire, leaving other branches in the graph untouched.",
-                }),
-            },
-            "optional": {
-                # optional 不是「可以不填」，是「没接也能跑」：没接线时它根本不出现，
-                # 阻断与否都能正常执行。lazy 才是省算力的那一半 —— 开关打开时
-                # 上游整条链都不会被排进队列。
-                "any": (ANY, {
-                    "forceInput": True,
-                    "lazy": True,
-                    "tooltip": "The value to pass or to cut, of any type. Not evaluated while the switch is on, "
-                               "so a blocked route costs nothing upstream.",
-                }),
-            },
-        }
-
-    RETURN_TYPES = (ANY,)
-    RETURN_NAMES = ("any",)
-    OUTPUT_TOOLTIPS = (
-        "The original value when it passes, an empty value or a blocking signal "
-        "when it is cut. The type follows the input.",
-    )
-    FUNCTION = "execute"
+    def validate_inputs(cls, mode=None, input_types=None):
+        # mode 中文遗留值具名跳过列表校验，值由 execute coerce 换回；
+        # input_types 放行通配类型校验（ANY 接任意端口）。
+        return True
 
     @classmethod
-    def VALIDATE_INPUTS(cls, mode=None, input_types=None):
-        # mode 具名列出 → ComfyUI 跳过「值必须在选项列表里」这道校验，老存档
-        # 里的中文值才不会报 Value not in list；真正的换值在 combo_legacy 里做。
-        # input_types 同理放行类型校验：输入声明成 ANY，前端按 * 校验，不放行
-        # 的话接 IMAGE / 模型之类的端口会被判成类型不符。
-        return True
+    def define_schema(cls):
+        # any 是 lazy forceInput 通配槽；label_on/off 走 extra_dict。
+        return io.Schema(
+            node_id="QG_RouteBlocker",
+            display_name="Route Blocker",
+            category="QG-tools/Logic",
+            description=cls.DESCRIPTION,
+            inputs=[
+                io.Boolean.Input("block", default=False,
+                    extra_dict={"label_on": "阻断", "label_off": "通过"},
+                    tooltip="Off passes the value straight through, as if this node were not on the wire; on hands it to the mode below, and stops the upstream from being evaluated at all. You can also wire in an upstream boolean and let the graph decide for itself."),
+                io.Combo.Input("mode", options=[MODE_NULL, MODE_CUT], default=MODE_NULL,
+                    tooltip="empty turns the value into None and passes it on, so downstream still runs and handles the empty value itself. cut emits an execution-blocking signal and the nodes behind it are skipped silently, the same as pressing Ctrl+M on this wire, leaving other branches in the graph untouched."),
+                io.AnyType.Input("any", optional=True,
+                    extra_dict={"forceInput": True, "lazy": True},
+                    tooltip="The value to pass or to cut, of any type. Not evaluated while the switch is on, so a blocked route costs nothing upstream."),
+            ],
+            outputs=[
+                io.AnyType.Output("any", tooltip="The original value when it passes, an empty value or a blocking signal when it is cut. The type follows the input."),
+            ],
+        )
 
     @classmethod
     def check_lazy_status(cls, block=False, mode=MODE_NULL, any=_MISSING):
@@ -130,13 +113,16 @@ class QGRouteBlocker:
             return None
         return ["any"] if any is None else None
 
-    def execute(self, block=False, mode=MODE_NULL, any=_MISSING):
+    @classmethod
+    def execute(cls, block=False, mode=MODE_NULL, any=_MISSING):
+        # V1 装饰器 coerce mode（中文遗留值 → 英文），V3 显式保留。
+        mode = coerce("QG_RouteBlocker", "mode", mode)
         if not block:
-            return (None if any is _MISSING else any,)
+            return io.NodeOutput(None if any is _MISSING else any)
         # 仅输出普通 None：下游继续执行，空值交给下游自己处理。
         if mode == MODE_CUT and ExecutionBlocker is not None:
-            return (ExecutionBlocker(None),)
-        return (None,)
+            return io.NodeOutput(ExecutionBlocker(None))
+        return io.NodeOutput(None)
 
 
 NODE_CLASS_MAPPINGS = {"QG_RouteBlocker": QGRouteBlocker}

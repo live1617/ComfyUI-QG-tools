@@ -44,11 +44,21 @@ should name the field; a raw ``bad escape \\x at position 7`` does not.
 
 Modified for ComfyUI-QG-tools: id / class name, category, display name,
 tooltips and aliases are ours. Third-party notice: THIRD-PARTY-NOTICES.md.
+
+V3 migration (2026-11-18): V1 -> V3 via ``io.ComfyNode``. Schema is built in
+``define_schema``; ``execute`` is a classmethod returning ``io.NodeOutput``.
+The ``@combo_legacy`` decorator is dropped (it wraps ``cls.FUNCTION``, which
+in V3 is the base class's ``EXECUTE_NORMALIZED``) and replaced by an explicit
+``coerce()`` call at the top of ``execute``, preserving legacy Chinese combo
+values from saved workflows. ``validate_inputs`` is the V3 spelling of the old
+``VALIDATE_INPUTS`` and keeps the same named-argument trick.
 """
 
 import re
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 LITERAL = "literal"
 REGEX = "regex"
@@ -60,8 +70,7 @@ _FIND_LABEL = "the Find box"
 _REPLACE_LABEL = "the Replace box"
 
 
-@combo_legacy("QG_TextReplace")
-class QGTextReplace:
+class QGTextReplace(io.ComfyNode):
     CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Runs up to three find/replace rules on a string, in order 1 -> 2 -> 3. "
@@ -77,72 +86,87 @@ class QGTextReplace:
     ]
 
     @classmethod
-    def VALIDATE_INPUTS(cls, mode=None):
-        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
-        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
-        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_TextReplace",
+            display_name="Text Replace",
+            category="QG-tools/Text",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.String.Input(
+                    "text",
+                    multiline=True,
+                    default="",
+                    force_input=True,
+                    tooltip="The text to edit, wired in from upstream.",
+                ),
+                io.Combo.Input(
+                    "mode",
+                    options=list(MODES),
+                    default=LITERAL,
+                    tooltip="Literal: the search string matches plain characters, so brackets and dots in a prompt are not read as regex. Regex: everything is treated as a regular expression, and the replacement becomes a template (\\1 for a group, \\\\ for one backslash); a bad pattern raises an error.",
+                ),
+                io.String.Input(
+                    "find1",
+                    optional=True,
+                    default="",
+                    tooltip="Search text for rule 1 (leave empty to skip).",
+                ),
+                io.String.Input(
+                    "replace1",
+                    optional=True,
+                    default="",
+                    tooltip="Replacement text for rule 1. In regex mode this is a template, so a literal backslash must be written twice.",
+                ),
+                io.String.Input(
+                    "find2",
+                    optional=True,
+                    default="",
+                    tooltip="Search text for rule 2 (leave empty to skip).",
+                ),
+                io.String.Input(
+                    "replace2",
+                    optional=True,
+                    default="",
+                    tooltip="Replacement text for rule 2. In regex mode this is a template, so a literal backslash must be written twice.",
+                ),
+                io.String.Input(
+                    "find3",
+                    optional=True,
+                    default="",
+                    tooltip="Search text for rule 3 (leave empty to skip).",
+                ),
+                io.String.Input(
+                    "replace3",
+                    optional=True,
+                    default="",
+                    tooltip="Replacement text for rule 3. In regex mode this is a template, so a literal backslash must be written twice.",
+                ),
+            ],
+            outputs=[
+                io.String.Output(
+                    "text",
+                    tooltip="The text after replacement, with the rules applied in order 1, 2, 3.",
+                ),
+            ],
+        )
+
+    @classmethod
+    def validate_inputs(cls, mode=None):
+        # 老工作流里存的还是中文选项值（"字面"/"正则"），按选项列表校验会直接
+        # 报 Value not in list。具名列出 mode → ComfyUI 跳过列表校验，
+        # 真正的换值在 execute 开头的 coerce() 里做。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "text": (
-                    "STRING",
-                    {
-                        "multiline": True,
-                        "default": "",
-                        "forceInput": True,
-                        "tooltip": "The text to edit, wired in from upstream.",
-                    },
-                ),
-                "mode": (
-                    MODES,
-                    {
-                        "default": LITERAL,
-                        "tooltip": "Literal: the search string matches plain characters, so brackets and dots in a prompt are not read as regex. Regex: everything is treated as a regular expression, and the replacement becomes a template (\\1 for a group, \\\\ for one backslash); a bad pattern raises an error.",
-                    },
-                ),
-            },
-            "optional": {
-                "find1": (
-                    "STRING",
-                    {"default": "", "tooltip": "Search text for rule 1 (leave empty to skip)."},
-                ),
-                "replace1": (
-                    "STRING",
-                    {"default": "", "tooltip": "Replacement text for rule 1. In regex mode this is a template, so a literal backslash must be written twice."},
-                ),
-                "find2": (
-                    "STRING",
-                    {"default": "", "tooltip": "Search text for rule 2 (leave empty to skip)."},
-                ),
-                "replace2": (
-                    "STRING",
-                    {"default": "", "tooltip": "Replacement text for rule 2. In regex mode this is a template, so a literal backslash must be written twice."},
-                ),
-                "find3": (
-                    "STRING",
-                    {"default": "", "tooltip": "Search text for rule 3 (leave empty to skip)."},
-                ),
-                "replace3": (
-                    "STRING",
-                    {"default": "", "tooltip": "Replacement text for rule 3. In regex mode this is a template, so a literal backslash must be written twice."},
-                ),
-            },
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("text",)
-    OUTPUT_TOOLTIPS = (
-        "The text after replacement, with the rules applied in order 1, 2, 3.",
-    )
-    FUNCTION = "execute"
-
-    def execute(self, text, mode=LITERAL, find1="", replace1="", find2="",
-                replace2="", find3="", replace3=""):
-        # 只在这里兜一次：text 是 required 槽，但上游输出的值可能是 None
-        # （未求值 / 空输出），拿它去拼接会抛看不出源头的 AttributeError。
+    def execute(cls, text="", mode=LITERAL, find1="", replace1="",
+                find2="", replace2="", find3="", replace3=""):
+        # 🔴 V3 不能套 @combo_legacy（它按 cls.FUNCTION 找方法，而 V3 的 FUNCTION
+        # 是基类给的 EXECUTE_NORMALIZED）。直接在这里 coerce，语义与 V1 装饰器一致。
+        mode = coerce("QG_TextReplace", "mode", mode)
+        # text 是 required 槽，但上游输出的值可能是 None（未求值 / 空输出），
+        # 拿它去拼接会抛看不出源头的 AttributeError。
         if text is None:
             text = ""
         elif not isinstance(text, str):
@@ -150,8 +174,8 @@ class QGTextReplace:
 
         rules = ((find1, replace1), (find2, replace2), (find3, replace3))
         for index, (find, replace) in enumerate(rules):
-            text = self._apply_rule(text, find, replace, mode, index + 1)
-        return (text,)
+            text = cls._apply_rule(text, find, replace, mode, index + 1)
+        return io.NodeOutput(text)
 
     @staticmethod
     def _apply_rule(text, find, replace, mode, rule_no):

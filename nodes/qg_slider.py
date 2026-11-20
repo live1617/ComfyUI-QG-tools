@@ -28,7 +28,10 @@
 """
 
 import math
-from ._qg_combo_legacy import combo_legacy
+
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 KIND_INT = "integer"
 KIND_FLOAT = "float"
@@ -59,104 +62,82 @@ def _bounds(min_value, max_value):
     return low, high
 
 
-@combo_legacy("QG_Slider")
-class QGSlider:
-    CATEGORY = "QG-tools/Logic"
-    DESCRIPTION = (
-        "One number picked on a slider whose range you set yourself — it opens as 0 "
-        "to 1 in steps of 0.1, which is what a LoRA strength or a weight wants. Drag "
-        "the track, or click the number to type an exact value (Enter confirms, Esc "
-        "cancels). The gear at the card's right end holds the range, the step, and "
-        "the choice between integer and decimal — an integer output steps by 1 and "
-        "drops the decimals, a decimal one steps by the step set there. The socket "
-        "stays untyped, so the output feeds an INT input as well as a FLOAT one (a "
-        "LoRA strength, say) in either mode. Values outside the range are clamped to "
-        "it."
-    )
+class QGSlider(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_Slider",
+            display_name="Number Slider",
+            category="QG-tools/Logic",
+            description=(
+                "One number picked on a slider whose range you set yourself — it opens as 0 "
+                "to 1 in steps of 0.1, which is what a LoRA strength or a weight wants. Drag "
+                "the track, or click the number to type an exact value (Enter confirms, Esc "
+                "cancels). The gear at the card's right end holds the range, the step, and "
+                "the choice between integer and decimal — an integer output steps by 1 and "
+                "drops the decimals, a decimal one steps by the step set there. The socket "
+                "stays untyped, so the output feeds an INT input as well as a FLOAT one (a "
+                "LoRA strength, say) in either mode. Values outside the range are clamped to "
+                "it."
+            ),
+            inputs=[
+                io.Combo.Input(
+                    "kind", options=list(KINDS), default=KIND_FLOAT,
+                    tooltip="Whether the output is an integer or a decimal. Switch it in the gear at the card's right end; integer mode fixes the step at 1 and rounds the decimals away.",
+                ),
+                io.Float.Input(
+                    "value", default=0.0, min=-1e12, max=1e12, step=0.01,
+                    tooltip="The current value. Drag the track, or click the number to type it (Enter confirms, Esc cancels); values outside the range are clamped to its ends.",
+                ),
+                io.Float.Input(
+                    "min_value", default=0.0, min=-1e12, max=1e12, step=0.01,
+                    tooltip="The track's left end, the lowest value you can pick. Swapped automatically when it sits above the max.",
+                ),
+                io.Float.Input(
+                    "max_value", default=1.0, min=-1e12, max=1e12, step=0.01,
+                    tooltip="The track's right end, the highest value you can pick. Swapped automatically when it sits below the min.",
+                ),
+                io.Float.Input(
+                    "step", default=0.1, min=0.000001, max=1000.0, step=0.000001,
+                    tooltip="How far one step moves in decimal mode (integer mode is fixed at 1 and ignores this). 0.1 gives one decimal place.",
+                ),
+            ],
+            outputs=[
+                io.AnyType.Output(
+                    id="value",
+                    tooltip="The value on the slider, clamped to its range: a decimal by default, an integer in integer mode.",
+                ),
+            ],
+        )
 
     @classmethod
-    def VALIDATE_INPUTS(cls, kind=None):
-        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
-        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
-        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+    def validate_inputs(cls, kind=None):
+        # 老存档存的是中文选项值，具名列出 kind 让 ComfyUI 跳过列表校验；
+        # 真正的换值在 execute 开头的 coerce() 里，其余 FLOAT 的 min/max 不受影响。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "kind": (KINDS, {
-                    "default": KIND_FLOAT,
-                    "tooltip": "Whether the output is an integer or a decimal. Switch it in the gear at the card's right end; integer mode fixes the step at 1 and rounds the decimals away.",
-                }),
-                # 存小数：整数模式只是显示 / 输出时取整，控件本身始终是 FLOAT，
-                # 这样切模式不用换控件，存档结构也不会变。
-                # 🔴 step 必须和浮点模式的小数位对齐（0.01 ↔ 两位）：
-                #    前端会按这一格取整，写成 0.1 的话输入 1.25 会被吃成 1.3。
-                "value": ("FLOAT", {
-                    "default": 0.0,
-                    "min": -1e12,
-                    "max": 1e12,
-                    "step": 0.01,
-                    "tooltip": "The current value. Drag the track, or click the number to type it (Enter confirms, Esc cancels); values outside the range are clamped to its ends.",
-                }),
-                "min_value": ("FLOAT", {
-                    "default": 0.0,
-                    "min": -1e12,
-                    "max": 1e12,
-                    "step": 0.01,
-                    "tooltip": "The track's left end, the lowest value you can pick. Swapped automatically when it sits above the max.",
-                }),
-                "max_value": ("FLOAT", {
-                    "default": 1.0,
-                    "min": -1e12,
-                    "max": 1e12,
-                    "step": 0.01,
-                    "tooltip": "The track's right end, the highest value you can pick. Swapped automatically when it sits below the min.",
-                }),
-                "step": ("FLOAT", {
-                    "default": 0.1,
-                    "min": 0.000001,
-                    "max": 1000.0,
-                    "step": 0.000001,
-                    "tooltip": "How far one step moves in decimal mode (integer mode is fixed at 1 and ignores this). 0.1 gives one decimal place.",
-                }),
-            }
-        }
-
-    RETURN_TYPES = ("*",)
-    RETURN_NAMES = ("value",)
-    OUTPUT_TOOLTIPS = (
-        "The value on the slider, clamped to its range: a decimal by default, "
-        "an integer in integer mode.",
-    )
-    FUNCTION = "execute"
-
-    def execute(self, kind=KIND_FLOAT, value=0.0, min_value=0.0, max_value=1.0, step=0.1):
+    def execute(cls, kind=KIND_FLOAT, value=0.0, min_value=0.0, max_value=1.0, step=0.1):
+        # V3 不能套 @combo_legacy 装饰器（它按 cls.FUNCTION 找方法，V3 是基类
+        # EXECUTE_NORMALIZED）；执行期直接 coerce，语义与 V1 装饰器一致。
+        kind = coerce("QG_Slider", "kind", kind)
         low, high = _bounds(min_value, max_value)
         number = min(high, max(low, _number(value)))
 
         if kind == KIND_FLOAT:
-            # 对齐步长：滑条只能停在一格一格上，光靠 UI 对齐的话，
-            # 别人手写 API 塞进来的 0.37 会跟界面显示不一致。
             size = _number(step, 0.1)
             if size > 0:
                 number = low + round((number - low) / size) * size
-                # 一个格子跨到另一端外面时，round 会把它顶出去，再夹一次
                 number = min(high, max(low, round(number, ROUND_DIGITS)))
-            return (float(number),)
+            return io.NodeOutput(float(number))
 
-        # 整数模式：四舍五入后夹到 INT32，免得下游拿到 1e12 这种非法值。
-        # 🔴 用 floor(x + 0.5) 而不是 Python 的 round()：后者是银行家舍入
-        #    （round(0.5) == 0、round(2.5) == 2），跟前端 Math.round 不一致 ——
-        #    卡片上显示 1、输出却是 0，是最难查的那种不一致。
-        # 范围两端也取整成整数（0.5–3.7 只可能给 1..3）；范围窄到装不下一个
-        # 整数时（0.2–0.8），退回两端的中点，至少能出个数而不是空范围。
+        # 🔴 保留 V1 的 floor(x+0.5) 语义：负数 .5 与 round_half_away 不同
+        # （-0.5 → 0 而非 -1），换 helper 会改变老图纸的输出，必须逐位一致。
         low_i, high_i = int(math.ceil(low)), int(math.floor(high))
         if high_i < low_i:
             low_i = high_i = int(math.floor((low + high) / 2 + 0.5))
         rounded = max(low_i, min(high_i, int(math.floor(number + 0.5))))
-        return (max(INT32_MIN, min(INT32_MAX, rounded)),)
+        return io.NodeOutput(max(INT32_MIN, min(INT32_MAX, rounded)))
 
 
 NODE_CLASS_MAPPINGS = {"QG_Slider": QGSlider}

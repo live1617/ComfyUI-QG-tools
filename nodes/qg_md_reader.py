@@ -14,15 +14,18 @@ from __future__ import annotations
 
 import os
 
+from comfy_api.latest import io
+
 from . import _qg_md_core as md_core
-from ._qg_combo_legacy import combo_legacy
+from ._qg_combo_legacy import coerce
 from ._qg_md_routes import NO_FILE, register_md_routes
 
 register_md_routes()
 
 
-@combo_legacy("QG_MDReader")
-class QGMarkdownReader:
+# V1 @combo_legacy("QG_MDReader")：mode 中文遗留值需 coerce（值本身是 plain/raw）。
+# V3 去装饰器，load_md→execute 开头 coerce，与 V1 等价。
+class QGMarkdownReader(io.ComfyNode):
     CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "Reads a Markdown file and outputs its text. The output is a STRING, so "
@@ -33,41 +36,33 @@ class QGMarkdownReader:
     SEARCH_ALIASES = ["md", "markdown", "document", "doc", "text", "read", "qg", "加载文档"]
 
     @classmethod
-    def VALIDATE_INPUTS(cls, mode=None):
-        # mode 的中文标签（纯文本 / 原始）登记在 nodes/_qg_combo_legacy.py 的
-        # LEGACY 表里；值本身一直是英文，这里只是把选项名报上去，让 ComfyUI
-        # 跳过「值必须在列表里」这道检查。md_file 是文件列表，不在此列。
+    def validate_inputs(cls, mode=None):
+        # mode 的中文标签登记在 LEGACY 表；具名报上去跳过列表校验，中文值由 coerce 换回。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def define_schema(cls):
         files = md_core.list_md_files()
         if not files:
             files = [NO_FILE]
-        return {
-            "required": {
-                "md_file": (files, {
-                    "default": files[0],
-                    "tooltip": "Drop .md files into ComfyUI's input folder, then press the refresh button on the node.",
-                }),
-                "mode": (["plain", "raw"], {
-                    "default": "plain",
-                    "tooltip": "plain: strip the Markdown marks so the text reads as a prompt. raw: the file, untouched.",
-                }),
-            },
-            "optional": {
-                "custom_path": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "tooltip": "Leave empty to use the list. Filled in, it wins over the list.",
-                }),
-            },
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("text",)
-    OUTPUT_TOOLTIPS = ("The document's text, ready for any STRING input.",)
-    FUNCTION = "load_md"
+        return io.Schema(
+            node_id="QG_MDReader",
+            display_name="Load Document",
+            category="QG-tools/Text",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Combo.Input("md_file", options=files, default=files[0],
+                    tooltip="Drop .md files into ComfyUI's input folder, then press the refresh button on the node."),
+                io.Combo.Input("mode", options=["plain", "raw"], default="plain",
+                    tooltip="plain: strip the Markdown marks so the text reads as a prompt. raw: the file, untouched."),
+                io.String.Input("custom_path", optional=True, default="", multiline=False,
+                    tooltip="Leave empty to use the list. Filled in, it wins over the list."),
+            ],
+            outputs=[
+                io.String.Output("text", tooltip="The document's text, ready for any STRING input."),
+            ],
+        )
 
     @classmethod
     def IS_CHANGED(cls, md_file, mode="plain", custom_path=""):
@@ -77,7 +72,10 @@ class QGMarkdownReader:
         st = os.stat(path)
         return "%s|%s|%s" % (path, st.st_mtime_ns, mode)
 
-    def load_md(self, md_file, mode="plain", custom_path=""):
+    @classmethod
+    def execute(cls, md_file, mode="plain", custom_path=""):
+        # V1 装饰器 coerce mode（中文遗留值 → 英文），V3 显式保留。
+        mode = coerce("QG_MDReader", "mode", mode)
         key = (custom_path or "").strip() or md_file
         path = md_core.resolve_path(key)
         if not path or not os.path.isfile(path):
@@ -88,7 +86,7 @@ class QGMarkdownReader:
             )
         text = md_core.prepare(mode, md_core.read_text(path))
         print("[QG-tools] read %s (%s, %d chars)" % (os.path.basename(path), mode, len(text)))
-        return (text,)
+        return io.NodeOutput(text)
 
 
 NODE_CLASS_MAPPINGS = {"QG_MDReader": QGMarkdownReader}

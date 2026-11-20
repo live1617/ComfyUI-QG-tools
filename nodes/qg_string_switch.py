@@ -16,8 +16,10 @@ expensive upstream (an LLM call, a file read) is never evaluated for nothing.
 Only core modules are used -- no new dependency.
 """
 
+from comfy_api.latest import io
 
-class QGStringSwitch:
+
+class QGStringSwitch(io.ComfyNode):
     CATEGORY = "QG-tools/Logic"
     DESCRIPTION = (
         "Picks between two inline text branches with a boolean: true outputs "
@@ -27,38 +29,44 @@ class QGStringSwitch:
     )
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def define_schema(cls):
         # 两段文本写在节点上（有 default 就是控件），需要上游时直接连线覆盖。
-        return {
-            "required": {
-                "boolean": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "The condition. True outputs the top text, false outputs the bottom one.",
-                }),
-                "on_true": ("STRING", {
-                    "default": "",
-                    "multiline": True,
-                    "rows": 3,
-                    "lazy": True,
-                    "tooltip": "Text output when the condition is true. Type it here, or wire an upstream STRING to override it.",
-                }),
-                "on_false": ("STRING", {
-                    "default": "",
-                    "multiline": True,
-                    "rows": 3,
-                    "lazy": True,
-                    "tooltip": "Text output when the condition is false. Type it here, or wire an upstream STRING to override it.",
-                }),
-            }
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("string",)
-    OUTPUT_TOOLTIPS = (
-        "The text of the branch the condition selected; the other branch is "
-        "never evaluated.",
-    )
-    FUNCTION = "execute"
+        # 未选中的一支声明 lazy，免得白算昂贵的上游（LLM / 文件读取）。
+        return io.Schema(
+            node_id="QG_StringSwitch",
+            display_name="String Switch",
+            category="QG-tools/Logic",
+            description=cls.DESCRIPTION,
+            inputs=[
+                io.Boolean.Input(
+                    "boolean",
+                    default=False,
+                    tooltip="The condition. True outputs the top text, false outputs the bottom one.",
+                ),
+                io.String.Input(
+                    "on_true",
+                    multiline=True,
+                    default="",
+                    lazy=True,
+                    extra_dict={"rows": 3},
+                    tooltip="Text output when the condition is true. Type it here, or wire an upstream STRING to override it.",
+                ),
+                io.String.Input(
+                    "on_false",
+                    multiline=True,
+                    default="",
+                    lazy=True,
+                    extra_dict={"rows": 3},
+                    tooltip="Text output when the condition is false. Type it here, or wire an upstream STRING to override it.",
+                ),
+            ],
+            outputs=[
+                io.String.Output(
+                    "string",
+                    tooltip="The text of the branch the condition selected; the other branch is never evaluated.",
+                ),
+            ],
+        )
 
     @classmethod
     def check_lazy_status(cls, boolean=False, on_true=None, on_false=None):
@@ -69,10 +77,11 @@ class QGStringSwitch:
         if not boolean and on_false is None:
             return ["on_false"]
 
-    def execute(self, boolean, on_true="", on_false=""):
+    @classmethod
+    def execute(cls, boolean, on_true="", on_false=""):
         value = on_true if boolean else on_false
         # 上游接了线却返回 None 时给空串，免得下游拿到 None 报奇怪的错。
-        return ("" if value is None else value,)
+        return io.NodeOutput("" if value is None else value)
 
 
 NODE_CLASS_MAPPINGS = {"QG_StringSwitch": QGStringSwitch}

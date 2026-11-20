@@ -73,7 +73,9 @@ import re
 import torch
 
 import comfy.model_management
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 MAX_RESOLUTION = 8192
 MIN_RESOLUTION = 64
@@ -233,8 +235,9 @@ def _size_for_megapixels(rx, ry, target_mp, step):
     return min(candidates, key=lambda c: abs(c[0] * c[1] - target_px))
 
 
-@combo_legacy("QG_SizeSelector")
-class QGSizeSelector:
+# V1 @combo_legacy("QG_SizeSelector")：ratio 有中文遗留值需 coerce。
+# V3 去装饰器，_execute 实例方法体逐字不动，execute 包装 coerce + cls() 调用。
+class QGSizeSelector(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Builds an empty latent from a preset resolution and returns its width "
@@ -254,155 +257,50 @@ class QGSizeSelector:
     ]
 
     @classmethod
-    def VALIDATE_INPUTS(cls, ratio=None):
-        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
-        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
-        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+    def validate_inputs(cls, ratio=None):
+        # ratio 中文遗留值在 LEGACY 表；具名跳过列表校验，值由 execute coerce 换回。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "preset": (
-                    list(PRESETS),
-                    {
-                        "default": "832x1216 - 2:3",
-                        "tooltip": (
-                            "Preset resolutions and aspect ratios. With ratio set to none you get "
-                            "the preset's raw pixels, with from-preset you get the ratio printed in "
-                            "its label."
-                        ),
-                    },
-                ),
-                "batch_size": (
-                    "INT",
-                    {"default": 1, "min": 1, "max": 4096, "tooltip": "Batch size."},
-                ),
-                "long_edge": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": MAX_RESOLUTION,
-                        "step": 8,
-                        "tooltip": "Long-edge pixels. 0 uses the preset's own size; any other value scales the long "
-                                   "edge to it while keeping the aspect ratio. Both sides must stay multiples of 8 "
-                                   "on an exact ratio, so the real long edge can land a few percent off the "
-                                   "number you type (13:19 at 1024 becomes 1064; nothing in between is on grid).",
-                    },
-                ),
-                "ratio": (
-                    list(RATIOS),
-                    {
-                        "default": "none",
-                        "tooltip": (
-                            "Overrides the aspect ratio. none uses the preset's raw pixels; from-preset "
-                            "uses the ratio printed in the preset's label, so 2304x1280 "
-                            "labelled 16:9 is really 9:5; you can also pick a fixed ratio "
-                            "directly. For an arbitrary ratio use the custom ratio below."
-                        ),
-                    },
-                ),
-                "frames": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 1024,
-                        "tooltip": "Frame count. 0 is an image model with no time axis, anything above 0 is a video model.",
-                    },
-                ),
-                "factor": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 64,
-                        "step": 1,
-                        "tooltip": (
-                            "Snaps width and height to a multiple of this number while keeping "
-                            "the aspect ratio. 0 adds no snapping, but both sides are always a "
-                            "multiple of 8 anyway - a latent unfolds 8 pixels per cell, so "
-                            "anything else would silently come out smaller than reported. The "
-                            "coarser the snap, the further apart the sizes a ratio can reach: "
-                            "at 32 a 16:9 frame moves in width steps of 512. Leave 0 when the "
-                            "ratio matters."
-                        ),
-                    },
-                ),
-                "latent_channels": (
-                    ["4", "16"],
-                    {
-                        "default": "4",
-                        "tooltip": (
-                            "Channels of the latent this node hands out. Any sampler rewrites this "
-                            "to whatever the model wants before denoising, so 4 versus 16 almost "
-                            "never matters - it only shows on the paths that skip the sampler. "
-                            "4 for SD 1.5 / SDXL, 16 for Flux / SD3 / video."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "width": (
-                    "*",
-                    {
-                        "forceInput": True,
-                        "tooltip": "Optional width override of any type, parsed as a number. Wired in and above 0, "
-                                   "it takes priority over the preset. Rounded up to a multiple of 8.",
-                    },
-                ),
-                "height": (
-                    "*",
-                    {
-                        "forceInput": True,
-                        "tooltip": "Optional height override of any type, parsed as a number. Rounded up to a "
-                                   "multiple of 8.",
-                    },
-                ),
-                # 必须排在 optional 末尾：LiteGraph 按位置还原 widgets_values，
-                # 插在中间会让老存档整体错位。
-                "mp": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": 0.0,
-                        "max": 64.0,
-                        "step": 0.25,
-                        "round": 0.01,
-                        "tooltip": (
-                            "Megapixels: 0 means unused. Given a value, the size comes from "
-                            "this area while the shape still follows the ratio or the preset, "
-                            "for example 1.0 or 2.0."
-                        ),
-                    },
-                ),
-                # 同样必须排在最后：老存档只有 8 个 widget 值，
-                # 这一格缺席时取默认空串，前面一个都不会错位。
-                "ratio_custom": (
-                    "STRING",
-                    {
-                        "default": "",
-                        "tooltip": (
-                            "Custom aspect ratio such as 2.39:1, 5 4 or 1.85. Filled in, it "
-                            "wins over the ratio dropdown above; empty means the dropdown "
-                            "decides."
-                        ),
-                    },
-                ),
-            },
-        }
-
-    RETURN_TYPES = ("LATENT", "INT", "INT", "INT")
-    RETURN_NAMES = ("LATENT", "WIDTH", "HEIGHT", "FRAMES")
-    OUTPUT_TOOLTIPS = (
-        "The empty latent tensor.",
-        "The width actually used.",
-        "The height actually used.",
-        "The frame count actually used (0 = image model).",
-    )
-    FUNCTION = "execute"
+    def define_schema(cls):
+        # width/height 是通配 forceInput；mp/ratio_custom 是 optional widget，
+        # 必须排在 optional 末尾（LiteGraph 按位置还原 widgets_values）。
+        return io.Schema(
+            node_id="QG_SizeSelector",
+            display_name="Size Selector",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Combo.Input("preset", options=list(PRESETS), default="832x1216 - 2:3",
+                    tooltip="Preset resolutions and aspect ratios. With ratio set to none you get the preset's raw pixels, with from-preset you get the ratio printed in its label."),
+                io.Int.Input("batch_size", default=1, min=1, max=4096, tooltip="Batch size."),
+                io.Int.Input("long_edge", default=0, min=0, max=MAX_RESOLUTION, step=8,
+                    tooltip="Long-edge pixels. 0 uses the preset's own size; any other value scales the long edge to it while keeping the aspect ratio. Both sides must stay multiples of 8 on an exact ratio, so the real long edge can land a few percent off the number you type (13:19 at 1024 becomes 1064; nothing in between is on grid)."),
+                io.Combo.Input("ratio", options=list(RATIOS), default="none",
+                    tooltip="Overrides the aspect ratio. none uses the preset's raw pixels; from-preset uses the ratio printed in the preset's label, so 2304x1280 labelled 16:9 is really 9:5; you can also pick a fixed ratio directly. For an arbitrary ratio use the custom ratio below."),
+                io.Int.Input("frames", default=0, min=0, max=1024,
+                    tooltip="Frame count. 0 is an image model with no time axis, anything above 0 is a video model."),
+                io.Int.Input("factor", default=0, min=0, max=64, step=1,
+                    tooltip="Snaps width and height to a multiple of this number while keeping the aspect ratio. 0 adds no snapping, but both sides are always a multiple of 8 anyway - a latent unfolds 8 pixels per cell, so anything else would silently come out smaller than reported. The coarser the snap, the further apart the sizes a ratio can reach: at 32 a 16:9 frame moves in width steps of 512. Leave 0 when the ratio matters."),
+                io.Combo.Input("latent_channels", options=["4", "16"], default="4",
+                    tooltip="Channels of the latent this node hands out. Any sampler rewrites this to whatever the model wants before denoising, so 4 versus 16 almost never matters - it only shows on the paths that skip the sampler. 4 for SD 1.5 / SDXL, 16 for Flux / SD3 / video."),
+                io.AnyType.Input("width", optional=True, extra_dict={"forceInput": True},
+                    tooltip="Optional width override of any type, parsed as a number. Wired in and above 0, it takes priority over the preset. Rounded up to a multiple of 8."),
+                io.AnyType.Input("height", optional=True, extra_dict={"forceInput": True},
+                    tooltip="Optional height override of any type, parsed as a number. Rounded up to a multiple of 8."),
+                io.Float.Input("mp", optional=True, default=0.0, min=0.0, max=64.0, step=0.25, round=0.01,
+                    tooltip="Megapixels: 0 means unused. Given a value, the size comes from this area while the shape still follows the ratio or the preset, for example 1.0 or 2.0."),
+                io.String.Input("ratio_custom", optional=True, default="",
+                    tooltip="Custom aspect ratio such as 2.39:1, 5 4 or 1.85. Filled in, it wins over the ratio dropdown above; empty means the dropdown decides."),
+            ],
+            outputs=[
+                io.Latent.Output("LATENT", tooltip="The empty latent tensor."),
+                io.Int.Output("WIDTH", tooltip="The width actually used."),
+                io.Int.Output("HEIGHT", tooltip="The height actually used."),
+                io.Int.Output("FRAMES", tooltip="The frame count actually used (0 = image model)."),
+            ],
+        )
 
     def __init__(self):
         self._device = comfy.model_management.intermediate_device()
@@ -492,8 +390,18 @@ class QGSizeSelector:
 
         return snap(width), snap(height)
 
-    def execute(self, preset, batch_size, long_edge, ratio, frames, factor,
+    @classmethod
+    def execute(cls, preset, batch_size, long_edge, ratio, frames, factor,
                 latent_channels, width=0, height=0, mp=0.0, ratio_custom=""):
+        # V1 装饰器 coerce ratio（中文遗留值 → 英文），V3 显式保留。
+        ratio = coerce("QG_SizeSelector", "ratio", ratio)
+        # 原 execute 实例方法（self._device / self._parse_num 等）逐字不动。
+        return io.NodeOutput(*cls()._execute(
+            preset, batch_size, long_edge, ratio, frames, factor,
+            latent_channels, width, height, mp, ratio_custom))
+
+    def _execute(self, preset, batch_size, long_edge, ratio, frames, factor,
+                 latent_channels, width=0, height=0, mp=0.0, ratio_custom=""):
         width_num = self._parse_num(width)
         height_num = self._parse_num(height)
         # 求解路径（比例 / 百万像素 / 长边）的网格步长。

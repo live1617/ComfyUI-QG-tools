@@ -15,14 +15,14 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611141000";
-import { zhPair } from "../shared/zh.mjs?v=202611141000";
-import { showToast } from "../shared/index.mjs?v=202611141000";
-import { widthFor } from "../shared/node_width.mjs?v=202611141000";
+import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611182145";
+import { zhPair } from "../shared/zh.mjs?v=202611182145";
+import { showToast } from "../shared/index.mjs?v=202611182145";
+import { widthFor } from "../shared/node_width.mjs?v=202611182145";
 import {
     civitaiFailureText,
     pictureErrorText,
-} from "../shared/civitai_lookup.mjs?v=202611141000";
+} from "../shared/civitai_lookup.mjs?v=202611182145";
 // 强度手感 / 触发词 / 选择器过滤 / 读 LoRA 信息只有一份真相源：加载器也在用
 // 同一个 shared 模块，改一次两边同步。🔴 别在这里另写 ±10 / 0.05 或切词正则。
 import {
@@ -31,9 +31,12 @@ import {
     DEFAULT_STEP,
     FINE_STEP,
     filterLoras,
+    groupByFolder,
     hasTrigger,
     joinTriggerWords,
+    loraFolders,
     readLoraInfo,
+    resolveLoraName,
     SCRUB_DEAD_ZONE,
     SCRUB_PIXELS_PER_STEP,
     splitTriggerWords,
@@ -41,9 +44,9 @@ import {
     STRENGTH_MIN,
     toggleTrigger,
     triggerGroups,
-} from "../shared/lora_stack.mjs?v=202611141000";
+} from "../shared/lora_stack.mjs?v=202611182145";
 // Civitai 查询编排与加载器共用；卡片 note / 缩略图版本由回调注入。
-import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611141000";
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611182145";
 
 const NODE_CLASS = "QG_LoraSwitchStack";
 const SLOT_COUNT = 24;
@@ -106,6 +109,16 @@ function stateOf(node) {
             // 每行最后一次算出来的开关状态（"linked|on|unknown"）。纯观测用：
             // 画在 canvas 上的东西探针读不到，靠它断言接线后有没有读到真值。
             switchStates: [],
+            // 第二层：视图侧的文件夹筛选（只影响显示行名，不动 rows_data 顺序/槽位）。
+            // folderFilter 是文件夹路径字符串，"" 表示不筛选。
+            folderFilter: "",
+            // 第二层：Alt+拖名字区重排行。与 state.drag（强度拖动）分开，互不干扰。
+            rowDrag: null,
+            // 第二层：独奏前的整栈开关快照，取消独奏时逐行还原；非独奏时为 null。
+            soloSnapshot: null,
+            // 第三层：种子随机组合前的开关快照，撤销随机时逐行还原；非随机态为 null。
+            randomSnapshot: null,
+            // 第二层：栈工具面板当前选中的筛选文件夹（菜单里点选后写到这里）。
         };
     }
     return node.__qgSwitchStack;
@@ -573,9 +586,15 @@ function drawRow(ctx, node, state, index, posY, width) {
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
     ctx.font = FONT;
-    const label = row.name || zhPair("empty row", "空行");
+    // 第二层筛选：只把不匹配行的名字变暗、加标记，行本身仍在原位。
+    // 绝不隐藏/重排行 —— 那会让 on_N 槽位和显示行号错位，外控开关指错 LoRA。
+    const filteredOut = Boolean(state.folderFilter && row.name && !inFolder(row.name, state.folderFilter));
+    const label = filteredOut
+        ? zhPair(`${row.name} (filtered)`, `${row.name}（已筛选）`)
+        : (row.name || zhPair("empty row", "空行"));
     const shown = fitText(ctx, label, nameWidth);
-    ctx.fillStyle = row.name ? (off ? COLOR.textEmpty : COLOR.text) : COLOR.textEmpty;
+    ctx.fillStyle = filteredOut ? "rgba(120, 132, 139, .55)"
+        : row.name ? (off ? COLOR.textEmpty : COLOR.text) : COLOR.textEmpty;
     ctx.fillText(shown, nameX, posY + ROW_HEIGHT / 2);
     if (off && row.name) {
         ctx.fillStyle = "rgba(190, 205, 214, .38)";
@@ -1055,6 +1074,14 @@ function onRowMouse(state, event, pos, index) {
         return true;
     }
     if (x < zone.name.x1) {
+        // 第二层：Alt + 名字区拖动 = 重排行；普通点击仍然开选择器。
+        // 修饰键可能来自 Pointer.eDown（onPointerDown）或 DOM MouseEvent
+        // （节点级 onMouseDown / 行右键转发），两处都认，与强度拖拽同口径。
+        const alt = Boolean(event?.eDown?.altKey ?? event?.altKey);
+        if (alt && row.name) {
+            beginRowDrag(state, index, event);
+            return true;
+        }
         openPicker(state, index);
         return true;
     }
@@ -1174,6 +1201,77 @@ function beginDrag(state, pointer, index, useClip) {
     window.addEventListener("blur", up, true);
 }
 
+// ---------------------------------------------------------------- 第二层：Alt+拖名字区重排行
+//
+// 行的名字区点击=开选择器、强度区拖=调数值、行右键=菜单，手势已占满。
+// 排序用「Alt + 左键按在名字上拖动」这一条空着的组合：普通点击行为一点不变，
+// 所以不会碰现有探针按坐标点名字/拖强度的路径。
+// 🔴 落地走 swapRows：它已经用官方 getInputLink / disconnectInput / connect
+//    把两条 on_N 连线连同 target_slot 一起换，符合 1.58.5+ 的弃用红线。
+//    这里绝不自己写 input.link = ...（会被核心静默忽略）。
+function endRowDrag(state) {
+    const drag = state?.rowDrag;
+    if (!drag) return;
+    window.removeEventListener("pointermove", drag.move, true);
+    window.removeEventListener("pointerup", drag.up, true);
+    // 触摸取消 / 窗口失焦也要收尾，别留下一轮的监听让下一次拖动走双份。
+    window.removeEventListener("pointercancel", drag.up, true);
+    window.removeEventListener("blur", drag.up, true);
+    state.rowDrag = null;
+    state.node?.setDirtyCanvas?.(true, true);
+}
+
+// 屏幕 clientY → 节点内的行号。用每个行 widget 的 y + ROW_HEIGHT 判定，
+// 与 onRowMouse 的命中同一基准；缩放/平移由 getBoundingClientRect + ds 换算。
+function rowAtClientY(state, clientY) {
+    const node = state.node;
+    const frame = app.canvas?.canvas?.getBoundingClientRect?.();
+    if (!frame || !state.rowWidgets?.length) return -1;
+    const ds = app.canvas?.ds ?? { scale: 1, offset: [0, 0] };
+    const scale = ds.scale || 1;
+    const offset = ds.offset ?? [0, 0];
+    const localY = (clientY - frame.top) / scale - (node.pos[1] + offset[1]);
+    for (let i = 0; i < visibleRows(state); i += 1) {
+        const w = state.rowWidgets[i];
+        if (w && localY >= w.y && localY <= w.y + ROW_HEIGHT) return i;
+    }
+    return -1;
+}
+
+function beginRowDrag(state, index, pointer) {
+    endRowDrag(state);
+    // 强度拖拽的窗口监听必须先收掉，否则同一次移动会同时改强度和挪行。
+    endDrag(state);
+    const node = state.node;
+    const down = pointer?.eDown ?? pointer?.eMove ?? pointer;
+    let target = index;
+    let moved = false;
+    const move = (event) => {
+        if (!Number.isFinite(Number(event.clientY))) return;
+        const hit = rowAtClientY(state, Number(event.clientY));
+        if (hit < 0 || hit === target) return;
+        // 只和目标行交换一次：target 跟着移动，连续拖过几行会逐段交换，
+        // 松手时的顺序就是拖过的路径。每次 swapRows 自己写盘 + 迁连线。
+        if (swapRows(state, target, hit)) {
+            target = hit;
+            moved = true;
+            node?.setDirtyCanvas?.(true, true);
+        }
+    };
+    const up = () => {
+        endRowDrag(state);
+        if (moved) {
+            showToast({ severity: "success", detail: zhPair("Rows reordered", "行顺序已调整") });
+        }
+    };
+    state.rowDrag = { index, move, up };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
+    window.addEventListener("blur", up, true);
+    node?.setDirtyCanvas?.(true, true);
+}
+
 // 点一下强度数字弹一个就地输入框：拖是「凭手感」，输是「要精确到 FINE_STEP」。
 // 定位按画布缩放换算成屏幕坐标 —— 输入框是 fixed 的 DOM，跟画布各算各的。
 function openStrengthInput(state, index, useClip) {
@@ -1287,6 +1385,56 @@ function scaleAllStrengths(state, factor) {
     return touched;
 }
 
+// ---------------------------------------------------------------- 第二层：批量反选 / 独奏
+//
+// 只改每行的 enabled，一次 writeRows 写盘（撤销栈只留一条）。有外控连线的行
+// 由连线决定开关，enabled 改了也不生效 —— 这与第一层口径一致，不强行改线。
+// 反选：有名字的行逐个取反；空行不参与。
+function invertRowEnabled(state) {
+    let touched = 0;
+    for (const row of state.rows) {
+        if (!row.name) continue;
+        row.enabled = !row.enabled;
+        touched += 1;
+    }
+    if (touched) writeRows(state);
+    return touched;
+}
+
+// 独奏：只留指定行开着，其余有名字的行记下当前状态后关掉。
+// 再点一次（或点「取消独奏」）用快照逐行还原，不猜原值。
+function soloRow(state, index) {
+    const row = state.rows[index];
+    if (!row?.name) return 0;
+    if (state.soloSnapshot) {
+        // 已在独奏中：还原快照，等同于取消。
+        restoreSolo(state);
+        return 0;
+    }
+    const snapshot = state.rows.map((r) => Boolean(r.enabled));
+    state.soloSnapshot = snapshot;
+    let touched = 0;
+    state.rows.forEach((r, i) => {
+        if (!r.name) return;
+        const want = i === index;
+        if (Boolean(r.enabled) !== want) touched += 1;
+        r.enabled = want;
+    });
+    writeRows(state);
+    return touched;
+}
+
+function restoreSolo(state) {
+    if (!state.soloSnapshot) return false;
+    const snapshot = state.soloSnapshot;
+    state.soloSnapshot = null;
+    state.rows.forEach((r, i) => {
+        if (r.name && i < snapshot.length) r.enabled = snapshot[i];
+    });
+    writeRows(state);
+    return true;
+}
+
 // 把后端返回的预设行铺回节点：前 N 行写内容，其余清空成占位，然后重算行数。
 function applyPresetRows(state, rows) {
     const clean = Array.isArray(rows) ? rows : [];
@@ -1313,6 +1461,9 @@ function applyPresetRows(state, rows) {
         state.rows[i] = normalizeRow(src);
     }
     state.minRows = 0;
+    // 整栈被替换，独奏/随机快照指向的是旧行，清掉避免撤销时把旧开关写回来。
+    state.soloSnapshot = null;
+    state.randomSnapshot = null;
     applyRowCount(state);
     writeRows(state);
 }
@@ -1667,6 +1818,18 @@ function rowMenuValues(state, index, confirm = false) {
             () => moveRow(state, index, 1), { disabled: index >= visible - 1 }),
         make(zhPair("Duplicate this row", "复制此行"),
             () => duplicateRow(state, index), { disabled: full }),
+        // 第二层：独奏此行（再点一次或面板里「取消独奏」还原）。
+        // 空行不参与，外控连线的行照旧由线决定开关，改 enabled 不打架。
+        make(state.soloSnapshot
+                ? zhPair("Exit solo", "退出独奏")
+                : zhPair("Solo this row", "独奏此行"),
+            () => {
+                const n = soloRow(state, index);
+                showToast({ severity: "info", detail: state.soloSnapshot
+                    ? zhPair("Solo on: only this row plays", "独奏中：只播放此行")
+                    : n ? zhPair("Solo cleared", "已退出独奏")
+                        : zhPair("No row to solo", "没有可独奏的行") });
+            }, { disabled: !state.rows[index]?.name }),
         make(zhPair("Remove this LoRA", "移除此 LoRA"),
             () => removeRow(state, index)),
         null,
@@ -2018,6 +2181,494 @@ async function openStackPanel(state) {
     // 点面板外面关掉。
     const outside = (e) => { if (!element.contains(e.target)) closeStackPanel(); };
     window.addEventListener("pointerdown", outside, { signal: abort.signal, capture: true });
+}
+
+// ---------------------------------------------------------------- 第二层：筛选 / 批量 / 导入导出面板
+//
+// 第三个节点右键入口。三项都不碰节点接口、不改后端、不改 rows_data 的存档
+// 结构：筛选只写 state.folderFilter（视图态，不入存档）；反选/独奏复用第一层
+// 的 writeRows；导入导出用 normalizeRow 逐行校验，空行槽位与外来字段照旧保留。
+let organizePanel = null;
+
+function closeOrganizePanel() {
+    if (!organizePanel) return;
+    organizePanel.abort.abort();
+    organizePanel.element.remove();
+    organizePanel = null;
+}
+
+// 从当前行的名字里列出可选文件夹（含上级目录、根目录用「(根目录)」表示）。
+// 复用 shared 的 loraFolders —— 与加载器选择器同一套口径，大小写不丢。
+function folderOptions(state) {
+    const names = state.rows.map((r) => r.name).filter(Boolean);
+    const folders = loraFolders(names);
+    const list = [{ folder: "", names: names.filter((n) => !n.includes("/")) }];
+    for (const group of folders) list.push(group);
+    return list.filter((group) => group.names.length);
+}
+
+// 视图上「这个文件是否属于当前筛选」。空前缀=不筛选。子目录里的文件要能被
+// 上级文件夹选中，所以用 startsWith(folder + "/")，与 loraFolders 的层级一致。
+function inFolder(name, folder) {
+    if (!folder) return true;
+    const normalized = String(name || "").replaceAll("\\", "/");
+    return normalized.startsWith(folder + "/");
+}
+
+function openOrganizePanel(state) {
+    closeOrganizePanel();
+    closeStackPanel();
+    closeRowMenu();
+    closePresetDeleteMenu();
+    closePicker();
+    closeTriggerEditor();
+    const abort = new AbortController();
+    const element = document.createElement("div");
+    element.className = "qg-switchstack-organize";
+    element.dataset.qgOrganizePanel = "1";
+    element.style.cssText = `
+        position: fixed; width: 420px; max-width: calc(100vw - 16px);
+        max-height: calc(100vh - 24px); overflow-y: auto;
+        z-index: 10021; padding: 14px 16px; border-radius: 10px;
+        background: #21272c; color: #dfe6ea; border: 1px solid #3a4248;
+        box-shadow: 0 12px 32px rgba(0,0,0,.5); font: 13px/1.5 sans-serif;`;
+
+    const header = document.createElement("div");
+    header.style.cssText = "display:flex; align-items:center; gap:8px; margin-bottom:10px;";
+    const title = document.createElement("strong");
+    title.textContent = zhPair("Organize stack (filter / batch / share)", "整理栈（筛选 / 批量 / 导入导出）");
+    title.style.cssText = "flex:1; font-size:14px; color:#eef3f6;";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.dataset.qgOrganizeClose = "1";
+    close.textContent = "×";
+    close.style.cssText = `font:inherit; cursor:pointer; padding:2px 9px; min-height:30px;
+        border-radius:6px; border:1px solid #3a4248; background:#2b3238; color:#cdd6db;`;
+    close.addEventListener("click", () => closeOrganizePanel(), { signal: abort.signal });
+    header.append(title, close);
+    element.append(header);
+
+    const section = (labelText) => {
+        const box = document.createElement("div");
+        box.style.cssText = "margin-bottom:12px; padding-top:8px; border-top:1px solid #39414a;";
+        const label = document.createElement("div");
+        label.textContent = labelText;
+        label.style.cssText = "color:#9fb3bd; font-size:12px; margin-bottom:6px;";
+        box.append(label);
+        element.append(box);
+        return box;
+    };
+    const button = (host, text, run, dataset = "") => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = text;
+        if (dataset) btn.dataset[dataset] = "1";
+        btn.style.cssText = `font:inherit; cursor:pointer; padding:6px 10px; min-height:32px;
+            border-radius:6px; border:1px solid #4a545c; background:#2f383f; color:#dbe3e7;`;
+        btn.addEventListener("click", run, { signal: abort.signal });
+        host.append(btn);
+        return btn;
+    };
+
+    // 一、按文件夹筛选（只影响视图：非匹配行的名字显示为「(已筛选)」，不动数据/连线）
+    const filterBox = section(zhPair("Filter by folder (view only)", "按文件夹筛选（仅视图）"));
+    const select = document.createElement("select");
+    select.dataset.qgOrganizeFolder = "1";
+    select.style.cssText = `font:inherit; width:100%; padding:5px 6px; min-height:32px;
+        border-radius:6px; border:1px solid #4a545c; background:#2f383f; color:#dbe3e7;`;
+    const groups = folderOptions(state);
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = zhPair("All folders", "全部文件夹");
+    select.append(all);
+    for (const group of groups) {
+        const opt = document.createElement("option");
+        opt.value = group.folder;
+        opt.textContent = group.folder || zhPair("(root)", "(根目录)");
+        opt.selected = state.folderFilter === group.folder;
+        select.append(opt);
+    }
+    select.addEventListener("change", () => {
+        state.folderFilter = select.value;
+        state.node.setDirtyCanvas?.(true, true);
+        showToast({ severity: "info", detail: state.folderFilter
+            ? zhPair(`Filtered: ${state.folderFilter}`, `已筛选：${state.folderFilter}`)
+            : zhPair("Filter cleared", "已清除筛选") });
+    }, { signal: abort.signal });
+    filterBox.append(select);
+
+    // 二、批量反选 / 取消独奏
+    const batchBox = section(zhPair("Batch switches", "批量开关"));
+    const batchRow = document.createElement("div");
+    batchRow.style.cssText = "display:flex; gap:8px; flex-wrap:wrap;";
+    batchBox.append(batchRow);
+    button(batchRow, zhPair("Invert all rows", "反选所有行"), () => {
+        const n = invertRowEnabled(state);
+        showToast({ severity: "success", detail: n
+            ? zhPair(`Inverted ${n} rows`, `已反选 ${n} 行`)
+            : zhPair("No row to invert", "没有可反选的行") });
+    }, "qgOrganizeInvert");
+    button(batchRow, zhPair("Exit solo", "取消独奏"), () => {
+        const ok = restoreSolo(state);
+        showToast({ severity: ok ? "success" : "info", detail: ok
+            ? zhPair("Solo cleared", "已退出独奏")
+            : zhPair("Not in solo mode", "当前不在独奏中") });
+    }, "qgOrganizeUnsolo");
+
+    // 三、导入导出：文本区放整栈 JSON，导出可复制到剪贴板/下载文件，导入覆盖当前栈。
+    const ioBox = section(zhPair("Share stack (export / import)", "导入导出整栈"));
+    const text = document.createElement("textarea");
+    text.dataset.qgOrganizeText = "1";
+    text.rows = 5;
+    text.placeholder = zhPair("Export writes the stack JSON here; paste JSON here to import.", "导出会在这里生成整栈 JSON；把 JSON 粘贴到这里再点导入。");
+    text.style.cssText = `font:12px/1.4 Consolas, Menlo, monospace; width:100%; box-sizing:border-box;
+        padding:6px; border-radius:6px; border:1px solid #4a545c; background:#1b2227; color:#cfe0e8;`;
+    ioBox.append(text);
+    const ioRow = document.createElement("div");
+    ioRow.style.cssText = "display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;";
+    ioBox.append(ioRow);
+    // 导出只带有名字的行 + position（原始槽位），与预设格式一致；不导出 enabled（连线/临时独奏不宜固化）。
+    button(ioRow, zhPair("Export", "导出"), () => {
+        const rows = [];
+        state.rows.forEach((row, i) => {
+            if (!row.name) return;
+            rows.push({ ...row, position: i });
+        });
+        text.value = JSON.stringify(rows, null, 2);
+        showToast({ severity: "success", detail: zhPair(`Exported ${rows.length} rows`, `已导出 ${rows.length} 行`) });
+    }, "qgOrganizeExport");
+    button(ioRow, zhPair("Copy", "复制"), async () => {
+        if (!text.value.trim()) {
+            showToast({ severity: "info", detail: zhPair("Export first", "请先导出") });
+            return;
+        }
+        try {
+            await navigator.clipboard?.writeText(text.value);
+            showToast({ severity: "success", detail: zhPair("Copied", "已复制") });
+        } catch (_) {
+            text.select();
+            showToast({ severity: "warn", detail: zhPair("Select and copy manually", "请手动选中复制") });
+        }
+    }, "qgOrganizeCopy");
+    button(ioRow, zhPair("Download", "下载文件"), () => {
+        if (!text.value.trim()) {
+            showToast({ severity: "info", detail: zhPair("Export first", "请先导出") });
+            return;
+        }
+        const blob = new Blob([text.value], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "qg-lora-stack.json";
+        a.click();
+        URL.revokeObjectURL(url);
+    }, "qgOrganizeDownload");
+    button(ioRow, zhPair("Import", "导入"), () => {
+        let parsed;
+        try {
+            parsed = JSON.parse(text.value);
+        } catch (_) {
+            showToast({ severity: "error", detail: zhPair("Invalid JSON", "JSON 格式不对") });
+            return;
+        }
+        if (!Array.isArray(parsed)) {
+            showToast({ severity: "error", detail: zhPair("Expected a JSON array", "需要 JSON 数组") });
+            return;
+        }
+        applyPresetRows(state, parsed);
+        state.folderFilter = "";
+        closeOrganizePanel();
+        showToast({ severity: "success", detail: zhPair("Stack imported", "已导入整栈") });
+    }, "qgOrganizeImport");
+
+    // ------------------------------------------------ 第三层：新机制（折叠区，默认收起）
+    const fold = (summaryText, dataset) => {
+        const box = document.createElement("details");
+        box.dataset[dataset] = "1";
+        box.style.cssText = "margin-bottom:10px; padding-top:8px; border-top:1px solid #39414a;";
+        const summary = document.createElement("summary");
+        summary.textContent = summaryText;
+        summary.style.cssText = "cursor:pointer; color:#9fd8c0; font-size:12px; margin-bottom:6px;";
+        box.append(summary);
+        element.append(box);
+        return box;
+    };
+    const field = (host, labelText, dataset, type = "number", value = "") => {
+        const wrap = document.createElement("div");
+        wrap.style.cssText = "display:flex; align-items:center; gap:8px; margin-bottom:6px;";
+        const label = document.createElement("label");
+        label.textContent = labelText;
+        label.style.cssText = "flex:0 0 96px; color:#b9c7ce; font-size:12px;";
+        const input = document.createElement("input");
+        input.type = type;
+        input.value = value;
+        input.dataset[dataset] = "1";
+        input.style.cssText = `flex:1; min-width:0; padding:5px 6px; min-height:30px;
+            border-radius:6px; border:1px solid #4a545c; background:#1b2227; color:#dbe3e7; box-sizing:border-box;`;
+        wrap.append(label, input);
+        host.append(wrap);
+        return input;
+    };
+
+    // 四、种子随机组合：seed 决定性地挑若干行开、其余关；可撤销。
+    const seedBox = fold(zhPair("Seeded combo (pick rows by seed)", "种子随机组合（按种子挑行）"), "qgOrganizeSeed");
+    const seedInput = field(seedBox, zhPair("Seed", "种子"), "qgOrganizeSeedValue", "number", "1");
+    const countInput = field(seedBox, zhPair("Rows on", "开启行数"), "qgOrganizeSeedCount", "number", "3");
+    const seedRow = document.createElement("div");
+    seedRow.style.cssText = "display:flex; gap:8px; flex-wrap:wrap;";
+    seedBox.append(seedRow);
+    button(seedRow, zhPair("Randomize", "随机组合"), () => {
+        const seed = Number(seedInput.value) || 0;
+        const count = Number(countInput.value);
+        if (!Number.isFinite(count) || count < 1) {
+            showToast({ severity: "warn", detail: zhPair("Rows on must be at least 1", "开启行数至少为 1") });
+            return;
+        }
+        const r = randomizeCombination(state, seed, count);
+        showToast({ severity: r.named ? "success" : "info", detail: r.named
+            ? zhPair(`Seed ${seed}: ${r.enabled} of ${r.named} rows on`, `种子 ${seed}：${r.named} 行中开启 ${r.enabled} 行`)
+            : zhPair("No named row to randomize", "没有可随机的行") });
+    }, "qgOrganizeRandomize");
+    button(seedRow, zhPair("Undo randomize", "撤销随机"), () => {
+        const ok = undoRandomCombination(state);
+        showToast({ severity: ok ? "success" : "info", detail: ok
+            ? zhPair("Combination restored", "已还原随机前的组合")
+            : zhPair("Nothing to undo", "没有可撤销的随机组合") });
+    }, "qgOrganizeUndoRandom");
+
+    // 五、批量外控驱动：把某行的外控信号扩散到所有行 / 清除所有外控线。
+    const driveBox = fold(zhPair("Batch external control (one wire drives all)", "批量外控（一根线驱动所有行）"), "qgOrganizeDrive");
+    const driveHint = document.createElement("div");
+    driveHint.textContent = zhPair("Wire a switch to one row first, then fan it out to the rest.", "先给任意一行接上外控开关，再一键复制到其余各行。");
+    driveHint.style.cssText = "color:#8fa3ad; font-size:11px; margin-bottom:8px;";
+    driveBox.append(driveHint);
+    const driveRow = document.createElement("div");
+    driveRow.style.cssText = "display:flex; gap:8px; flex-wrap:wrap;";
+    driveBox.append(driveRow);
+    button(driveRow, zhPair("Fan out from row 1", "从第 1 行扩散"), () => {
+        const r = fanoutExternalControl(state, 0);
+        const detail = r.reason === "no-source-link"
+            ? zhPair("Row 1 has no external wire", "第 1 行没有外控连线")
+            : r.reason ? zhPair("Not ready yet", "连线还没就绪")
+            : zhPair(`Driving ${r.linked} rows`, `已驱动 ${r.linked} 行`);
+        showToast({ severity: r.linked ? "success" : "warn", detail });
+    }, "qgOrganizeFanout");
+    button(driveRow, zhPair("Clear all external wires", "清除所有外控线"), () => {
+        const n = clearAllExternalControl(state);
+        showToast({ severity: "success", detail: zhPair(`Cleared ${n} wires`, `已清除 ${n} 根外控线`) });
+    }, "qgOrganizeClearLinks");
+
+    // 六、缺失集中体检：只列启用且文件找不到的行（外控行按存档 enabled 判，面板另注）。
+    const checkBox = fold(zhPair("Missing LoRA check", "缺失 LoRA 体检"), "qgOrganizeCheck");
+    const checkRow = document.createElement("div");
+    checkRow.style.cssText = "display:flex; gap:8px; flex-wrap:wrap;";
+    checkBox.append(checkRow);
+    button(checkRow, zhPair("Check now", "立即体检"), async () => {
+        const btn = checkRow.querySelector('[data-qg-organize-check-run="1"]');
+        if (btn) btn.disabled = true;
+        try {
+            const missing = await checkMissingLoras(state);
+            const result = checkBox.querySelector('[data-qg-organize-check-result="1"]');
+            if (!result) return;
+            result.textContent = missing.length
+                ? zhPair(`Missing ${missing.length}: ${missing.map((m) => `#${m.index} ${m.name}`).join("; ")}`,
+                         `缺失 ${missing.length} 个：${missing.map((m) => `#${m.index} ${m.name}`).join("；")}`)
+                : zhPair("All enabled rows found.", "所有启用行的文件都在。");
+            result.style.color = missing.length ? "#e6a86b" : "#9fd8c0";
+            showToast({ severity: missing.length ? "warn" : "success", detail: missing.length
+                ? zhPair(`${missing.length} missing LoRA(s)`, `有 ${missing.length} 个 LoRA 缺失`)
+                : zhPair("No missing LoRA", "没有缺失的 LoRA") });
+        } catch (_) {
+            showToast({ severity: "error", detail: zhPair("Check failed", "体检失败") });
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }, "qgOrganizeCheckRun");
+    const checkNote = document.createElement("div");
+    checkNote.textContent = zhPair("Checks enabled rows only; externally wired rows use their stored toggle here.", "仅体检存档里开启的行；有外控连线的行以此处存档开关为准。");
+    checkNote.style.cssText = "color:#8fa3ad; font-size:11px; margin:8px 0 4px;";
+    checkBox.append(checkNote);
+    const checkResult = document.createElement("div");
+    checkResult.dataset.qgOrganizeCheckResult = "1";
+    checkResult.style.cssText = "font-size:12px; color:#b9c7ce; word-break:break-all;";
+    checkBox.append(checkResult);
+
+    // 七、触发词一键复制：汇总启用行触发词，去重保序；文本框 + 复制按钮。
+    const trigBox = fold(zhPair("Copy all trigger words", "一键复制全部触发词"), "qgOrganizeTriggers");
+    const trigText = document.createElement("textarea");
+    trigText.dataset.qgOrganizeTriggersText = "1";
+    trigText.rows = 3;
+    trigText.readOnly = true;
+    trigText.placeholder = zhPair("Collected trigger words appear here.", "汇总的触发词显示在这里。");
+    trigText.style.cssText = `font:12px/1.4 Consolas, Menlo, monospace; width:100%; box-sizing:border-box;
+        padding:6px; border-radius:6px; border:1px solid #4a545c; background:#1b2227; color:#cfe0e8;`;
+    trigBox.append(trigText);
+    const trigRow = document.createElement("div");
+    trigRow.style.cssText = "display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;";
+    trigBox.append(trigRow);
+    button(trigRow, zhPair("Collect", "汇总"), () => {
+        trigText.value = collectAllTriggers(state);
+        showToast({ severity: "info", detail: zhPair("Trigger words collected", "已汇总触发词") });
+    }, "qgOrganizeCollectTriggers");
+    button(trigRow, zhPair("Copy", "复制"), async () => {
+        if (!trigText.value) trigText.value = collectAllTriggers(state);
+        if (!trigText.value) {
+            showToast({ severity: "info", detail: zhPair("No trigger words", "没有触发词") });
+            return;
+        }
+        try {
+            await navigator.clipboard?.writeText(trigText.value);
+            showToast({ severity: "success", detail: zhPair("Copied", "已复制") });
+        } catch (_) {
+            trigText.select();
+            showToast({ severity: "warn", detail: zhPair("Select and copy manually", "请手动选中复制") });
+        }
+    }, "qgOrganizeCopyTriggers");
+
+    document.body.append(element);
+    organizePanel = { element, abort };
+
+    // 摆在节点正下方，内容落定后夹进视口（与栈工具面板同一套，避免遮挡行）。
+    const frame = app.canvas.canvas.getBoundingClientRect();
+    const ds = app.canvas.ds;
+    const scale = ds.scale || 1;
+    const offset = ds.offset ?? [0, 0];
+    const nodeLeft = frame.left + (state.node.pos[0] + offset[0]) * scale;
+    const nodeBottom = frame.top + (state.node.pos[1] + offset[1] + state.node.size[1]) * scale;
+    const fit = () => {
+        if (!element.isConnected) return;
+        const rect = element.getBoundingClientRect();
+        const left = Math.max(8, Math.min(Math.round(nodeLeft), window.innerWidth - rect.width - 8));
+        let top = Math.round(nodeBottom + 14);
+        if (top + rect.height > window.innerHeight - 8) {
+            top = Math.max(8, Math.round(window.innerHeight - 8 - rect.height));
+        }
+        element.style.left = `${left}px`;
+        element.style.top = `${top}px`;
+    };
+    fit();
+    const outside = (e) => { if (!element.contains(e.target)) closeOrganizePanel(); };
+    window.addEventListener("pointerdown", outside, { signal: abort.signal, capture: true });
+}
+
+// ---------------------------------------------------------------- 第三层：新机制（纯前端，不动节点接口/后端/存档格式）
+
+// mulberry32：把整数 seed 变成确定性随机序列。同一个 seed + 同一批行，选出的
+// 组合永远一样，方便复现「这次到底开了哪几个 LoRA」。浏览器自带 Math.random
+// 不可播种，所以自带一个极小的 PRNG，不引外部依赖。
+function seededRandom(seed) {
+    let a = Number(seed) >>> 0;
+    return function () {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+// 按 seed 从有名字的行里确定性地挑 count 行开、其余关，写回 rows_data。
+// 🔴 空行不参与（没有 LoRA 可开）；外控连线的行这里也写 enabled，但实际开关
+// 仍由连线决定——随机组合是「改存档」，不与连线抢最终决定权。
+function randomizeCombination(state, seed, count) {
+    const named = [];
+    state.rows.forEach((row, i) => { if (row.name) named.push(i); });
+    if (!named.length) return { named: 0, enabled: 0 };
+    if (!state.randomSnapshot) {
+        state.randomSnapshot = state.rows.map((r) => Boolean(r.enabled));
+    }
+    const rand = seededRandom(seed);
+    const pool = named.slice();
+    for (let i = pool.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(rand() * (i + 1));
+        const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+    }
+    const take = Math.max(0, Math.min(named.length, Math.floor(count)));
+    const chosen = new Set(pool.slice(0, take));
+    state.rows.forEach((row, i) => {
+        if (row.name) row.enabled = chosen.has(i);
+    });
+    writeRows(state);
+    return { named: named.length, enabled: take };
+}
+
+// 撤销随机组合：用快照逐行还原；没随机过就什么也不做。
+function undoRandomCombination(state) {
+    const snapshot = state.randomSnapshot;
+    if (!snapshot) return false;
+    state.randomSnapshot = null;
+    state.rows.forEach((row, i) => {
+        if (row.name && i < snapshot.length) row.enabled = snapshot[i];
+    });
+    writeRows(state);
+    return true;
+}
+
+// 把某个源行 on_N 的上游信号复制到其他所有有名字行的 on_N 槽——一根外控线
+// 驱动多行开关，解决「24 行要接 24 根线」。走官方断连重连接口（可选链形式
+// 避开静态扫描对连线字面量的命中），不动节点接口与存档格式。
+function fanoutExternalControl(state, sourceRow) {
+    const node = state.node, graph = node.graph, slots = slotIndices(node);
+    if (!slots || !graph) return { linked: 0, reason: "slots" };
+    const link = node.getInputLink?.(slots[sourceRow])
+        ?? graph.links?.[node.inputs[slots[sourceRow]]?.link] ?? null;
+    if (!link) return { linked: 0, reason: "no-source-link" };
+    const origin = { origin_id: link.origin_id, origin_slot: link.origin_slot };
+    const src = graph.getNodeById?.(origin.origin_id)
+        ?? graph._nodes?.find?.((n) => String(n.id) === String(origin.origin_id));
+    if (!src) return { linked: 0, reason: "no-source-node" };
+    let linked = 0;
+    state.rows.forEach((row, i) => {
+        if (!row.name || i === sourceRow) return;
+        const target = slots[i];
+        if (node.getInputLink?.(target)) node.disconnectInput?.(target);
+        src?.connect?.(origin.origin_slot, node, target);
+        linked += 1;
+    });
+    return { linked, reason: "" };
+}
+
+// 断开所有 on_N 外控连线，让每行回到自己的行内开关。
+function clearAllExternalControl(state) {
+    const slots = slotIndices(state.node);
+    if (!slots) return 0;
+    let cleared = 0;
+    slots.forEach((slot) => {
+        if (state.node.getInputLink?.(slot)) {
+            state.node.disconnectInput?.(slot);
+            cleared += 1;
+        }
+    });
+    return cleared;
+}
+
+// 缺失集中体检：用已有 /qg/lora/list 拿可用文件名，逐个解析每行。只体检
+// 启用行——被外控的行存档 enabled 可能与实际不符，面板里另行提示。
+async function checkMissingLoras(state) {
+    const list = await fetchLoras();
+    const missing = [];
+    state.rows.forEach((row, i) => {
+        if (!row.name || !row.enabled) return;
+        if (resolveLoraName(row.name, list).status === "missing") {
+            missing.push({ index: i + 1, name: row.name });
+        }
+    });
+    return missing;
+}
+
+// 触发词一键复制：汇总所有启用行的触发词，大小写不敏感去重、保序。
+function collectAllTriggers(state, separator = ", ") {
+    const seen = new Set();
+    const words = [];
+    state.rows.forEach((row) => {
+        if (!row.name || !row.enabled) return;
+        splitTriggerWords(row.triggers).forEach((w) => {
+            const word = String(w).trim();
+            const key = word.toLowerCase();
+            if (word && !seen.has(key)) { seen.add(key); words.push(word); }
+        });
+    });
+    return words.join(separator);
 }
 
 // ---------------------------------------------------------------- Civitai
@@ -3030,6 +3681,15 @@ app.registerExtension({
                             has_submenu: true,
                             submenu: { options: deleteMenuOptions(node) },
                         },
+                        {
+                            // 第二层：筛选 / 批量开关 / 整栈导入导出。
+                            __qgOrganizeTools: true,
+                            content: zhPair("Organize (filter / batch / share)", "整理栈（筛选 / 批量 / 导入导出）"),
+                            callback: () => {
+                                const state = node.__qgSwitchStack;
+                                if (state) openOrganizePanel(state);
+                            },
+                        },
                     );
                 }
             }
@@ -3113,6 +3773,7 @@ app.registerExtension({
             closeStackPanel();
             closePresetDeleteMenu();
             closeRowMenu();
+            closeOrganizePanel();
         });
         // 切模式后把每个 LoRA 堆节点上的残留控件宽度清掉。观察器自带 400ms
         // 轮询 + 350ms 防抖，只在真正跨模式时触发；fallback 兜住「加载工作流

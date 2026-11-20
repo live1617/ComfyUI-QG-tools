@@ -60,68 +60,70 @@ notice: THIRD-PARTY-NOTICES.md.
 # here is to tell that apart from absence.
 _MISSING = object()
 
+from comfy_api.latest import io
 
-class QGTextConcat:
+
+class QGTextConcat(io.ComfyNode):
     CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
-        "Joins two texts with a separator: text1 + separator + text2. Both "
-        "texts are input slots; the separator is a widget. Nothing is "
-        "trimmed - put a space or a newline in the separator if you want one. "
-        "A slot with nothing wired into it is skipped entirely, separator "
-        "included, so a single-text pass-through stays exact."
+        "Joins up to eight texts with a separator: text1 + separator + text2 + "
+        "... Eight slots are declared, but the node shows two at first and "
+        "grows one more each time the last visible slot gets wired, up to "
+        "eight. Every text is an input slot; the separator is a widget. "
+        "Nothing is trimmed - put a space or a newline in the separator if you "
+        "want one. A slot with nothing wired into it is skipped entirely, "
+        "separator included, so a single-text pass-through stays exact."
     )
     SEARCH_ALIASES = [
         "concat", "merge", "join", "combine", "text", "合并", "拼接", "连接", "qg",
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {},
-            "optional": {
-                "text1": (
-                    "STRING",
-                    {
-                        "multiline": False,
-                        "default": "",
-                        "forceInput": True,
-                        "tooltip": "The first text, wired from upstream. Leave it unwired and it disappears from the join, separator and all.",
-                    },
-                ),
-                "text2": (
-                    "STRING",
-                    {
-                        "multiline": False,
-                        "default": "",
-                        "forceInput": True,
-                        "tooltip": "The second text, wired from upstream. Leave it unwired and it disappears from the join, separator and all.",
-                    },
-                ),
-                "separator": (
-                    "STRING",
-                    {
-                        "multiline": False,
-                        "default": "",
-                        "tooltip": "Inserted verbatim between the texts that are wired; type a space or a newline if that is what you want.",
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        # 8 个 text 槽是 forceInput optional；separator 是普通 widget，必须排末尾
+        # （widgets_values 按位置存，V1 就在 optional 最后）。
+        _text_tips = [
+            "The first text, wired from upstream. Leave it unwired and it disappears from the join, separator and all.",
+            "The second text, wired from upstream. Leave it unwired and it disappears from the join, separator and all.",
+            "The third text, wired from upstream. Shown once text2 is wired; unwired it disappears from the join, separator and all.",
+            "The fourth text, wired from upstream. Shown once text3 is wired; unwired it disappears from the join, separator and all.",
+            "The fifth text, wired from upstream. Shown once text4 is wired; unwired it disappears from the join, separator and all.",
+            "The sixth text, wired from upstream. Shown once text5 is wired; unwired it disappears from the join, separator and all.",
+            "The seventh text, wired from upstream. Shown once text6 is wired; unwired it disappears from the join, separator and all.",
+            "The eighth and last text, wired from upstream. Shown once text7 is wired; unwired it disappears from the join, separator and all.",
+        ]
+        inputs = [
+            io.String.Input("text%d" % (i + 1), optional=True, extra_dict={"forceInput": True},
+                            tooltip=tip)
+            for i, tip in enumerate(_text_tips)
+        ]
+        inputs.append(io.String.Input("separator", optional=True,
+            tooltip="Inserted verbatim between the texts that are wired; type a space or a newline if that is what you want."))
+        return io.Schema(
+            node_id="QG_TextConcat",
+            display_name="Text Concat",
+            category="QG-tools/Text",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=inputs,
+            outputs=[
+                io.String.Output("text", tooltip="The wired texts joined by the separator, nothing trimmed."),
+            ],
+        )
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("text",)
-    OUTPUT_TOOLTIPS = (
-        "The wired texts joined by the separator, nothing trimmed.",
-    )
-    FUNCTION = "execute"
-
-    def execute(self, text1=_MISSING, text2=_MISSING, separator=""):
+    @classmethod
+    def execute(
+        cls,
+        text1=_MISSING, text2=_MISSING, text3=_MISSING, text4=_MISSING,
+        text5=_MISSING, text6=_MISSING, text7=_MISSING, text8=_MISSING,
+        separator="",
+    ):
         pieces = []
-        for piece in (text1, text2):
+        for piece in (text1, text2, text3, text4, text5, text6, text7, text8):
             if piece is _MISSING:
                 continue  # not wired: drop it, and the separator goes too
             pieces.append("" if piece is None else str(piece))
-        return (separator.join(pieces),)
+        return io.NodeOutput(separator.join(pieces))
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextConcat": QGTextConcat}

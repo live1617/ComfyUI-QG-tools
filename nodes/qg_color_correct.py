@@ -23,9 +23,17 @@ that one falls into:
     Rec.709 luma weights, so warming an image does not brighten it.
 
 An alpha channel, if present, is carried through untouched.
+
+V3 形态（2026-11-15，批量迁移批 1 第 2 个节点）：对外契约与 V1 **逐字段一致**
+—— node_id / display_name / category / description / search_aliases / 7 个输入的
+键顺序与 default / min / max / step / tooltip / 输出类型 / 输出名 / 输出 tooltip
+全部保持原值。对照 ``reports/qg_object_info.v1-baseline.json`` 的
+``QG_ColorCorrect`` 条目；输出名 ``IMAGE`` 是存档键，显式写 ``Output(id="IMAGE")``。
 """
 
 import torch
+
+from comfy_api.latest import io
 
 from ._qg_tensor_helpers import as_image_batch
 
@@ -39,123 +47,95 @@ TEMPERATURE_SWING = 0.35
 TEMPERATURE_GREEN_SWING = 0.12
 
 
-class QGColorCorrect:
-    CATEGORY = "QG-tools/Image"
-    DESCRIPTION = (
-        "Six sliders for the whole colour pass: temperature (cool/warm), hue "
-        "rotation, brightness, contrast, saturation and gamma. They are applied "
-        "in that photographic order, on every frame of the batch at once, "
-        "straight in float -- no 8-bit round-trip, so gradients stay smooth. "
-        "Temperature is brightness-neutral and saturation is a proper "
-        "luma-preserving mix. Push a value back to its default to skip that "
-        "step entirely; gamma 1.0, brightness/contrast/saturation/temperature "
-        "0 and hue 0 all mean untouched."
-    )
-    SEARCH_ALIASES = [
-        "color correct", "colour correct", "colorcorrection", "color correction",
-        "colour correction", "grading", "color grade", "color adjust",
-        "temperature", "hue", "brightness", "contrast", "saturation", "gamma",
-        "颜色校正", "调色", "校色",
-    ]
+class QGColorCorrect(io.ComfyNode):
+    """V3 形态：六个滑条走完整调色流程，对外契约与 V1 逐字段一致。"""
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": (
-                    "IMAGE",
-                    {"tooltip": "The images to correct. A batch is handled in one pass, and an alpha channel is passed through untouched."},
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_ColorCorrect",
+            display_name="Color Correct",
+            category="QG-tools/Image",
+            description=(
+                "Six sliders for the whole colour pass: temperature (cool/warm), hue "
+                "rotation, brightness, contrast, saturation and gamma. They are applied "
+                "in that photographic order, on every frame of the batch at once, "
+                "straight in float -- no 8-bit round-trip, so gradients stay smooth. "
+                "Temperature is brightness-neutral and saturation is a proper "
+                "luma-preserving mix. Push a value back to its default to skip that "
+                "step entirely; gamma 1.0, brightness/contrast/saturation/temperature "
+                "0 and hue 0 all mean untouched."
+            ),
+            search_aliases=[
+                "color correct", "colour correct", "colorcorrection", "color correction",
+                "colour correction", "grading", "color grade", "color adjust",
+                "temperature", "hue", "brightness", "contrast", "saturation", "gamma",
+                "颜色校正", "调色", "校色",
+            ],
+            inputs=[
+                io.Image.Input(
+                    "image",
+                    tooltip="The images to correct. A batch is handled in one pass, and an alpha channel is passed through untouched.",
                 ),
-                "temperature": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": -100.0,
-                        "max": 100.0,
-                        "step": 1.0,
-                        "tooltip": (
-                            "Temperature: negative runs cooler and adds blue, positive runs "
-                            "warmer and adds yellow. The three channel gains are normalised by "
-                            "luminance weight, so this shifts colour only and never brightness."
-                        ),
-                    },
+                io.Float.Input(
+                    "temperature",
+                    default=0.0, min=-100.0, max=100.0, step=1.0,
+                    tooltip=(
+                        "Temperature: negative runs cooler and adds blue, positive runs "
+                        "warmer and adds yellow. The three channel gains are normalised by "
+                        "luminance weight, so this shifts colour only and never brightness."
+                    ),
                 ),
-                "hue": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": -180.0,
-                        "max": 180.0,
-                        "step": 1.0,
-                        "tooltip": (
-                            "Hue: how many degrees to rotate the hue of the whole image. 0 "
-                            "leaves it alone and plus or minus 180 is a full turn; around 120 "
-                            "swaps red for green and green for blue, which suits a wholesale "
-                            "palette shift."
-                        ),
-                    },
+                io.Float.Input(
+                    "hue",
+                    default=0.0, min=-180.0, max=180.0, step=1.0,
+                    tooltip=(
+                        "Hue: how many degrees to rotate the hue of the whole image. 0 "
+                        "leaves it alone and plus or minus 180 is a full turn; around 120 "
+                        "swaps red for green and green for blue, which suits a wholesale "
+                        "palette shift."
+                    ),
                 ),
-                "brightness": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": -100.0,
-                        "max": 100.0,
-                        "step": 1.0,
-                        "tooltip": "Brightness: multiplies everything by a factor. 0 keeps it, -100 goes fully black, +100 doubles the brightness.",
-                    },
+                io.Float.Input(
+                    "brightness",
+                    default=0.0, min=-100.0, max=100.0, step=1.0,
+                    tooltip="Brightness: multiplies everything by a factor. 0 keeps it, -100 goes fully black, +100 doubles the brightness.",
                 ),
-                "contrast": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": -100.0,
-                        "max": 100.0,
-                        "step": 1.0,
-                        "tooltip": (
-                            "Contrast: stretches around mid grey 0.5. 0 keeps it, -100 flattens "
-                            "the whole frame to 0.5 grey, +100 doubles the light to dark "
-                            "spread, so highlights and shadows clip sooner."
-                        ),
-                    },
+                io.Float.Input(
+                    "contrast",
+                    default=0.0, min=-100.0, max=100.0, step=1.0,
+                    tooltip=(
+                        "Contrast: stretches around mid grey 0.5. 0 keeps it, -100 flattens "
+                        "the whole frame to 0.5 grey, +100 doubles the light to dark "
+                        "spread, so highlights and shadows clip sooner."
+                    ),
                 ),
-                "saturation": (
-                    "FLOAT",
-                    {
-                        "default": 0.0,
-                        "min": -100.0,
-                        "max": 100.0,
-                        "step": 1.0,
-                        "tooltip": (
-                            "Saturation: blended by luminance. 0 keeps it, -100 goes pure black "
-                            "and white with the brightness intact, +100 doubles the colour "
-                            "intensity."
-                        ),
-                    },
+                io.Float.Input(
+                    "saturation",
+                    default=0.0, min=-100.0, max=100.0, step=1.0,
+                    tooltip=(
+                        "Saturation: blended by luminance. 0 keeps it, -100 goes pure black "
+                        "and white with the brightness intact, +100 doubles the colour "
+                        "intensity."
+                    ),
                 ),
-                "gamma": (
-                    "FLOAT",
-                    {
-                        "default": 1.0,
-                        "min": 0.1,
-                        "max": 5.0,
-                        "step": 0.01,
-                        "tooltip": (
-                            "Gamma: moves the midtones only and leaves both ends alone. 1.0 "
-                            "keeps it, above 1 darkens the midtones, below 1 lifts them; it "
-                            "holds the highlights better than plain brightness does."
-                        ),
-                    },
+                io.Float.Input(
+                    "gamma",
+                    default=1.0, min=0.1, max=5.0, step=0.01,
+                    tooltip=(
+                        "Gamma: moves the midtones only and leaves both ends alone. 1.0 "
+                        "keeps it, above 1 darkens the midtones, below 1 lifts them; it "
+                        "holds the highlights better than plain brightness does."
+                    ),
                 ),
-            }
-        }
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("IMAGE",)
-    OUTPUT_TOOLTIPS = (
-        "The corrected images, same size and batch count as the input.",
-    )
-    FUNCTION = "color_correct"
+            ],
+            outputs=[
+                io.Image.Output(
+                    id="IMAGE",
+                    tooltip="The corrected images, same size and batch count as the input.",
+                ),
+            ],
+        )
 
     # ---- individual passes -------------------------------------------------
 
@@ -246,8 +226,9 @@ class QGColorCorrect:
 
     # ---- entry point -------------------------------------------------------
 
-    def color_correct(
-        self,
+    @classmethod
+    def execute(
+        cls,
         image,
         temperature=0.0,
         hue=0.0,
@@ -268,7 +249,7 @@ class QGColorCorrect:
 
         # 1) 白平衡 —— 只看色偏，不动亮度
         if float(temperature) != 0.0:
-            rgb = self._white_balance(rgb, temperature)
+            rgb = cls._white_balance(rgb, temperature)
         # 2) 明度
         if float(brightness) != 0.0:
             rgb = rgb * (1.0 + float(brightness) / 100.0)
@@ -284,10 +265,10 @@ class QGColorCorrect:
 
         # 4) 饱和度
         if float(saturation) != 0.0:
-            rgb = self._saturate(rgb, saturation)
+            rgb = cls._saturate(rgb, saturation)
         # 5) 色相旋转
         if float(hue) != 0.0:
-            rgb = self._rotate_hue(rgb, hue)
+            rgb = cls._rotate_hue(rgb, hue)
 
         rgb = rgb.clamp(0.0, 1.0).to(out_dtype)
         if alpha is not None:
@@ -297,7 +278,7 @@ class QGColorCorrect:
 
         if squeeze:
             result = result.squeeze(0)
-        return (result,)
+        return io.NodeOutput(result)
 
 
 NODE_CLASS_MAPPINGS = {"QG_ColorCorrect": QGColorCorrect}

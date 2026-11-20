@@ -55,7 +55,9 @@ from __future__ import annotations
 
 import math
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 
 # ---- shared ratio ladder (name, w/h) -------------------------------------
 RATIOS: tuple[tuple[str, float], ...] = (
@@ -167,8 +169,9 @@ def match_bucket(source_ratio: float, model: str) -> tuple[str, int, int]:
     return name, width, height
 
 
-@combo_legacy("QG_ImageNormalize")
-class QGImageNormalize:
+# V1 @combo_legacy("QG_ImageNormalize")：model/resize_method 有中文遗留值需 coerce。
+# V3 去装饰器，normalize→execute 开头 coerce 两值，与 V1 等价。
+class QGImageNormalize(io.ComfyNode):
     """Scale onto the nearest standard bucket, center-crop, report the fit."""
 
     CATEGORY = "QG-tools/Image"
@@ -185,72 +188,48 @@ class QGImageNormalize:
         "分辨率", "尺寸", "对齐", "缩放", "裁切", "画幅比", "标准化",
         "模型档位", "qg",
     ]
-    OUTPUT_NODE = False
-
     @classmethod
-    def INPUT_TYPES(cls):  # noqa: N802 - ComfyUI convention
-        # 🔴 每个输入都写成 "名字": ( 换行 + 字典逐键换行：verify_bilingual /
-        # verify_combo_i18n 靠正则找输入名，`"tooltip":` 留在行尾会让它们把所有
-        # 输入误判成一个叫 tooltip 的输入。
-        return {
-            "required": {
-                "image": (
-                    "IMAGE",
-                    {
-                        "tooltip": (
-                            "Image to normalise. It is matched to the closest "
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_ImageNormalize",
+            display_name="Image Normalize",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("image",
+                    tooltip="Image to normalise. It is matched to the closest "
                             "bucket by aspect ratio, scaled without distortion, "
-                            "then center-cropped."
-                        ),
-                    },
-                ),
-                "model": (
-                    MODEL_CHOICES,
-                    {
-                        "default": "Qwen-Image 1K",
-                        "tooltip": (
-                            "Which model's bucket table to use. Families differ "
+                            "then center-cropped."),
+                io.Combo.Input("model", options=MODEL_CHOICES, default="Qwen-Image 1K",
+                    tooltip="Which model's bucket table to use. Families differ "
                             "in aspect ratios and total pixels; the output size "
-                            "always lands on one of that model's buckets."
-                        ),
-                    },
-                ),
-                "resize_method": (
-                    METHODS,
-                    {
-                        "default": "lanczos",
-                        "tooltip": (
-                            "Resampling filter. lanczos is the sharpest "
+                            "always lands on one of that model's buckets."),
+                io.Combo.Input("resize_method", options=list(METHODS), default="lanczos",
+                    tooltip="Resampling filter. lanczos is the sharpest "
                             "(recommended), bicubic is smoother, bilinear is "
-                            "faster, nearest keeps hard pixel edges."
-                        ),
-                    },
-                ),
-            }
-        }
-
-    RETURN_TYPES = ("IMAGE", "INT", "INT", "STRING", "INT")
-    RETURN_NAMES = ("image", "width", "height", "matched_ratio", "resolution_value")
-    # 🔴 ComfyUI 认的是 OUTPUT_TOOLTIPS，不是 RETURN_TOOLTIPS。写成后者不会报错，
-    # 只是 /object_info 里根本没有这个字段、悬停永远看不到说明 —— 静默失效。
-    OUTPUT_TOOLTIPS = (
-        "The image cropped to the matched bucket, one frame per input frame.",
-        "Width of the matched bucket.",
-        "Height of the matched bucket.",
-        "Name of the matched bucket's ratio, e.g. 16:9.",
-        "The tier's base square side (its 1:1 bucket width).",
-    )
-    FUNCTION = "normalize"
+                            "faster, nearest keeps hard pixel edges."),
+            ],
+            outputs=[
+                io.Image.Output("image", tooltip="The image cropped to the matched bucket, one frame per input frame."),
+                io.Int.Output("width", tooltip="Width of the matched bucket."),
+                io.Int.Output("height", tooltip="Height of the matched bucket."),
+                io.String.Output("matched_ratio", tooltip="Name of the matched bucket's ratio, e.g. 16:9."),
+                io.Int.Output("resolution_value", tooltip="The tier's base square side (its 1:1 bucket width)."),
+            ],
+        )
 
     @classmethod
-    def VALIDATE_INPUTS(cls, model=None, resize_method=None):
-        # 两个下拉在 _qg_combo_legacy.LEGACY 里登记了中文标签，combo_legacy 会在
-        # 执行前把漏网的老值 coerce 回来。这里点名这两个参数，让 ComfyUI 跳过
-        # 「值必须在列表里」那道检查 —— 否则 coerce 根本轮不到。
-        # 不写 **kwargs：那会把 IMAGE 等其余输入的校验一起关掉。
+    def validate_inputs(cls, model=None, resize_method=None):
+        # 两个下拉在 LEGACY 里登记中文标签，execute 开头 coerce 漏网老值。
+        # 点名这两个参数跳过「值必须在列表里」，不写 **kwargs（否则关掉其余输入校验）。
         return True
 
-    def normalize(self, image, model, resize_method):
+    @classmethod
+    def execute(cls, image, model, resize_method):
+        # V1 装饰器 coerce 两个下拉值（中文遗留值 → 英文），V3 显式保留。
+        model = coerce("QG_ImageNormalize", "model", model)
+        resize_method = coerce("QG_ImageNormalize", "resize_method", resize_method)
         import numpy as np  # noqa: PLC0415 - ComfyUI ships numpy
         from PIL import Image, ImageOps  # noqa: PLC0415 - ComfyUI ships Pillow
 
@@ -273,7 +252,7 @@ class QGImageNormalize:
         if batch == 0:
             # 空批次：上游什么都没给（比如批量切完是空的）。原样返回空张量，
             # 不抛异常——后面接的节点同样能处理空 IMAGE。
-            return (image, 0, 0, "", MODEL_TIERS[model]["base"])
+            return io.NodeOutput(image, 0, 0, "", MODEL_TIERS[model]["base"])
         ratio_name, out_w, out_h = match_bucket(width / float(height), model)
         flag = {
             "lanczos": Image.Resampling.LANCZOS,
@@ -309,7 +288,7 @@ class QGImageNormalize:
                                   centering=(0.5, 0.5))
             frames.append(np.asarray(fitted, dtype="float32") / 255.0)
         out = image.new_tensor(np.stack(frames, axis=0))
-        return (out, out_w, out_h, ratio_name, MODEL_TIERS[model]["base"])
+        return io.NodeOutput(out, out_w, out_h, ratio_name, MODEL_TIERS[model]["base"])
 
 
 NODE_CLASS_MAPPINGS = {"QG_ImageNormalize": QGImageNormalize}

@@ -32,8 +32,10 @@ when nothing upstream produced anything.
 Only core modules are used -- no new dependency.
 """
 
+from comfy_api.latest import io
 
-class QGTextEditOutput:
+
+class QGTextEditOutput(io.ComfyNode):
     CATEGORY = "QG-tools/Text"
     DESCRIPTION = (
         "A hand-typed text box that outputs its content as a one-item STRING "
@@ -46,30 +48,30 @@ class QGTextEditOutput:
     SEARCH_ALIASES = ["text", "edit", "note", "prompt", "qg"]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "text": ("STRING", {
-                    "default": "",
-                    "multiline": True,
-                    "rows": 5,
-                    "tooltip": "The text. Type it here, or wire a string in to override it for that run without "
-                               "changing what is saved.",
-                }),
-            }
-        }
+    def define_schema(cls):
+        # is_output_node=True 同时承担 V1 的 OUTPUT_NODE 语义；
+        # output is_output_list=True 对应 OUTPUT_IS_LIST=(True,)。
+        return io.Schema(
+            node_id="QG_TextEditOutput",
+            display_name="Text",
+            category="QG-tools/Text",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.String.Input("text", default="", multiline=True, extra_dict={"rows": 5},
+                    tooltip="The text. Type it here, or wire a string in to override it for that run without "
+                            "changing what is saved."),
+            ],
+            outputs=[
+                io.String.Output("text", is_output_list=True,
+                    tooltip="The text as a one-item STRING list; the whole box is one item and "
+                            "is never split."),
+            ],
+            is_output_node=True,
+        )
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("text",)
-    OUTPUT_TOOLTIPS = (
-        "The text as a one-item STRING list; the whole box is one item and "
-        "is never split.",
-    )
-    OUTPUT_IS_LIST = (True,)
-    OUTPUT_NODE = True
-    FUNCTION = "execute"
-
-    def execute(self, text=""):
+    @classmethod
+    def execute(cls, text=""):
         # 存档里永远是字符串；None 只可能来自 API 直连（少传了参数），
         # 数字则来自上游接了个非 STRING 槽。统一成字符串，免得下游拿 None
         # 去拼接时报一句看不出源头的错。
@@ -77,7 +79,7 @@ class QGTextEditOutput:
             text = ""
         elif not isinstance(text, str):
             text = str(text)
-        return ([text],)
+        return io.NodeOutput([text])
 
 
 NODE_CLASS_MAPPINGS = {"QG_TextEditOutput": QGTextEditOutput}

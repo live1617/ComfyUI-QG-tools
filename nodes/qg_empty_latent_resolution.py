@@ -39,8 +39,9 @@ import math
 import torch
 
 import comfy.model_management
+from comfy_api.latest import io
 
-from ._qg_combo_legacy import combo_legacy
+from ._qg_combo_legacy import coerce
 
 # 空 Latent 的空间下采样倍数：像素 / 8 = latent 尺寸。
 LATENT_DOWNSCALE = 8
@@ -89,8 +90,9 @@ def make_latent(width, height, batch_size=1):
     return {"samples": latent, "downscale_ratio_spacial": LATENT_DOWNSCALE}
 
 
-@combo_legacy("QG_EmptyLatentResolution")
-class QG_EmptyLatentResolution:
+# V1 挂 @combo_legacy("QG_EmptyLatentResolution")：LEGACY 表有此项但只供前端生成中文标签，
+# coerce 对英文选项是空操作。V3 仍保留 coerce 调用，与 V1 装饰器行为完全等价。
+class QG_EmptyLatentResolution(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Turns an aspect ratio and a megapixel target into an empty latent that is "
@@ -102,93 +104,79 @@ class QG_EmptyLatentResolution:
     )
 
     @classmethod
-    def VALIDATE_INPUTS(cls, aspect_ratio=None):
-        # 选项值只有英文，本来没有老存档问题；具名列出来是为了让 combo_legacy
-        # 那层 coerce 有机会跑（ComfyUI 否则会先按列表校验把中文值挡回去）。
+    def validate_inputs(cls, aspect_ratio=None):
+        # 选项值只有英文，本来没有老存档问题；具名列出来是为了让 coerce
+        # 有机会跑（ComfyUI 否则会先按列表校验把中文值挡回去）。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "aspect_ratio": (
-                    list(ASPECT_RATIOS),
-                    {
-                        "default": "1:1 (Square)",
-                        "tooltip": (
-                            "Aspect ratio of the result. Portrait entries are vertical, "
-                            "the rest are horizontal."
-                        ),
-                    },
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_EmptyLatentResolution",
+            display_name="Empty Latent Resolution",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            inputs=[
+                io.Combo.Input(
+                    "aspect_ratio",
+                    options=list(ASPECT_RATIOS),
+                    default="1:1 (Square)",
+                    tooltip="Aspect ratio of the result. Portrait entries are vertical, "
+                            "the rest are horizontal.",
                 ),
-                "megapixels": (
-                    "FLOAT",
-                    {
-                        "default": 1.0,
-                        "min": 0.1,
-                        "max": 16.0,
-                        "step": 0.1,
-                        "tooltip": (
-                            "Target total pixels in megapixels. 1.0 MP is about "
-                            "1024x1024 at 1:1."
-                        ),
-                    },
+                io.Float.Input(
+                    "megapixels",
+                    default=1.0,
+                    min=0.1,
+                    max=16.0,
+                    step=0.1,
+                    tooltip="Target total pixels in megapixels. 1.0 MP is about "
+                            "1024x1024 at 1:1.",
                 ),
-                "batch_size": (
-                    "INT",
-                    {
-                        "default": 1,
-                        "min": 1,
-                        "max": 4096,
-                        "tooltip": "How many empty latents to produce at once.",
-                    },
+                io.Int.Input(
+                    "batch_size",
+                    default=1,
+                    min=1,
+                    max=4096,
+                    tooltip="How many empty latents to produce at once.",
                 ),
-                "multiple": (
-                    "INT",
-                    {
-                        "default": 8,
-                        "min": 8,
-                        "max": 128,
-                        "step": 8,
-                        "advanced": True,
-                        "tooltip": (
-                            "Round both sides to this multiple before aligning them to "
+                io.Int.Input(
+                    "multiple",
+                    default=8,
+                    min=8,
+                    max=128,
+                    step=8,
+                    advanced=True,
+                    tooltip="Round both sides to this multiple before aligning them to "
                             "the latent grid. 8 matches the 8x downscale; 16 / 32 / 64 "
-                            "suit newer models."
-                        ),
-                    },
+                            "suit newer models.",
                 ),
-            },
-            # 实时分辨率预览：前端现成的控件，本身不参与运行（serialize 关掉），
-            # 所以只能放 optional —— 放 required 会因为提交时缺这个输入而报错。
-            "optional": {
-                "preview": (
-                    "RESOLUTION_PREVIEW",
-                    {
-                        "tooltip": (
-                            "Live preview of the shape these settings produce. It reads "
-                            "the three controls above."
-                        ),
+                # 实时分辨率预览：前端控件，不参与运行；optional 且带 3 个 widget 引用。
+                io.Custom("RESOLUTION_PREVIEW").Input(
+                    "preview",
+                    optional=True,
+                    extra_dict={
                         "ratio_widget": "aspect_ratio",
                         "megapixels_widget": "megapixels",
                         "multiple_widget": "multiple",
                     },
+                    tooltip="Live preview of the shape these settings produce. It reads "
+                            "the three controls above.",
                 ),
-            },
-        }
+            ],
+            outputs=[
+                io.Latent.Output("latent", tooltip="Empty latent, ready for a sampler."),
+                io.Int.Output("width", tooltip="Final width in pixels - the range the latent actually covers."),
+                io.Int.Output("height", tooltip="Final height in pixels - the range the latent actually covers."),
+            ],
+        )
 
-    RETURN_TYPES = ("LATENT", "INT", "INT")
-    RETURN_NAMES = ("latent", "width", "height")
-    OUTPUT_TOOLTIPS = (
-        "Empty latent, ready for a sampler.",
-        "Final width in pixels - the range the latent actually covers.",
-        "Final height in pixels - the range the latent actually covers.",
-    )
-    FUNCTION = "run"
-
-    def run(self, aspect_ratio, megapixels, batch_size=1, multiple=8, preview=None):
+    @classmethod
+    def execute(cls, aspect_ratio, megapixels, batch_size=1, multiple=8, preview=None):
+        # 与 V1 装饰器等价：英文选项是空操作，但保留 coerce 以防未来追加中文遗留值。
+        aspect_ratio = coerce("QG_EmptyLatentResolution", "aspect_ratio", aspect_ratio)
         width, height = compute_size(aspect_ratio, megapixels, multiple)
-        return (make_latent(width, height, batch_size), width, height)
+        return io.NodeOutput(make_latent(width, height, batch_size), width, height)
 
 
 NODE_CLASS_MAPPINGS = {"QG_EmptyLatentResolution": QG_EmptyLatentResolution}

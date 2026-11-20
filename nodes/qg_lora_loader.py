@@ -30,8 +30,10 @@ from ._qg_lora_helpers import (
     unreadable_lora_rows,
 )
 
+from comfy_api.latest import io
 
-class QGLoraLoader:
+
+class QGLoraLoader(io.ComfyNode):
     CATEGORY = "QG-tools/Loaders"
     DESCRIPTION = (
         "Applies a stack of LoRAs to a model and CLIP from one compact node. "
@@ -52,68 +54,33 @@ class QGLoraLoader:
     ]
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "model": ("MODEL", {"tooltip": "The diffusion model the LoRA stack patches."}),
-                "loras": (
-                    "STRING",
-                    {
-                        "default": "[]",
-                        "multiline": True,
-                        "tooltip": (
-                            "Serialized LoRA stack managed by the node's row "
-                            "editor; edit the rows, not this value."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "clip": ("CLIP", {"tooltip": "Optional CLIP to patch; without it, CLIP strengths are ignored."}),
-                "trigger_separator": (
-                    "STRING",
-                    {
-                        "default": ", ",
-                        "tooltip": (
-                            "Joins the enabled rows' trigger words into the "
-                            "triggers output. Set from the node's gear "
-                            "menu; hidden on the canvas."
-                        ),
-                    },
-                ),
-                "on_missing": (
-                    list(MISSING_MODES),
-                    {
-                        "default": "error",
-                        "tooltip": (
-                            "What happens when an enabled row's file cannot be "
-                            "found. error (the default) fails validation before "
-                            "sampling and names the file, so an unattended or "
-                            "scripted run never renders without a LoRA it asked "
-                            "for; skip warns once in the console and applies the "
-                            "rest of the stack. Set from the node's gear menu "
-                            "(Stop on missing LoRA); hidden on the canvas."
-                        ),
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_LoraLoader",
+            display_name="LoRA Loader",
+            category="QG-tools/Loaders",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Model.Input("model", tooltip="The diffusion model the LoRA stack patches."),
+                io.String.Input("loras", multiline=True, default="[]",
+                    tooltip="Serialized LoRA stack managed by the node's row editor; edit the rows, not this value."),
+                io.Clip.Input("clip", optional=True,
+                    tooltip="Optional CLIP to patch; without it, CLIP strengths are ignored."),
+                io.String.Input("trigger_separator", optional=True, default=", ",
+                    tooltip="Joins the enabled rows' trigger words into the triggers output. Set from the node's gear menu; hidden on the canvas."),
+                io.Combo.Input("on_missing", optional=True, options=list(MISSING_MODES), default="error",
+                    tooltip="What happens when an enabled row's file cannot be found. error (the default) fails validation before sampling and names the file, so an unattended or scripted run never renders without a LoRA it asked for; skip warns once in the console and applies the rest of the stack. Set from the node's gear menu (Stop on missing LoRA); hidden on the canvas."),
+            ],
+            outputs=[
+                io.Model.Output("model", tooltip="The model with every enabled LoRA applied in row order."),
+                io.Clip.Output("clip", tooltip="The CLIP with every enabled LoRA applied in row order."),
+                io.String.Output("triggers", tooltip="Enabled rows' trigger words, deduplicated and joined with trigger_separator (set in the gear menu). A row skipped for a missing file adds none."),
+            ],
+        )
 
-    RETURN_TYPES = ("MODEL", "CLIP", "STRING")
-    # "triggers", not "trigger_words": output links ride slot indices, so the
-    # label is free to be short - and the narrow name is what leaves room for
-    # the control cluster floating in the slot band on the frontend.
-    RETURN_NAMES = ("model", "clip", "triggers")
-    OUTPUT_TOOLTIPS = (
-        "The model with every enabled LoRA applied in row order.",
-        "The CLIP with every enabled LoRA applied in row order.",
-        "Enabled rows' trigger words, deduplicated and joined with "
-        "trigger_separator (set in the gear menu). A row skipped for a "
-        "missing file adds none.",
-    )
-    FUNCTION = "load_loras"
-
-    def load_loras(self, model, loras: str, clip=None, trigger_separator=", ", on_missing="error"):
+    @classmethod
+    def execute(cls, model, loras: str, clip=None, trigger_separator=", ", on_missing="error"):
         rows = parse_lora_stack(loras)
         missing: list[dict] = []
         model, clip = apply_lora_stack(model, clip, rows, on_missing=on_missing, missing=missing)
@@ -123,10 +90,10 @@ class QGLoraLoader:
         # the weights.
         skipped = {id(row) for row in missing}
         worded = [row for row in rows if id(row) not in skipped]
-        return model, clip, collect_trigger_words(worded, str(trigger_separator))
+        return io.NodeOutput(model, clip, collect_trigger_words(worded, str(trigger_separator)))
 
     @classmethod
-    def VALIDATE_INPUTS(cls, loras, on_missing="error"):
+    def validate_inputs(cls, loras, on_missing="error"):
         # Structural validation always. A row whose FILE is gone blocks the
         # queue unless the node was switched to 'skip': apply_lora_stack
         # resolves moved files by basename either way, so only a genuinely

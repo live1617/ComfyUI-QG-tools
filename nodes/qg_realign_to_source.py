@@ -24,7 +24,9 @@ stitcher 接 QG_CropForInpaint（或扩图画板）给的缝合器时：在画�
 
 import torch
 
-from ._qg_combo_legacy import combo_legacy
+from comfy_api.latest import io
+
+from ._qg_combo_legacy import coerce
 from ._qg_execution_helpers import advance_progress, frame_progress, raise_if_interrupted
 from ._qg_realign_helpers import (
     crop_if_shift,
@@ -62,8 +64,9 @@ def _stitcher_canvas(stitcher):
     return canvas, tuple(int(v) for v in bbox)
 
 
-@combo_legacy("QG_RealignToSource")
-class QGRealignToSource:
+# V1 @combo_legacy("QG_RealignToSource")：fit/empty_fill 有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce 两值，与 V1 等价。
+class QGRealignToSource(io.ComfyNode):
     """测出编辑模型加的 zoom / shift，把编辑图变回原图的框架。"""
 
     CATEGORY = "QG-tools/Image"
@@ -80,92 +83,44 @@ class QGRealignToSource:
         "realign", "align to source", "register", "zoom drift", "shift",
         "对齐", "回贴", "对位", "漂移", "编辑对齐", "qg",
     ]
-    OUTPUT_NODE = False
-    FUNCTION = "execute"
-    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
-    RETURN_NAMES = ("image", "empty_mask", "report")
-    OUTPUT_TOOLTIPS = (
-        "The edit, lined up with the original and at its size.",
-        "White where the lined-up edit has nothing (a strip that slid off "
-        "the edge). All black when there is none.",
-        "How far the edit had moved and what was done. Plug it into Display "
-        "Any or a text node to read it.",
-    )
-
     @classmethod
-    def VALIDATE_INPUTS(cls, fit=None, empty_fill=None):
-        # 两个下拉的译名在 nodes/_qg_combo_legacy.py 的 LEGACY 表里。具名报上去，
-        # 让 ComfyUI 跳过「值必须在列表里」的检查 —— 中文值由 coerce 换回。
+    def validate_inputs(cls, fit=None, empty_fill=None):
+        # 两个下拉的译名在 LEGACY 表里；具名报上去跳过列表校验，中文值由 coerce 换回。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "edited": (
-                    "IMAGE",
-                    {"tooltip": "The edited picture."},
-                ),
-                "source": (
-                    "IMAGE",
-                    {
-                        "tooltip": (
-                            "The original picture you edited, at the size the edit "
-                            "model saw it. The result comes out at this size."
-                        ),
-                    },
-                ),
-                "fit": (
-                    list(FIT_MODES),
-                    {
-                        "default": FIT_MODES[0],
-                        "tooltip": (
-                            "zoom + shift fixes the usual zoom-and-slide drift. "
-                            "affine also fixes a slight tilt."
-                        ),
-                    },
-                ),
-                "empty_fill": (
-                    list(EMPTY_FILLS),
-                    {
-                        "default": EMPTY_FILLS[0],
-                        "tooltip": (
-                            "If the edit slid past the edge, a thin strip ends up "
-                            "with nothing in it. edge stretches the nearest "
-                            "pixels into it, source fills it from the original, "
-                            "gray fills it flat gray for inpainting."
-                        ),
-                    },
-                ),
-                "max_zoom": (
-                    "FLOAT",
-                    {
-                        "default": 20.0, "min": 1.0, "max": 50.0, "step": 0.5,
-                        "tooltip": (
-                            "The biggest zoom it will undo, in percent. Anything "
-                            "bigger is treated as a change you meant and left "
-                            "alone."
-                        ),
-                    },
-                ),
-            },
-            "optional": {
-                "stitcher": (
-                    "AUSBOSS_STITCHER",
-                    {
-                        "tooltip": (
-                            "Optional. Plug in the stitcher from Crop For Inpaint "
-                            "or Outpaint Board if you padded the picture before "
-                            "editing. You get your picture back without the "
-                            "padding, with no empty edges."
-                        ),
-                    },
-                ),
-            },
-        }
+    def define_schema(cls):
+        return io.Schema(
+            node_id="QG_RealignToSource",
+            display_name="Realign to Source",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("edited", tooltip="The edited picture."),
+                io.Image.Input("source", tooltip="The original picture you edited, at the size the edit model saw it. The result comes out at this size."),
+                io.Combo.Input("fit", options=list(FIT_MODES), default=FIT_MODES[0],
+                               tooltip="zoom + shift fixes the usual zoom-and-slide drift. affine also fixes a slight tilt."),
+                io.Combo.Input("empty_fill", options=list(EMPTY_FILLS), default=EMPTY_FILLS[0],
+                               tooltip="If the edit slid past the edge, a thin strip ends up with nothing in it. edge stretches the nearest pixels into it, source fills it from the original, gray fills it flat gray for inpainting."),
+                io.Float.Input("max_zoom", default=20.0, min=1.0, max=50.0, step=0.5,
+                               tooltip="The biggest zoom it will undo, in percent. Anything bigger is treated as a change you meant and left alone."),
+                io.Custom("AUSBOSS_STITCHER").Input("stitcher", optional=True,
+                    tooltip="Optional. Plug in the stitcher from Crop For Inpaint or Outpaint Board if you padded the picture before editing. You get your picture back without the padding, with no empty edges."),
+            ],
+            outputs=[
+                io.Image.Output("image", tooltip="The edit, lined up with the original and at its size."),
+                io.Mask.Output("empty_mask", tooltip="White where the lined-up edit has nothing (a strip that slid off the edge). All black when there is none."),
+                io.String.Output("report", tooltip="How far the edit had moved and what was done. Plug it into Display Any or a text node to read it."),
+            ],
+        )
 
-    def execute(self, edited, source, fit="zoom + shift", empty_fill="edge",
+    @classmethod
+    def execute(cls, edited, source, fit="zoom + shift", empty_fill="edge",
                 max_zoom=20.0, stitcher=None):
+        # V1 装饰器 coerce 两个下拉值（中文遗留值 → 英文），V3 显式保留。
+        fit = coerce("QG_RealignToSource", "fit", fit)
+        empty_fill = coerce("QG_RealignToSource", "empty_fill", empty_fill)
         if edited.ndim != 4 or source.ndim != 4:
             raise ValueError("Realign to Source: edited and source must be IMAGE batches.")
         frames = int(edited.shape[0])
@@ -240,7 +195,7 @@ class QGRealignToSource:
         )
         image = torch.stack(images).to(device=edited.device, dtype=edited.dtype)
         mask = torch.stack(masks).to(edited.device)
-        return (image, mask, report)
+        return io.NodeOutput(image, mask, report)
 
 
 NODE_CLASS_MAPPINGS = {"QG_RealignToSource": QGRealignToSource}

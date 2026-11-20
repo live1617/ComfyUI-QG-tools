@@ -58,8 +58,9 @@ from PIL import Image
 from torch.nn.functional import interpolate
 
 import folder_paths
+from comfy_api.latest import io
 
-from ._qg_combo_legacy import combo_legacy
+from ._qg_combo_legacy import coerce
 from ._qg_tensor_helpers import as_image_batch
 
 MAX_IMAGES = 16
@@ -166,8 +167,9 @@ def _make_grid(images, cols, rows, match_size, gap, background):
     return canvas
 
 
-@combo_legacy("QG_ImageGrid")
-class QGImageGrid:
+# V1 @combo_legacy("QG_ImageGrid")：background 有中文遗留值需 coerce。
+# V3 去装饰器，execute 开头 coerce，与 V1 等价。
+class QGImageGrid(io.ComfyNode):
     CATEGORY = "QG-tools/Image"
     DESCRIPTION = (
         "Tiles a batch or a tensor list into a compact grid: 1 image becomes "
@@ -181,67 +183,41 @@ class QGImageGrid:
     ]
 
     @classmethod
-    def VALIDATE_INPUTS(cls, background=None):
-        # 老工作流里存的还是中文选项值（中文原文），按下标校验会直接
-        # 报 Value not in list。具名列出这几个选项 → ComfyUI 跳过列表校验，
-        # 真正的换值在 combo_legacy 里做，数字的 min/max 校验不受影响。
+    def validate_inputs(cls, background=None):
+        # background 中文遗留值在 LEGACY 表；具名跳过列表校验，值由 execute coerce 换回。
         return True
 
     @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "images": (
-                    "IMAGE",
-                    {
-                        "forceInput": True,
-                        "tooltip": "A batch or a list of tensors; only the first 16 are used.",
-                    },
-                ),
-                "match_size": (
-                    "BOOLEAN",
-                    {
-                        "default": True,
-                        "tooltip": "On: every cell takes the first image's size, each picture fitted "
-                                   "inside it without cropping. Off: every picture keeps its own size.",
-                    },
-                ),
-                "drop_black": (
-                    "BOOLEAN",
-                    {
-                        "default": True,
-                        "tooltip": (
-                            "On: drop fully black frames (batch nodes often pad unwired inputs "
-                            "with black). Off: they are tiled like any other frame."
-                        ),
-                    },
-                ),
-                "gap": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 1000,
-                        "step": 1,
-                        "tooltip": "Gap between cells, in pixels.",
-                    },
-                ),
-                "background": (
-                    ["black", "white"],
-                    {"default": "black", "tooltip": "Color behind the gaps and the empty space."},
-                ),
-            },
-        }
+    def define_schema(cls):
+        # is_output_node=True 承担 V1 OUTPUT_NODE；images 是 forceInput 槽。
+        return io.Schema(
+            node_id="QG_ImageGrid",
+            display_name="Image Grid",
+            category="QG-tools/Image",
+            description=cls.DESCRIPTION,
+            search_aliases=cls.SEARCH_ALIASES,
+            inputs=[
+                io.Image.Input("images", extra_dict={"forceInput": True},
+                    tooltip="A batch or a list of tensors; only the first 16 are used."),
+                io.Boolean.Input("match_size", default=True,
+                    tooltip="On: every cell takes the first image's size, each picture fitted inside it without cropping. Off: every picture keeps its own size."),
+                io.Boolean.Input("drop_black", default=True,
+                    tooltip="On: drop fully black frames (batch nodes often pad unwired inputs with black). Off: they are tiled like any other frame."),
+                io.Int.Input("gap", default=0, min=0, max=1000, step=1,
+                    tooltip="Gap between cells, in pixels."),
+                io.Combo.Input("background", options=["black", "white"], default="black",
+                    tooltip="Color behind the gaps and the empty space."),
+            ],
+            outputs=[
+                io.Image.Output("IMAGE", tooltip="The tiled grid image."),
+            ],
+            is_output_node=True,
+        )
 
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("IMAGE",)
-    OUTPUT_TOOLTIPS = (
-        "The tiled grid image.",
-    )
-    FUNCTION = "execute"
-    OUTPUT_NODE = True
-
-    def execute(self, images, match_size=True, drop_black=True, gap=0, background="black"):
+    @classmethod
+    def execute(cls, images, match_size=True, drop_black=True, gap=0, background="black"):
+        # V1 装饰器 coerce background（中文遗留值 → 英文），V3 显式保留。
+        background = coerce("QG_ImageGrid", "background", background)
         if torch.is_tensor(images):
             # 3 维可能是「一张 (H,W,C)」也可能是「一批 (B,H,W) 灰度帧」，
             # 拆法不同 —— 判据只在 `as_image_batch` 里写一次。
@@ -268,7 +244,8 @@ class QGImageGrid:
         cols = min(MAX_COLS, math.ceil(math.sqrt(len(frames))))
         rows = math.ceil(len(frames) / cols)
         grid = _make_grid(frames, cols, rows, match_size, gap, background)
-        return {"ui": {"images": self._preview(grid)}, "result": (grid,)}
+        # V1 {"ui":..., "result":...} → V3 io.NodeOutput(*result, ui=...)。
+        return io.NodeOutput(grid, ui={"images": cls._preview(grid)})
 
     @staticmethod
     def _preview(image):
