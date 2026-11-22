@@ -50,7 +50,7 @@ ComfyUI-QG-tools/
 
 ComfyUI 的节点默认宽度**不在 Python 里**，是前端按控件类型算的（带多行文本框的会被撑到
 400，普通节点 270，只有两个控件的甚至算成 159），`INPUT_TYPES` 里没法声明，grep 也 grep 不到。
-所以全部 65 个节点在一张表里登记，**改尺寸只改这一处**：
+所以全部 76 个节点在一张表里登记，**改尺寸只改这一处**：
 
 ```js
 export const SIZES = {
@@ -2359,7 +2359,7 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.20  |  71 nodes loaded  |  8 categories
+  QG-tools v0.9.21  |  76 nodes loaded  |  8 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

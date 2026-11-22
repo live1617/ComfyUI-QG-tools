@@ -286,6 +286,21 @@ export const NODE_ALIASES = {
     QG_TiledUpscaleStitch: [
         "tiled upscale stitch", "join tiles", "merge tiles", "tiled upscale", "拼接", "拼回", "融合", "qg",
     ],
+    QG_BoolToInt: [
+        "bool to int", "booltoint", "boolean to integer", "true false", "1 0", "布尔到整数", "布尔转整数", "布尔转数字", "qg",
+    ],
+    QG_StringSelect: [
+        "string select", "string selector", "select string", "pick line", "line picker", "字符串选择", "字符串选择器", "选字符串", "取第几行", "qg",
+    ],
+    QG_BatchCount: [
+        "batch count", "batchcount", "count batch", "batch size", "frame count", "批次计数", "批次数量", "批次", "数批次", "qg",
+    ],
+    QG_ForLoopStart: [
+        "for loop start", "forloop", "循环开始", "for循环", "qg",
+    ],
+    QG_ForLoopEnd: [
+        "for loop end", "forloop", "循环结束", "for循环", "qg",
+    ],
 };
 
 export const NODE_ALIAS_COUNT = Object.keys(NODE_ALIASES).length;

@@ -29,18 +29,18 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611201255";
-import { BRAND, notifyQgChange } from "../shared/index.mjs?v=202611201255";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=202611201255";
-import { gearIconSvg } from "../shared/settings_menu.mjs?v=202611201255";
+import { sizeFor } from "../shared/node_width.mjs?v=202611210910";
+import { BRAND, notifyQgChange } from "../shared/index.mjs?v=202611210910";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=202611210910";
+import { gearIconSvg } from "../shared/settings_menu.mjs?v=202611210910";
 import {
     detachDomWidget,
     installModeWatcher,
     onRenderModeSwitch,
     vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=202611201255";
-import { zh, zhPair, wantsChinese } from "../shared/zh.mjs?v=202611201255";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611201255";
+} from "../shared/vue_mode.mjs?v=202611210910";
+import { zh, zhPair, wantsChinese } from "../shared/zh.mjs?v=202611210910";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611210910";
 
 const NODE_TYPE = "QG_ExportImage";
 const CSS_ID = "qgtools-export-css";
@@ -627,33 +627,101 @@ function togglePanel(node) {
 //     穿透状态机对它反而是负担 —— 自己挂，只借用 detachDomWidget 收尾。
 const EXP_DOM_CLASS = "qgtools-export-dom";
 const EXP_WIDGET_NAME = "__qgExportSummary";
-const SLOT_GAP = 8; // 概要文字离槽名留的空
 
-// 概要行抬到第一条输入槽那一行 —— Vue 每多一行就多一份节点高度，而槽右侧
-// 本来是空的。靠负 margin 顶上去：父容器是 flex 列，负 margin 会把它这行的
-// 布局高度一起吃掉，所以节点真会矮一行，而不只是看着上移（实测 103 → 84px）。
-// 🔴 量的都是屏幕像素（外壳带 transform 缩放，90% 很常见），要除回 CSS 像素
-//    才能写进样式；而且 root 的 rect 已经被上一轮的 marginTop 顶上去了，
-//    每次都得先复位再量，否则位移会越叠越多。
+// 🔴 概要行贴节点底部（与经典模式 drawSummary 一致，用户 2026-11-21 要求
+//   「Vue 下也摆成经典那样」）。Vue 的外壳里 widgets 区是一个 flex 列容器，
+//   末尾还有 ComfyUI 自己的标签行（mt-auto）；概要 DOM widget 排在 widgets
+//   里，给它 `margin-top:auto` 就会沉到 widgets 区底部 —— 也就是节点最底下
+//   那一行。不再用负 margin 把它抬到「图像」槽行、也不再 paddingLeft 让位。
 function alignSummaryRow(node) {
     const root = node.__qgExpDom?.root;
     if (!root?.isConnected) return;
-    const shell = root.closest(".lg-node");
-    const slot = shell?.querySelector(".lg-slot--input");
-    if (!shell || !slot) return;
-    root.style.marginTop = "0px";
-    const scale = shell.offsetWidth ? shell.getBoundingClientRect().width / shell.offsetWidth : 1;
-    if (!scale) return;
-    const rr = root.getBoundingClientRect();
-    const sr = slot.getBoundingClientRect();
-    const dy = Math.round((sr.top + (sr.height - rr.height) / 2 - rr.top) / scale);
-    const padLeft = Math.max(0, Math.round((sr.right - rr.left) / scale + SLOT_GAP));
-    // 最多上移 3 行：万一拿到的槽行是别人家的（class 改名、DOM 结构变），
-    // 宁可保持现在这行，也别把概要甩到节点外面去。
-    if (Number.isFinite(dy) && dy < 0 && dy > -3 * SUMMARY_HEIGHT) {
-        root.style.marginTop = dy + "px";
+    // 幂等：每次都写同样的值，Vue 重排冲掉后能自愈。
+    root.style.marginTop = "auto";
+    root.style.paddingLeft = "";
+}
+
+// ---------------------------------------- Vue 标题栏齿轮（图一位置）
+// 用户 2026-11-21 要求：Vue(Nodes 2.0) 下齿轮也像经典那样待在标题栏「?」左侧，
+// 不要挤在概要行右侧。做法与 LoRA 堆 / 帮助徽章一致：往外壳的标题栏 flex 行
+// 塞一个真按钮，插在 `?` 徽章之前；Vue 重排会冲掉 DOM，故定时巡检重挂。
+const EXP_GEAR_CLASS = "qgtools-export-gear";
+const EXP_GEAR_STYLE_ID = "qgtools-export-gear-style";
+const exportGearTracked = new Set();
+let exportGearTimer = null;
+
+function ensureExportGearStyle() {
+    if (document.getElementById(EXP_GEAR_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = EXP_GEAR_STYLE_ID;
+    style.textContent = `
+.${EXP_GEAR_CLASS}{
+  flex:none;width:16px;height:16px;box-sizing:border-box;margin:0 2px 0 1px;
+  position:relative;z-index:2;display:inline-flex;align-items:center;justify-content:center;
+  padding:0;border:0;background:transparent;color:rgba(155,162,170,.8);cursor:pointer;
+  opacity:.7;transition:opacity .12s,color .12s;
+}
+.${EXP_GEAR_CLASS}:hover{opacity:1;color:${BRAND};}
+.${EXP_GEAR_CLASS} svg{width:14px;height:14px;display:block;}`;
+    document.head.append(style);
+}
+
+// 与 help_badge_dom.shellOf 同口径：整串比 id，子图前缀只认唯一后缀。
+function exportShellOf(node) {
+    const id = node?.id;
+    if (id === undefined || id === null) return null;
+    const want = String(id);
+    let suffix = null, hits = 0;
+    for (const el of document.querySelectorAll(".lg-node")) {
+        if (el.dataset?.ghost) continue;
+        const raw = el.dataset?.nodeId;
+        if (!raw) continue;
+        if (raw === want) return el;
+        if (raw.endsWith(":" + want)) { suffix = el; hits += 1; }
     }
-    root.style.paddingLeft = padLeft + "px";
+    return hits === 1 ? suffix : null;
+}
+
+function syncExportGear(node) {
+    const state = node?.__qgExpDom;
+    const gear = state?.gear;
+    if (!gear) return;
+    if (!vueNodesEnabled() || node.flags?.collapsed) {
+        try { gear.remove(); } catch (_) { /* 忽略 */ }
+        return;
+    }
+    if (gear.isConnected) return;
+    ensureExportGearStyle();
+    const shell = exportShellOf(node);
+    const row = shell?.querySelector(".lg-node-header > div");
+    if (!row) return; // Vue 还没渲染，下次巡检再挂
+    // 插在「?」徽章左侧；没有徽章就追加到行尾。
+    const badge = row.querySelector(".qgtools-help-badge");
+    if (badge) row.insertBefore(gear, badge);
+    else row.append(gear);
+}
+
+function sweepExportGear() {
+    for (const node of [...exportGearTracked]) syncExportGear(node);
+    if (!exportGearTracked.size && exportGearTimer) {
+        clearInterval(exportGearTimer); exportGearTimer = null;
+    }
+}
+
+function mountExportGear(node) {
+    if (!node) return;
+    exportGearTracked.add(node);
+    syncExportGear(node);
+    if (!exportGearTimer) exportGearTimer = setInterval(sweepExportGear, 800);
+}
+
+function unmountExportGear(node) {
+    if (!node) return;
+    try { node.__qgExpDom?.gear?.remove(); } catch (_) { /* 忽略 */ }
+    exportGearTracked.delete(node);
+    if (!exportGearTracked.size && exportGearTimer) {
+        clearInterval(exportGearTimer); exportGearTimer = null;
+    }
 }
 
 function refreshExportDom(node) {
@@ -661,9 +729,10 @@ function refreshExportDom(node) {
     if (!state?.textEl) return;
     const text = summaryOf(node);
     if (state.textEl.textContent !== text) state.textEl.textContent = text;
-    // 顺手对一次位置：Vue 重排（改字号、切主题、面板改值）后槽行可能挪了。
-    // 幂等且同步完成，不会看见中间态。
+    // 顺手对一次位置：Vue 重排（改字号、切主题、面板改值）后 flex 布局可能变，
+    // alignSummaryRow 幂等且同步完成，不会看见中间态。
     alignSummaryRow(node);
+    syncExportGear(node);
 }
 
 function mountExportDom(node) {
@@ -678,40 +747,40 @@ function mountExportDom(node) {
     //  冒泡去拖节点，所以空白处按下没有反应是正常的。）
     // flex:none —— 包装 div 是 `flex flex-col *:flex-1`，会把本行拉伸：
     // 节点拉高时 22px 的行高会变成几十像素。
-    // 右 padding 只留 6px：齿轮要贴着节点右边，跟标题栏图标对齐。
-    // margin-right:-11px 抵消上游 WidgetGrid 的 `pr-3`（12px）—— 那是给普通
-    // widget 控件留的右留白，齿轮要贴边就得跨出去（实测靠它从 16px 收到 5px）。
-    // 左 padding 由 alignSummaryRow 按槽名宽度动态写。
-    root.style.cssText = "display:flex;align-items:center;gap:10px;height:22px;flex:none;"
-        + "padding:0 6px 0 15px;margin-right:-11px;pointer-events:none;user-select:none;";
+    // 概要贴底、齿轮已移到标题栏：不再需要让位槽名的左 padding，也不再
+    // 用负 margin-right 跨出去贴齿轮；左右各留 15px，跟经典 drawSummary 一致。
+    root.style.cssText = "display:flex;align-items:center;height:22px;flex:none;"
+        + "padding:0 15px;pointer-events:none;user-select:none;";
 
     const textEl = document.createElement("span");
     textEl.textContent = summaryOf(node);
-    // 居中：左边界已经让开槽名、右边是齿轮，居中点正好落在这段的中间。
+    // 左对齐，与经典模式 drawSummary 的 `fillText(text, 15, …)` 一致。
     // 纯展示（点它不弹面板，只有齿轮开）→ 整段穿透，连 hover 都不做。
     textEl.style.cssText = "flex:1 1 auto;min-width:0;overflow:hidden;"
-        + "text-overflow:ellipsis;white-space:nowrap;text-align:center;"
+        + "text-overflow:ellipsis;white-space:nowrap;text-align:left;"
         + "pointer-events:none;"
         + "font:" + SUMMARY_FONT + ";color:#9ba2aa;line-height:22px;";
 
+    // 齿轮移到标题栏（图一位置）：由 mountExportGear 注入「?」左侧，不再塞进
+    // 概要行。这里仍创建按钮并挂在 __qgExpDom.gear，开面板锚点继续用它。
     const gear = document.createElement("button");
     gear.type = "button";
     gear.title = zh("Export settings");
     gear.innerHTML = gearIconSvg();
-    gear.style.cssText = "flex:none;width:22px;height:22px;display:flex;align-items:center;"
-        + "justify-content:center;border:none;border-radius:5px;background:transparent;"
-        + "color:#9ba2aa;cursor:pointer;pointer-events:auto;padding:0;";
+    gear.className = EXP_GEAR_CLASS;
+    gear.setAttribute("data-qg-export-gear", "1");
     const svg = gear.querySelector("svg");
     if (svg) {
         svg.setAttribute("width", "14");
         svg.setAttribute("height", "14");
     }
-
     // 🔴 pointerdown 停止冒泡：不让这一下变成拖节点 —— 与经典模式
     //    onMouseDown 命中后 return true 吃掉点击的行为对齐。
-    gear.addEventListener("pointerdown", (event) => event.stopPropagation());
-    gear.addEventListener("click", () => togglePanel(node));
-    root.append(textEl, gear);
+    gear.addEventListener("pointerdown", (event) => { event.stopPropagation(); event.preventDefault(); });
+    gear.addEventListener("pointerup", (event) => event.stopPropagation());
+    gear.addEventListener("dblclick", (event) => event.stopPropagation());
+    gear.addEventListener("click", (event) => { event.stopPropagation(); togglePanel(node); });
+    root.append(textEl);
 
     const widget = node.addDOMWidget(EXP_WIDGET_NAME, "qg_export_summary", root, {
         serialize: false,
@@ -742,6 +811,9 @@ function mountExportDom(node) {
     }
 
     node.__qgExpDom = { root, widget, textEl, gear, vueFit: {}, refresh: () => refreshExportDom(node) };
+    // 齿轮注入标题栏「?」左侧（图一位置）。必须在 __qgExpDom 建好后调，
+    // syncExportGear 要从它取 gear 按钮。
+    mountExportGear(node);
     // Nodes 2.0：概要是固定一行（SUMMARY_HEIGHT），压不动；Vue 的空外壳会额外
     // 加槽行与内边距，外壳于是比 size[1] + 30 高一点。让 size 跟上外壳。
     watchVueShell(node, () => node.__qgExpDom?.root,
@@ -750,16 +822,17 @@ function mountExportDom(node) {
     // 执行后预览才出现，真正的协调仍靠 shareBottomRow 被再次调到。
     shareBottomRow(node);
     ensureCss();
-    // Vue 的槽行要等它自己这一轮渲染完才有几何，这里先对一次、稍后再兜一次
-    // （挂载时 shell 往往还没插进 DOM，第一次会直接 return）。
-    requestAnimationFrame(() => alignSummaryRow(node));
-    setTimeout(() => alignSummaryRow(node), 300);
+    // Vue 的外壳要等它自己这一轮渲染完才有标题栏行 / widgets 区，先对一次、
+    // 稍后再兜一次（挂载时 shell 往往还没插进 DOM，第一次会直接 return）。
+    requestAnimationFrame(() => { alignSummaryRow(node); syncExportGear(node); });
+    setTimeout(() => { alignSummaryRow(node); syncExportGear(node); }, 300);
 }
 
 function unmountExportDom(node) {
     const state = node.__qgExpDom;
     if (!state) return;
     unwatchVueShell(node);
+    unmountExportGear(node);
     node.__qgExpDom = null;
     detachDomWidget(node, state.widget, state.root);
 }

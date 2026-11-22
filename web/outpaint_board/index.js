@@ -1,9 +1,9 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { chainCallback, keepDomWidgetWidthAuto, zhPair } from "../shared/index.mjs?v=202611201255";
-import { fillNodeHeight } from "../shared/panel_layout.mjs?v=202611201255";
-import { sizeFor } from "../shared/node_width.mjs?v=202611201255";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611201255";
+import { chainCallback, keepDomWidgetWidthAuto, zhPair } from "../shared/index.mjs?v=202611210910";
+import { fillNodeHeight } from "../shared/panel_layout.mjs?v=202611210910";
+import { sizeFor } from "../shared/node_width.mjs?v=202611210910";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611210910";
 
 /* ============================================================
  * QG_OutpaintBoard —— 前端面板
@@ -44,6 +44,9 @@ const NUM_ROWS = [
 
 const RATIO_OPTIONS = [
   { en: "Free ratio", cn: "自由比例", value: "0" },
+  // 原始比例：锁到图片自身宽高比（iw:ih），扩边时始终保持；value 是标记，
+  // 具体比值在 constrainToRatio 里按当前图片算（不同图片结果不同）。
+  { en: "Source ratio", cn: "原始比例", value: "source" },
   { label: "1:1", value: "1" },
   { label: "2:3", value: "0.6666667" },
   { label: "3:2", value: "1.5" },
@@ -77,7 +80,9 @@ const CSS = `
 .qgtools-obp-root {
   position: relative;
   display: flex; flex-direction: column; gap: 5px;
-  width: 100%; box-sizing: border-box; padding: 8px 10px;
+  /* 顶部留白收紧：槽位区（图像/遮罩那些标签）已经占了一段高度，
+     这里再留 8px 就和按钮行之间空出一条缝，看着像断了一截。 */
+  width: 100%; box-sizing: border-box; padding: 2px 10px;
   font: 12px/1.45 "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   color: var(--input-text, #dcdcdc);
   user-select: none;
@@ -180,7 +185,7 @@ const CSS = `
   height: 22px; flex: 0 0 auto;
 }
 .qgtools-obp-size {
-  flex: 1 1 auto; min-width: 0; font-size: 11px; opacity: .7;
+  flex: 1 1 auto; min-width: 0; font-size: 13px; opacity: .9;
   font-variant-numeric: tabular-nums;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -310,6 +315,10 @@ function hexOf(text) {
 // 只出 16384 —— 「预览即输出」的卖点先在这里破掉。改一处必须改另一处，
 // tools/_check_outpaint_layout.py 会盯着。
 const PAD_LIMIT = 16384;
+// 与后端 CROP_LIMIT 对应：负值（裁源图）的下限，同样只挡手滑。
+const CROP_LIMIT = -3000;
+// 每轴至少保留的源图比例，后端 MIN_SOURCE_RATIO = 0.1。
+const MIN_SOURCE_RATIO = 0.1;
 
 // 后端用的是 Python 的 round()，那是银行家舍入（.5 取偶）：round(2.5) === 2。
 // JS 的 Math.round 是四舍五入（2.5 -> 3）。percent 模式下 250 宽的图填 1%，
@@ -331,6 +340,23 @@ function scalePair(a, b, allow) {
   return [Math.max(0, na), Math.max(0, allow - na)];
 }
 
+// 与后端 _limit_crops 一一对应：每轴负值（裁剪）总量不得超过 size - ceil(size*0.1)，
+// 超了就按比例缩两边，保证至少 10% 源图留下。pads = [l, r, t, b]。
+function limitCrops(iw, ih, pads) {
+  const out = pads.slice();
+  for (const [first, second, size] of [[0, 1, iw], [2, 3, ih]]) {
+    const a = Math.max(0, -out[first]);
+    const b = Math.max(0, -out[second]);
+    const budget = size - Math.ceil(size * MIN_SOURCE_RATIO);
+    if (a + b > budget) {
+      const croppedFirst = Math.floor((budget * a) / (a + b) + 0.5);
+      if (a) out[first] = -croppedFirst;
+      if (b) out[second] = -(budget - croppedFirst);
+    }
+  }
+  return out;
+}
+
 // 把 v 钳在两个边界之间，**不假设 a、b 谁大**。
 // 平移的边界就有大小翻转的情况：图比预览区窄时两个边界是「贴左 / 贴右」，
 // 图比预览区宽时正好反过来（上限反而更小）。用 Math.max(Math.min(v, b), a)
@@ -343,28 +369,39 @@ function clampBetween(v, a, b) {
 
 function computeLayout(node, iw, ih) {
   const unit = valueOf(node, "unit", "pixels") || "pixels";
-  // 与后端 _to_px + 那行 min(PAD_LIMIT, max(0, ...)) 一一对应，三步顺序不能换。
+  // 与后端 _to_px 一一对应：负值保留（=裁源图），钳到 [CROP_LIMIT, PAD_LIMIT]。
   const px = (name, base) => {
     const v = Number(valueOf(node, name, 0)) || 0;
     const raw = unit === "percent" ? (base * v) / 100 : v;
-    return Math.min(PAD_LIMIT, Math.max(0, roundHalfEven(raw)));
+    return Math.min(PAD_LIMIT, Math.max(CROP_LIMIT, roundHalfEven(raw)));
   };
 
-  let l = px("left", iw);
-  let r = px("right", iw);
-  let t = px("top", ih);
-  let b = px("bottom", ih);
+  let [l, r, t, b] = limitCrops(iw, ih, [
+    px("left", iw), px("right", iw), px("top", ih), px("bottom", ih),
+  ]);
+
+  const cropL = Math.max(0, -l), cropR = Math.max(0, -r);
+  const cropT = Math.max(0, -t), cropB = Math.max(0, -b);
+  const keptW = iw - cropL - cropR;
+  const keptH = ih - cropT - cropB;
 
   const maxSide = Number(valueOf(node, "max_output_side", 0)) || 0;
   const divisor = Number(valueOf(node, "divisible_by", 0)) || 0;
 
   if (maxSide > 0) {
-    if (iw > maxSide || ih > maxSide) {
-      // 和后端同一规则：原图本身越界时整体放弃补边，避免预览与实际输出不一致
-      l = r = t = b = 0;
+    if (keptW > maxSide || keptH > maxSide) {
+      // 原图（裁剪后）本身越界：正 padding 全去，负值裁剪保留。
+      l = Math.min(0, l);
+      r = Math.min(0, r);
+      t = Math.min(0, t);
+      b = Math.min(0, b);
     } else {
-      [l, r] = scalePair(l, r, maxSide - iw);
-      [t, b] = scalePair(t, b, maxSide - ih);
+      const [nl, nr] = scalePair(Math.max(0, l), Math.max(0, r), maxSide - keptW);
+      const [nt, nb] = scalePair(Math.max(0, t), Math.max(0, b), maxSide - keptH);
+      l = Math.min(0, l) + nl;
+      r = Math.min(0, r) + nr;
+      t = Math.min(0, t) + nt;
+      b = Math.min(0, b) + nb;
     }
   }
 
@@ -380,7 +417,14 @@ function computeLayout(node, iw, ih) {
     bh = nh;
   }
 
-  return { iw, ih, l, r, t, b, bw, bh };
+  // 负值 = 裁源图：正化后的 pad 决定保留部分放在画板哪里，kept 是裁后尺寸。
+  // 绘制与命中都用这两个，不再直接拿可能为负的 l/t 当偏移。
+  const padL = Math.max(0, l), padT = Math.max(0, t);
+
+  return {
+    iw, ih, l, r, t, b, bw, bh, padL, padT, keptW, keptH,
+    srcX0: cropL, srcY0: cropT,
+  };
 }
 
 /* ---------- 面板 ---------- */
@@ -409,7 +453,13 @@ function buildPanel(node) {
     pointer: null,             // 鼠标在预览里的位置（局部坐标），画准星用
     rows: [],
     raf: 0,
+    ratio: "0",                // 比例真相源（"0" 自由 / "source" 原始 / 数值）
   };
+  // 从存档恢复比例（RATIO_OPTIONS 在模块顶层，此处可用）
+  {
+    const saved = node.properties?.qgObpRatio;
+    if (RATIO_OPTIONS.some((o) => o.value === saved)) state.ratio = saved;
+  }
   node.__obp = state;
 
   const root = el("div", "qgtools-obp-root");
@@ -447,6 +497,7 @@ function buildPanel(node) {
     const nudge = (delta) => {
       const cur = Number(valueOf(node, name, 0)) || 0;
       setValue(node, name, clampValue(node, name, cur + delta));
+      enforceEditRatio();
       schedule();
     };
 
@@ -468,7 +519,10 @@ function buildPanel(node) {
       if (row.querySelector("input")) return;
       const box = el("input", "qgtools-obp-edit");
       box.type = "number";
-      box.min = "0";
+      // 下限取自 widget 自己的 options.min（后端 INPUT_TYPES 的声明），
+      // 负值裁剪启用后四边是 -3000..16384；写死 0 会让原生箭头卡在 0、
+      // 负值标红，明明后端接受裁剪却在输入层被挡。
+      box.min = String(Number(widgetOf(node, name)?.options?.min) || 0);
       box.value = String(Number(valueOf(node, name, 0)) || 0);
       val.replaceWith(box);
       box.focus();
@@ -483,7 +537,10 @@ function buildPanel(node) {
         committed = true;
         // 输入框已经不在文档里（节点被删）就什么都不做，和以前一样
         if (box.isConnected) {
-          if (ok) setValue(node, name, clampValue(node, name, Number(box.value) || 0));
+          if (ok) {
+            setValue(node, name, clampValue(node, name, Number(box.value) || 0));
+            enforceEditRatio();
+          }
           box.replaceWith(val);
         }
         schedule();
@@ -592,9 +649,21 @@ function buildPanel(node) {
   [btnLoad, btnReset, ratioSel, zoomSel].forEach((n) =>
     n.addEventListener("pointerdown", (e) => e.stopPropagation())
   );
+  // 比例真相源：state.ratio 是内存值，node.properties 随工作流存档，
+  // 下拉只是视图。这样任何补边改动都不会把下拉"重置"掉——它永远反映真相源。
+  const getRatio = () => state.ratio || "0";
+  const setRatio = (v) => {
+    state.ratio = String(v ?? "0");
+    node.properties ??= {};
+    node.properties.qgObpRatio = state.ratio;
+    if (ratioSel.value !== state.ratio) ratioSel.value = state.ratio;
+  };
+  state.getRatio = getRatio;
+  state.setRatio = setRatio;
+  ratioSel.value = getRatio();     // 首次渲染同步存档恢复的比例
   ratioSel.addEventListener("change", () => {
-    const r = parseFloat(ratioSel.value) || 0;
-    if (r > 0) applyRatio(r);
+    setRatio(ratioSel.value);
+    if (getRatio() !== "0") applyRatio();
     else schedule();
   });
   btnLoad.addEventListener("click", (e) => {
@@ -868,16 +937,18 @@ const VIEW_MARGIN = 30;
     // 改成画板居中后，四条边永远在可视区内。
     const panX = state.zoomPct > 0 && !drag ? state.pan.x : 0;
     const panY = state.zoomPct > 0 && !drag ? state.pan.y : 0;
-    const x = drag ? drag.anchor.cx - geo.l * scale : (cw - geo.bw * scale) / 2 + panX;
-    const y = drag ? drag.anchor.cy - geo.t * scale : (ch - geo.bh * scale) / 2 + panY;
+    // 定位基准用正化后的 padL/padT：负值裁剪时源图被切掉，画板左/上边缘
+    // 就是保留部分的边缘（pad=0），不能拿负的 l/t 把内容框推到画板外面。
+    const x = drag ? drag.anchor.cx - geo.padL * scale : (cw - geo.bw * scale) / 2 + panX;
+    const y = drag ? drag.anchor.cy - geo.padT * scale : (ch - geo.bh * scale) / 2 + panY;
 
     const bw = geo.bw * scale;
     const bh = geo.bh * scale;
     const cbox = {
-      x0: x + geo.l * scale,
-      y0: y + geo.t * scale,
-      x1: x + (geo.l + geo.iw) * scale,
-      y1: y + (geo.t + geo.ih) * scale,
+      x0: x + geo.padL * scale,
+      y0: y + geo.padT * scale,
+      x1: x + (geo.padL + geo.keptW) * scale,
+      y1: y + (geo.padT + geo.keptH) * scale,
     };
 
     ctx.fillStyle = hexOf(valueOf(node, "pad_color", "#808080"));
@@ -885,7 +956,18 @@ const VIEW_MARGIN = 30;
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(img, cbox.x0, cbox.y0, geo.iw * scale, geo.ih * scale);
+    // 负值裁剪时只画保留的源图区域（source rect = srcX0/srcY0/keptW/keptH），
+    // 否则会把已经裁掉的边又画回来，预览与后端输出对不上。
+    // 🔴 source rect 必须用「缩略图像素」坐标，不是原图坐标：state.img 是
+    // makeThumb 缩过的小图（如 2560x3413 -> 768x1024），直接喂原图 keptW
+    // 会溢出 3 倍多，只画出左上角一块、其余留灰。geo 里的 iw/kept/src 全是
+    // 原图口径，乘上 thumb 比例换到缩略图口径再 drawImage。
+    const thumbKx = (img.naturalWidth || img.width || geo.iw) / geo.iw;
+    const thumbKy = (img.naturalHeight || img.height || geo.ih) / geo.ih;
+    ctx.drawImage(img,
+      geo.srcX0 * thumbKx, geo.srcY0 * thumbKy,
+      geo.keptW * thumbKx, geo.keptH * thumbKy,
+      cbox.x0, cbox.y0, geo.keptW * scale, geo.keptH * scale);
 
     const hot = drag ? drag.handle : "";
 
@@ -912,6 +994,10 @@ const VIEW_MARGIN = 30;
       box: { x0: x, y0: y, x1: x + bw, y1: y + bh },
     };
     let plan = (!drag && state.hover) ? planAt(cur, state.hover.x, state.hover.y) : null;
+    // 🔴 虚线预览必须画「约束后」的框（对齐孤海 drawCandidateBoundary）：
+    // 选了比例后，鼠标悬停/拖动的虚线直接就是按比例扩的结果，落笔不再跳变。
+    // 若不在这里约束，就会出现"虚线自由扩、松手才按比例"的不一致。
+    if (plan && getRatio() !== "0") plan = constrainToRatio(plan, cur, []);
     // 悬停 + Shift：对侧也画出虚线（孤海的交互）。鼠标在边框上时用 handle 推对侧，
     // 在条带/外侧时按"plan 改了哪侧"推对侧；补边为 0 导致 planAt 无结果时也用 handle 兜底。
     if (!drag && state.shiftHeld) {
@@ -993,13 +1079,8 @@ const VIEW_MARGIN = 30;
     status.textContent = footprintText();
     if (state.fileName) status.title = state.fileName + " · " + state.pctLabel;
 
-    // 手改了补边后比例就不再成立，下拉回到自由，别骗人
-    if (ratioSel.value !== "0") {
-      const target = parseFloat(ratioSel.value) || 0;
-      if (target > 0 && Math.abs(geo.bw / geo.bh / target - 1) > 0.02) {
-        ratioSel.value = "0";
-      }
-    }
+    // 下拉由比例真相源驱动，不在这里改。选了比例后所有补边改动都过
+    // constrainToRatio 约束，画布始终符合比例，下拉自然不用回退。
   }
 
   /* ---------- 取上游图像 ---------- */
@@ -1152,31 +1233,52 @@ const VIEW_MARGIN = 30;
   }
 
   function resetParams() {
-    ["left", "right", "top", "bottom", "max_output_side", "divisible_by"].forEach((n) =>
-      setValue(node, n, 0)
-    );
-    setValue(node, "unit", "pixels");
+    // 🔴 复位只清四边补边：整除数、最大输出边长、单位、补边颜色都是"输出约束/偏好"，
+    // 不是"这次扩了多少"，点复位不该把它们打回默认（用户设了整除数 8，复位后还在）。
+    ["left", "right", "top", "bottom"].forEach((n) => setValue(node, n, 0));
     state.hover = null;
     state.hoverHandle = null;
     setZoom(0);      // 复位也把视野恢复到"适应"
-    schedule();
+    // 🔴 复位保留比例：清掉手动外扩后，按当前选中的比例重新扩到"干净起点"。
+    // 否则下拉还显示 9:16、画布却退回原图尺寸（下拉与画布不一致，外扩像是没了）。
+    // 清零四边后 state.geo 已过期，applyRatio 会重算并重排四边，必须让它先刷新。
+    if (getRatio() !== "0" && state.imgW && state.imgH) {
+      state.geo = computeLayout(node, state.imgW, state.imgH);
+      applyRatio();
+    } else {
+      schedule();
+    }
   }
 
   // 所有写回都经过这里（拖边框、点击吸附、移动图像、按比例重排），所以上限钳
   // 在这一点上就够。拖动的屏幕上限是 `(内容框边 - 3) / 缩放`，缩到 5% 时能算出
   // 两万多的补边，而 widget 的 max 是 PAD_LIMIT —— 不钳的话工作流里存 20480、
   // 后端只补 16384，和数字框那条是同一个毛病。
-  function toUnit(v, base) {
+  function toUnit(v, base, allowNeg) {
     const unit = valueOf(node, "unit", "pixels") || "pixels";
-    const px = Math.max(0, Math.round(v));
+    // allowNeg=true 只给"移动图片移出画板"用：负值 = 裁掉该侧源图，后端已支持。
+    // 其余扩边路径（比例/点击/拖边框）仍钳到 >=0，不能出负值。
+    const px = (allowNeg ? Math.round(v) : Math.max(0, Math.round(v)));
     const out = unit === "percent" ? Math.round((px / base) * 100) : px;
-    return Math.min(PAD_LIMIT, out);
+    const lo = allowNeg ? -3000 : 0;   // CROP_LIMIT，与后端 schema min 一致
+    return Math.min(PAD_LIMIT, Math.max(lo, out));
+  }
+
+  // 把下拉选中的比例换成数值宽高比（宽/高）。"source" = 图片自身 iw/ih。
+  function ratioValue(g) {
+    const sel = getRatio();
+    if (sel === "0" || !g) return 0;
+    if (sel === "source") return g.iw / g.ih;
+    const r = parseFloat(sel);
+    return r > 0 ? r : 0;
   }
 
   // 按目标宽高比重排四边：保持当前画板面积，向外补到比例成立。
-  // 只扩不裁，所以原图一个像素都不会少。
-  function applyRatio(ratio) {
+  // 只扩不裁，所以原图一个像素都不会少。选比例的那一刻用一次；
+  // 之后每次补边改动由 constrainToRatio 接管，下拉不再回退。
+  function applyRatio() {
     const g = state.geo;
+    const ratio = ratioValue(g);
     if (!g || ratio <= 0) return;
     const iw = g.iw;
     const ih = g.ih;
@@ -1296,6 +1398,77 @@ const VIEW_MARGIN = 30;
     return symmetricPlan(plan, null, g);
   }
 
+  // 比例模式的统一约束：任何一次补边改动都过这里，把四边规整到目标比例，
+  // 于是画布始终符合下拉选的比例，下拉也就不需要（更不应该）被重置。
+  // 参考孤海 goohai_outpaint_visual.js 的 factor 思路，按 QG 的 l/r/t/b 口径自写。
+  // values: {l,r,t,b}（像素），g: 当前布局，edges: 本次在动的边名数组（可空）。
+  function constrainToRatio(values, g, edges) {
+    const ratio = ratioValue(g);
+    if (ratio <= 0) return values;               // 自由比例：原样返回
+    const iw = g.iw, ih = g.ih;
+    const out = { ...values };
+    let edgeList = edges || [];
+    // 没显式给出在动的边时，从 values 与当前布局的差异推断（点击抬起走这条）。
+    if (!edgeList.length) {
+      // g.l/r/t/b 与 values.l/r/t/b 同为像素口径，直接比。
+      for (const key of ["l", "r", "t", "b"]) {
+        if (Math.abs(values[key] - (g[key] ?? 0)) > 0.5) edgeList.push(key);
+      }
+    }
+    const horizontal = edgeList.some((k) => k === "l" || k === "r");
+    const vertical = edgeList.some((k) => k === "t" || k === "b");
+
+    // 当前扩出的画布（比例模式下不考虑负值裁剪，pad 恒 >= 0）。
+    const W = Math.max(iw, iw + values.l + values.r);
+    const H = Math.max(ih, ih + values.t + values.b);
+    // 由在动的轴定尺寸，另一轴按比例跟随；都没动/都在动时取能包住两者的因子。
+    const wf = W / ratio, hf = H;
+    const factor = horizontal && !vertical ? wf
+      : vertical && !horizontal ? hf
+      : Math.max(wf, hf);
+
+    const isSource = getRatio() === "source";
+    // 固定比例要整数像素（9:16 等），原始比例允许非整数（精确贴合图片宽高比）。
+    const totalW = Math.max(iw, isSource ? factor * ratio : Math.round(factor * ratio)) - iw;
+    const totalH = Math.max(ih, isSource ? factor : Math.round(factor)) - ih;
+    const tw = totalW, th = totalH;
+    // 单边在动：对侧保持不动，差额全给动的边；两边都在动或都没动：对称分配。
+    const lOnly = edgeList.includes("l") && !edgeList.includes("r");
+    const rOnly = edgeList.includes("r") && !edgeList.includes("l");
+    const tOnly = edgeList.includes("t") && !edgeList.includes("b");
+    const bOnly = edgeList.includes("b") && !edgeList.includes("t");
+    const split = (total, curA, curB, onlyA, onlyB) => {
+      if (onlyA) return [Math.max(0, total - Math.max(0, curB)), Math.max(0, curB)];
+      if (onlyB) return [Math.max(0, curA), Math.max(0, total - Math.max(0, curA))];
+      const a = Math.floor(total / 2);
+      return [Math.max(0, a), Math.max(0, total - a)];
+    };
+    [out.l, out.r] = split(tw, values.l, values.r, lOnly, rOnly);
+    [out.t, out.b] = split(th, values.t, values.b, tOnly, bOnly);
+    return out;
+  }
+
+  // 数字框/加减按钮改了某条边后调它：用最新布局当 g，把四边规整到比例。
+  // 函数声明（非 const）以便被前面定义的 commit/nudge 调用（提升）。
+  function enforceEditRatio() {
+    if (getRatio() === "0" || !state.imgW || !state.imgH) return;
+    const g = computeLayout(node, state.imgW, state.imgH);
+    const unit = valueOf(node, "unit", "pixels") || "pixels";
+    const toPx = (name, base) => {
+      const v = Number(valueOf(node, name, 0)) || 0;
+      return unit === "percent" ? Math.round(v * base / 100) : Math.round(v);
+    };
+    const px = {
+      l: toPx("left", g.iw), r: toPx("right", g.iw),
+      t: toPx("top", g.ih), b: toPx("bottom", g.ih),
+    };
+    const fixed = constrainToRatio(px, g, []);
+    setValue(node, "left", toUnit(fixed.l, g.iw));
+    setValue(node, "right", toUnit(fixed.r, g.iw));
+    setValue(node, "top", toUnit(fixed.t, g.ih));
+    setValue(node, "bottom", toUnit(fixed.b, g.ih));
+  }
+
   function applyPlan(plan) {
     const g = state.geo;
     if (!g || !plan) return;
@@ -1305,6 +1478,11 @@ const VIEW_MARGIN = 30;
     // 扩展时比例必须钉死：画板只往外长，画面整体不跟着缩放。
     // 想缩小视野只有一条路——滚轮（或下拉里的百分比）。
     freezeZoom();
+
+    // 点击/拖动外扩过统一约束，保持下拉选的比例（含原始比例）。
+    // 不传边名：constrainToRatio 会从 plan 与当前布局的差异自己推断在动哪条边，
+    // 口径统一（handle 是 "right" 全称，约束函数内部用 "r" 缩写，避免混用）。
+    if (getRatio() !== "0") plan = constrainToRatio(plan, g, []);
 
     const cx0 = g.cbox.x0;
     const cy0 = g.cbox.y0;
@@ -1323,6 +1501,12 @@ const VIEW_MARGIN = 30;
       x: cx0 - ng.l * s - (cw - ng.bw * s) / 2,
       y: cy0 - ng.t * s - (ch - ng.bh * s) / 2,
     };
+    // 🔴 落笔即收起虚线预览（对齐孤海：pointerup 后不再画 candidate boundary）。
+    // 不清 hover 的话，鼠标停在原地不动，draw() 会立刻用这个旧坐标对着**新画布**
+    // 又算一条虚线；此时鼠标正落在新边界上、算出的扩量≈0，虚线缩成和实线重合，
+    // 看起来就是"点完虚线复位了"。清掉后虚线消失，只有鼠标再次移动才重新预览。
+    state.hover = null;
+    state.hoverHandle = null;
     schedule();
   }
 
@@ -1503,6 +1687,26 @@ const VIEW_MARGIN = 30;
       equalize("top", "bottom", capT, capB);
     }
 
+    // 比例模式：把拖出的四边过统一约束，保持下拉选的比例（含原始比例）。
+    if (getRatio() !== "0") {
+      const unit = valueOf(node, "unit", "pixels") || "pixels";
+      const toPx = (v, base) => (unit === "percent" ? Math.round((Number(v) || 0) * base / 100) : Math.round(Number(v) || 0));
+      const px = {
+        l: toPx(next.left, g.iw), r: toPx(next.right, g.iw),
+        t: toPx(next.top, g.ih), b: toPx(next.bottom, g.ih),
+      };
+      const hEdges = [];
+      if (h.indexOf("left") >= 0) hEdges.push("l");
+      if (h.indexOf("right") >= 0) hEdges.push("r");
+      if (h.indexOf("top") >= 0) hEdges.push("t");
+      if (h.indexOf("bottom") >= 0) hEdges.push("b");
+      const fixed = constrainToRatio(px, g, hEdges);
+      next.left = toUnit(fixed.l, g.iw);
+      next.right = toUnit(fixed.r, g.iw);
+      next.top = toUnit(fixed.t, g.ih);
+      next.bottom = toUnit(fixed.b, g.ih);
+    }
+
     setValue(node, "left", next.left);
     setValue(node, "right", next.right);
     setValue(node, "top", next.top);
@@ -1528,6 +1732,14 @@ const VIEW_MARGIN = 30;
           startT: g0.t,
           bw: g0.bw,
           bh: g0.bh,
+          // 增量式跟随：每帧只把「本帧鼠标位移」加到上一帧的实际落点上，
+          // 不基于固定的 startL + 总位移。否则吸附把图片钉住后，鼠标还在走，
+          // 累积位移和显示位置越差越大，脱离吸附那一刻会「晃一下」窜回去。
+          lastPx: state.pending.down.x,
+          lastPy: state.pending.down.y,
+          lastL: g0.l,
+          lastT: g0.t,
+          snaps: {},
         };
         state.pending = null;
         canvas.style.cursor = "move";
@@ -1536,16 +1748,60 @@ const VIEW_MARGIN = 30;
 
       if (state.moving) {
         const s0 = g0.scale || 1;
-        const dx = (p.x - state.moving.down.x) / s0;
-        const dy = (p.y - state.moving.down.y) / s0;
-        const maxL = Math.max(0, state.moving.bw - g0.iw);
-        const maxT = Math.max(0, state.moving.bh - g0.ih);
-        const l = Math.max(0, Math.min(maxL, Math.round(state.moving.startL + dx)));
-        const t = Math.max(0, Math.min(maxT, Math.round(state.moving.startT + dy)));
-        setValue(node, "left", toUnit(l, g0.iw));
-        setValue(node, "right", toUnit(state.moving.bw - g0.iw - l, g0.iw));
-        setValue(node, "top", toUnit(t, g0.ih));
-        setValue(node, "bottom", toUnit(state.moving.bh - g0.ih - t, g0.ih));
+        // 🔴 增量式：只算本帧鼠标位移，加到上一帧的「实际落点」上。
+        // 吸附钉住期间鼠标继续走，下一帧位移会从钉住点重新累积，脱离时不跳。
+        const dx = (p.x - state.moving.lastPx) / s0;
+        const dy = (p.y - state.moving.lastPy) / s0;
+        // 本帧鼠标位置先记下：哪怕下面被钳制/吸附，位移也被这一帧消费掉，
+        // 不会在后续帧里累积成一次大跳。
+        state.moving.lastPx = p.x;
+        state.moving.lastPy = p.y;
+        // 🔴 图片可以移出画板（对齐孤海）：left/top 允许变负＝裁掉该侧源图。
+        // 保持每轴补边总量恒定（画布尺寸不变），图片相对画布挪；负值侧被裁、
+        // 对侧补边相应变大。每轴裁剪量受后端同款 10% 保留下限约束：
+        // 最多裁 size - ceil(size*0.1)，即 left >= -budget、right 侧同理。
+        const totalW = Math.max(0, state.moving.bw - g0.iw);
+        const totalH = Math.max(0, state.moving.bh - g0.ih);
+        const budgetW = g0.iw - Math.ceil(g0.iw * MIN_SOURCE_RATIO);
+        const budgetH = g0.ih - Math.ceil(g0.ih * MIN_SOURCE_RATIO);
+        const loW = -budgetW, hiW = totalW + budgetW;
+        const loH = -budgetH, hiH = totalH + budgetH;
+        let l = Math.min(hiW, Math.max(loW, Math.round(state.moving.lastL + dx)));
+        let t = Math.min(hiH, Math.max(loH, Math.round(state.moving.lastT + dy)));
+        // 🔴 移到画板边缘要吸附（对齐孤海 moveOrigin.snap）：left/top 靠近 0 或 total
+        // （图片贴住画板某一边）时吸进去；吸住后在 14px 内保持，避免边缘抖动来回跳。
+        // 关键①：增量式落点（lastL/lastT）让吸附只钉住当前帧，不累积「欠下的位移」——
+        //   脱离时从钉住点继续，不会把钉住期间鼠标走过的距离一次性还回来（那叫晃一下）。
+        // 关键②：脱离判定看「鼠标离吸附那一刻走了多远」，而不是看 value —— value 每帧
+        //   都从落点重新起算、永远贴近吸附点，用它判会永远脱不出来、图片钉死。
+        const snapMove = (axis, value, total, mouseAt) => {
+          const snaps = state.moving.snaps;
+          const held = snaps[axis];
+          const heldPx = snaps[axis + "Px"];
+          if (held !== undefined && heldPx !== undefined) {
+            if (Math.abs(mouseAt - heldPx) <= 14) return held; // 吸附滞回区内，保持
+            snaps[axis] = undefined;  // 鼠标走远了，脱离吸附
+            snaps[axis + "Px"] = undefined;
+            return value;
+          }
+          const edge = [0, total].sort((a, b) => Math.abs(value - a) - Math.abs(value - b))
+            .find((e) => Math.abs(value - e) * s0 <= 6);
+          if (edge !== undefined) {
+            snaps[axis] = edge;
+            snaps[axis + "Px"] = mouseAt;
+            return edge;
+          }
+          return value;
+        };
+        l = snapMove("x", l, totalW, p.x);
+        t = snapMove("y", t, totalH, p.y);
+        // 实际落点成为下一帧基准 —— 钳制与吸附的结果都被记住。
+        state.moving.lastL = l;
+        state.moving.lastT = t;
+        setValue(node, "left", toUnit(l, g0.iw, true));
+        setValue(node, "right", toUnit(totalW - l, g0.iw, true));
+        setValue(node, "top", toUnit(t, g0.ih, true));
+        setValue(node, "bottom", toUnit(totalH - t, g0.ih, true));
         schedule();
         return;
       }
@@ -1940,6 +2196,14 @@ app.registerExtension({
       const st = this.__obp;
       if (st) {
         st.fileName = "";
+        // 恢复比例真相源：从 node.properties 读回 state + 下拉，
+        // 否则重载后下拉停在"自由"但补边仍是上次的比例，看着不一致。
+        const saved = this.properties?.qgObpRatio;
+        const valid = RATIO_OPTIONS.some((o) => o.value === saved);
+        const ratio = valid ? saved : "0";
+        if (st.setRatio) st.setRatio(ratio);
+        const rSel = st.panel?.element?.querySelector?.(".qgtools-obp-sel");
+        if (rSel) rSel.value = ratio;
         setTimeout(() => st.refresh?.(), 60);
         setTimeout(() => {
           const idx = (this.inputs || []).findIndex((i) => i.name === "image");

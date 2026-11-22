@@ -1,21 +1,23 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611201255";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=202611201255";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=202611201255";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=202611201255";
+import { sizeFor } from "../shared/node_width.mjs?v=202611210910";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=202611210910";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=202611210910";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=202611210910";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=202611201255";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=202611201255";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=202611201255";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=202611201255";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=202611201255";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611201255";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=202611201255";
+} from "../shared/settings_menu.mjs?v=202611210910";
+// 设置表真相源已抽到 shared：LoRA 加载器与 LoRA 堆开同一张面板、存同一份偏好。
+import { LORA_SETTINGS_SCOPE, LORA_SETTINGS_SCHEMA } from "../shared/lora_settings.mjs?v=202611210910";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=202611210910";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=202611210910";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=202611210910";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=202611210910";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611210910";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=202611210910";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -73,11 +75,11 @@ import {
   loraStackKeyAction,
   readLoraInfo,
   triggerGroups,
-} from "../shared/lora_stack.mjs?v=202611201255";
-import { civitaiButtonLabel, civitaiFailureText, pictureErrorText } from "../shared/civitai_lookup.mjs?v=202611201255";
+} from "../shared/lora_stack.mjs?v=202611210910";
+import { civitaiButtonLabel, civitaiFailureText, pictureErrorText } from "../shared/civitai_lookup.mjs?v=202611210910";
 // 查询编排（哈希 → 问 Civitai → 存侧车 → 存预览图）与 QG LoRA堆共用一份。
 // UI 差异全在回调里：这里弹 toast + pictureSaved()。
-import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611201255";
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611210910";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -105,98 +107,7 @@ const BAND_RECLAIM = 52;
 const NOTE_HEIGHT = 16;
 const SWITCHES_CLASS = "QG_WorkflowSwitches";
 
-// Per-node-type preferences behind the gear button; persisted in
-// localStorage so they follow the user across workflows.
-const SETTINGS_SCOPE = "lora_loader";
-const SETTINGS_SCHEMA = [
-  {
-    key: "default_strength", label: "Default strength", type: "number",
-    default: 1, min: -10, max: 10, scrub: true, step: 0.05, fineStep: 0.01, decimals: 2,
-    hint: "Strength a newly added LoRA starts at.",
-  },
-  {
-    key: "step", label: "Strength step", type: "number",
-    default: 0.05, min: 0.01, max: 1, scrub: true, step: 0.01, fineStep: 0.01, decimals: 2,
-    hint: "Scrub and arrow-key step. Shift always steps by 0.01.",
-  },
-  {
-    // persist:false - this mirrors THE OPEN NODE's linked state, so it must
-    // never become the stored default: new nodes always start unified. (An
-    // absorb can flip a node whose imported rows patch model and CLIP
-    // differently; that flip stays on that node.)
-    key: "separate_strengths", label: "Separate model / CLIP strength",
-    type: "toggle", default: false, persist: false,
-    hint: "Two strength boxes per row on this node. New nodes always start "
-      + "unified.",
-  },
-  {
-    key: "strength_bars", label: "Strength bars", type: "toggle",
-    default: true,
-    hint: "Center-zero bar behind each name: teal grows right for positive "
-      + "strength, red grows left for negative, scaled so the stack's "
-      + "largest magnitude spans the field (never less than 1.0).",
-  },
-  {
-    key: "separator", label: "Trigger word separator", type: "text",
-    default: ", ", placeholder: '", "',
-    hint: "Joins the triggers output. This node now, new nodes later.",
-  },
-  {
-    key: "strict_missing", label: "Stop on missing LoRA", type: "toggle",
-    default: true,
-    hint: "On (the default): fail the run before sampling when an enabled row's "
-      + "file cannot be found, with an error naming it. Off: skip that row with "
-      + "a console warning and render without it. This node now, new nodes later.",
-  },
-  {
-    key: "hide_extension", label: "Hide file extension", type: "toggle",
-    default: true,
-    hint: "Show LoRA names without .safetensors.",
-  },
-  {
-    key: "hide_folders", label: "Hide folder names", type: "toggle",
-    default: true,
-    hint: "Rows show just the file name; the full path stays in the "
-      + "tooltip and the picker keeps its folders.",
-  },
-  {
-    key: "civitai_lookup", label: "Civitai lookup button", type: "toggle",
-    default: true,
-    hint: "Offer a Fetch Civitai info button in the info card. Clicking it "
-      + "asks civitai.com about that one file, from this browser, and saves "
-      + "the answer next to the LoRA. Nothing is sent until you click.",
-  },
-  {
-    key: "civitai_picture", label: "Civitai picture", type: "choice",
-    options: ["off", "PG-13", "any"], default: "PG-13",
-    hint: "Fetch Civitai info also saves the LoRA's first picture next to the "
-      + "file, so hovering the LoRA shows it. PG-13 skips pictures Civitai "
-      + "rates R or above. A picture you already have is never replaced.",
-  },
-  {
-    key: "name_cut", label: "Long names", type: "choice",
-    options: ["end", "middle"], default: "end",
-    hint: "How a row shortens a name that does not fit. middle keeps the "
-      + "end in view, where checkpoint numbers like _000004000 usually are.",
-  },
-  {
-    key: "name_scrub", label: "Scrub strength on the name", type: "toggle",
-    default: true,
-    hint: "Drag left/right on a row's name to change its model strength - "
-      + "the bar rides along. A plain click still opens the picker.",
-  },
-  {
-    key: "thumbnails", label: "Preview thumbnails", type: "toggle",
-    default: true,
-    hint: "Poster image beside the picker while hovering a LoRA.",
-  },
-];
-// Narrowest node at which a row still works: toggle + picker + strength +
-// info + gaps + padding. Enforced through the DOM widget's layout minimum,
-// so the node cannot be resized to where the fixed-width row controls would
-// hang past the right edge. Separate model / CLIP strengths put a second
-// strength box and its gap on every row, so that mode's floor is wider by
-// as much, and the name keeps the same room.
+// PANEL_MIN_WIDTH 等布局常量仍留在加载器本地；齿轮设置表见 shared/lora_settings.mjs。
 const PANEL_MIN_WIDTH = sizeFor("QG_LoraLoader").minW;
 const SEPARATE_EXTRA_WIDTH = 72;
 // The popups' font, shared with the picker's width measurement, and the
@@ -2483,9 +2394,9 @@ async function absorbChain(state) {
 
 function openSettings(state, anchor) {
   // The import action rides the gear menu but is per-node and one-shot, so
-  // the schema is composed per call; persistence still uses SETTINGS_SCHEMA.
+  // the schema is composed per call; persistence still uses LORA_SETTINGS_SCHEMA.
   const menuSchema = [
-    ...SETTINGS_SCHEMA,
+    ...LORA_SETTINGS_SCHEMA,
     {
       key: "_import_chain",
       // 菜单挂在 <body> 上，不走节点自己的 DOM 翻译；这三句都是字典里的整条，
@@ -2524,7 +2435,7 @@ function openSettings(state, anchor) {
     });
   }
   openSettingsMenu({
-    scope: SETTINGS_SCOPE,
+    scope: LORA_SETTINGS_SCOPE,
     schema: menuSchema,
     anchor: anchor.getBoundingClientRect(),
     title: zh("LoRA Loader settings"),
@@ -3169,7 +3080,7 @@ function unmountCard(state, { resize = true } = {}) {
 // { inputName, loader }). Returns its state.
 function mountCard(node, { box = null, separatorWidget = null, onMissingWidget = null } = {}) {
   installStyles();
-  const settings = loadSettings(SETTINGS_SCOPE, SETTINGS_SCHEMA);
+  const settings = loadSettings(LORA_SETTINGS_SCOPE, LORA_SETTINGS_SCHEMA);
   // Unified strengths are the hard default: separate_strengths is per-node
   // (persist:false in the schema), so any stored value is legacy noise from
   // before it stopped persisting - never a reason to split a fresh node.
@@ -3310,7 +3221,7 @@ function installLoraNode(node) {
   if (node.properties && node.properties.qgLoraLinked === undefined) {
     node.properties.qgLoraLinked = true;
   }
-  const settings = loadSettings(SETTINGS_SCOPE, SETTINGS_SCHEMA);
+  const settings = loadSettings(LORA_SETTINGS_SCOPE, LORA_SETTINGS_SCHEMA);
   // The separator rides a hidden standard widget so save/load and the API
   // format see it; a workflow restore overwrites this seed right after.
   const separatorWidget = node.widgets?.find((item) => item.name === "trigger_separator");

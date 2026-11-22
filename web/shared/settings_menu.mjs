@@ -8,10 +8,10 @@
 //                        title: "LoRA Loader settings",
 //                        onChange: (values, key) => rerender(values) });
 
-import { makeScrubInput } from "./scrub_input.mjs?v=202611201255";
-import { BRAND } from "./index.mjs?v=202611201255";
-import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=202611201255";
-import { zh } from "./zh.mjs?v=202611201255";
+import { makeScrubInput } from "./scrub_input.mjs?v=202611210910";
+import { BRAND } from "./index.mjs?v=202611210910";
+import { isAppShortcut, keepKeyInField } from "./canvas_passthrough.mjs?v=202611210910";
+import { zh } from "./zh.mjs?v=202611210910";
 import {
   isOverrideActive,
   isOverrideEntry,
@@ -19,7 +19,7 @@ import {
   overrideEnableValue,
   overrideIsCustom,
   schemaDefaults,
-} from "./node_settings.mjs?v=202611201255";
+} from "./node_settings.mjs?v=202611210910";
 
 const CSS_ID = "qgtools-settings-css";
 
@@ -111,6 +111,10 @@ function ensureSettingsCss() {
   .qgtools-set-row { display: flex; align-items: center; gap: 10px; min-height: 32px;
     padding: 2px 0; }
   .qgtools-set-label { flex: 1 1 auto; min-width: 0; }
+  /* Action rows: the text itself is clickable, not only the button at the right. */
+  .qgtools-set-label.action-label { cursor: pointer; border-radius: 5px; padding: 2px 5px;
+    margin: -2px -5px; transition: background .12s, color .12s; }
+  .qgtools-set-label.action-label:hover { background: #2c3238; color: ${BRAND}; }
   .qgtools-set-label .hint { display: block; color: #9ba2aa; font-size: 10.5px;
     line-height: 1.35; margin-top: 1px; }
   .qgtools-set-toggle { width: 30px; height: 16px; border-radius: 8px; border: none;
@@ -417,7 +421,20 @@ export function openSettingsMenu({ scope, schema, anchor, title, onChange, initi
       if (!isOverrideEntry(entry)) {
         const label = el("div", "qgtools-set-label", entry.label);
         if (entry.hint) label.append(el("span", "hint", entry.hint));
-        row.append(label, buildControl(entry, values, commit));
+        // Action rows: clicking the whole text line runs the command, so a
+        // right-side button is optional. Schema sets hideButton to drop it
+        // (e.g. the LoRA stack gear menu, where every action just "opens").
+        if (entry.type === "action") {
+          label.classList.add("action-label");
+          label.title = entry.button ?? "Run";
+          label.addEventListener("click", () => entry.onAction?.());
+        }
+        // Actions that hide their button keep the clickable text; every other
+        // row still gets its control (toggle / choice / number / action button).
+        const control = entry.type === "action" && entry.hideButton
+            ? null : buildControl(entry, values, commit);
+        row.append(label);
+        if (control) row.append(control);
         body.append(row);
         // A choice can say what each option does, one plain line apiece:
         // { ..., type: "choice", optionHints: { option: "what it does" } }.

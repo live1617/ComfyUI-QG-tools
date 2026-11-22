@@ -15,44 +15,64 @@
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611201255";
-import { zhPair } from "../shared/zh.mjs?v=202611201255";
-import { BRAND, showToast } from "../shared/index.mjs?v=202611201255";
-import { widthFor } from "../shared/node_width.mjs?v=202611201255";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=202611201255";
+import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611210910";
+import { zhPair } from "../shared/zh.mjs?v=202611210910";
+import { BRAND, showToast } from "../shared/index.mjs?v=202611210910";
+import { widthFor } from "../shared/node_width.mjs?v=202611210910";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=202611210910";
 import {
     closeSettingsMenu,
     gearIconSvg,
+    loadSettings,
     openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=202611201255";
+} from "../shared/settings_menu.mjs?v=202611210910";
+// 与加载器共用同一份齿轮设置表（用户 11-20 确认），别在任一节点另写一份。
+import {
+    LORA_SETTINGS_SCOPE,
+    LORA_SETTINGS_SCHEMA,
+} from "../shared/lora_settings.mjs?v=202611210910";
 import {
     civitaiFailureText,
     pictureErrorText,
-} from "../shared/civitai_lookup.mjs?v=202611201255";
+} from "../shared/civitai_lookup.mjs?v=202611210910";
 // 强度手感 / 触发词 / 选择器过滤 / 读 LoRA 信息只有一份真相源：加载器也在用
 // 同一个 shared 模块，改一次两边同步。🔴 别在这里另写 ±10 / 0.05 或切词正则。
 import {
+    absorbChainIssue,
     appendTrigger,
+    BYPASS_MODE,
     clampStrength,
+    collectDownstreamLoaders,
+    collectUpstreamLoaders,
     DEFAULT_STEP,
     FINE_STEP,
     filterLoras,
+    fitLoraLabel,
     groupByFolder,
     hasTrigger,
+    importSummary,
     joinTriggerWords,
+    loaderLoraEntries,
     loraFolders,
+    mergeImportedRows,
+    MUTE_MODE,
     readLoraInfo,
     resolveLoraName,
+    roundStrength,
     SCRUB_DEAD_ZONE,
     SCRUB_PIXELS_PER_STEP,
+    shortLoraName,
     splitTriggerWords,
     STRENGTH_MAX,
     STRENGTH_MIN,
+    thumbPosition,
     toggleTrigger,
     triggerGroups,
-} from "../shared/lora_stack.mjs?v=202611201255";
+} from "../shared/lora_stack.mjs?v=202611210910";
 // Civitai 查询编排与加载器共用；卡片 note / 缩略图版本由回调注入。
-import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611201255";
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611210910";
+// 建议强度沿用加载器的可拖动数字框，手势与步长只有一份真相源。
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=202611210910";
 
 const NODE_CLASS = "QG_LoraSwitchStack";
 const SLOT_COUNT = 24;
@@ -67,6 +87,10 @@ const SWITCH_H = 10;
 // 强度控件：「◀  0.80  ▶」。中间数值区要放得下 "3.00/2.20"（11px 等宽约 59px），
 // 两侧各留一个箭头，所以这一带比纯数字时代宽一些。
 const STRENGTH_BAND = 84;
+// 「模型 / CLIP 强度分开」时把这一带劈成两个更窄的控件；总宽只比原来多 60px，
+// 名字列还留得下。与加载器的 SEPARATE_EXTRA_WIDTH 同为 72 一档，手感一致。
+const SEPARATE_BAND = 72;
+const SEPARATE_GAP = 4;
 const ARROW_W = 12;
 const CLEAR_W = 16;
 // 旧版三点按钮占的那一列已经作废（行菜单改成**在这一行上点右键**），
@@ -125,6 +149,14 @@ function stateOf(node) {
             // 第三层：种子随机组合前的开关快照，撤销随机时逐行还原；非随机态为 null。
             randomSnapshot: null,
             // 第二层：栈工具面板当前选中的筛选文件夹（菜单里点选后写到这里）。
+            // 与加载器共用的齿轮设置；只在首次 mount 时载入，configure 重建 widgets 时
+            // 保留当前值，免得把工作流里存下来的分隔符 / 缺失策略冲掉。
+            settings: null,
+            // 吸收链式加载器要等一次取列表的请求：串行化，避免请求没回来时
+            // 连点两次把同一批行加两遍。与加载器 state.importing 同口径。
+            importing: false,
+            // 节点被删/撤销带走后，异步吸收回来不能再往它身上写。
+            disposed: false,
         };
     }
     return node.__qgSwitchStack;
@@ -140,6 +172,50 @@ function finite(value, fallback) {
     const number = Number(value);
     if (!Number.isFinite(number)) return fallback;
     return clampStrength(number);
+}
+
+// 建议强度是硬限制：拿到每个 LoRA 的 min/max 后，这一行任何手动改强度的路径
+// 都只能落在区间内。缓存按文件名走，跟加载器那份 rangeCache 同一口径。
+const strengthRangeCache = new Map();
+const strengthRangeFetches = new Map();
+
+function ensureStrengthRange(name) {
+    if (!name || strengthRangeCache.has(name) || strengthRangeFetches.has(name)) return;
+    const request = api.fetchApi(`/qg/lora/info?name=${encodeURIComponent(name)}`)
+        .then((response) => response.json())
+        .then((payload) => {
+            const info = payload?.info ?? payload;
+            strengthRangeCache.set(name, info && typeof info === "object" ? (info.range ?? null) : null);
+        })
+        .catch(() => strengthRangeCache.set(name, null))
+        .finally(() => strengthRangeFetches.delete(name));
+    strengthRangeFetches.set(name, request);
+}
+
+function prefetchSuggestedRanges(state) {
+    for (const row of state?.rows ?? []) {
+        if (row?.name) ensureStrengthRange(row.name);
+    }
+}
+
+// 未填的一端退回全局上下界；坏区间（min>max）整份忽略，免得把用户锁死。
+function suggestedBounds(name) {
+    const range = strengthRangeCache.get(name);
+    let low = STRENGTH_MIN;
+    let high = STRENGTH_MAX;
+    if (range && typeof range === "object") {
+        const min = Number(range.min);
+        const max = Number(range.max);
+        if (Number.isFinite(min)) low = Math.max(low, min);
+        if (Number.isFinite(max)) high = Math.min(high, max);
+    }
+    if (low > high) return { low: STRENGTH_MIN, high: STRENGTH_MAX };
+    return { low, high };
+}
+
+function clampSuggestedStrength(name, value) {
+    const { low, high } = suggestedBounds(name);
+    return clampStrength(Math.max(low, Math.min(high, value)));
 }
 
 // 与后端 truthy() 同口径：存档里 "false" / "0" / "off" 这类字符串不能被当成开。
@@ -477,6 +553,33 @@ function fitNumberFont(ctx, text, maxWidth) {
     }
 }
 
+// 一个完整的「◀ 0.80 ▶」强度控件。合并模式画一次，分开模式给模型 / CLIP 各画一次。
+function paintStrengthBox(ctx, box, centerY, text, { dim, hovered, dragging, linked = false }) {
+    const arrowFg = dim ? "rgba(160, 178, 190, .48)"
+        : (hovered ? COLOR.accent : "rgba(198, 216, 226, .66)");
+    const arrowBg = hovered && !dim ? "rgba(111, 208, 240, .12)" : "rgba(160, 178, 190, .07)";
+    drawStrengthArrow(ctx, box.arrowLeftMid, centerY, -1, arrowFg, arrowBg);
+    drawStrengthArrow(ctx, box.arrowRightMid, centerY, 1, arrowFg, arrowBg);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    fitNumberFont(ctx, text, box.valueRight - box.valueLeft - 2);
+    ctx.fillStyle = dragging ? COLOR.accent
+        : linked ? "#6fd0f0"   // 外控实时值用青色，和行外控青框同色
+        : (dim ? COLOR.textEmpty : COLOR.text);
+    ctx.fillText(text, box.valueMid, centerY);
+    return {
+        text,
+        external: linked,
+        font: ctx.font,
+        textWidth: ctx.measureText(text).width,
+        centerX: box.valueMid,
+        arrowDecX: box.arrowLeftMid,
+        arrowIncX: box.arrowRightMid,
+        valueLeft: box.valueLeft,
+        valueRight: box.valueRight,
+    };
+}
+
 // 这一行到底开没开。接了线的行由连线决定：能读到来源的布尔 widget 就读真值
 // （QG_BoolToggle 的 `boolean`、原生 Primitive 的 `value`），读不到（比较节点、
 // 运行时算出来的布尔）就标记成「外控」，别硬画成开启骗人。
@@ -632,7 +735,7 @@ function drawRow(ctx, node, state, index, posY, width) {
     }
 
     // 名字。关闭的行连名字、强度、行尾图标一起压暗，并给名字压一道细横线。
-    const cols = rowColumns(width);
+    const cols = columnsFor(state, width);
     // 探针读不到闭包里的列坐标，挂到 state 上：断言用的是同一套 x，
     // 前端改了布局也不会出现「探针点歪了却全绿」。
     state.cols = cols;
@@ -644,13 +747,27 @@ function drawRow(ctx, node, state, index, posY, width) {
     // 第二层筛选：只把不匹配行的名字变暗、加标记，行本身仍在原位。
     // 绝不隐藏/重排行 —— 那会让 on_N 槽位和显示行号错位，外控开关指错 LoRA。
     const filteredOut = Boolean(state.folderFilter && row.name && !inFolder(row.name, state.folderFilter));
+    const rowLabel = row.name ? shortLoraName(row.name, {
+        hideFolders: state.settings?.hide_folders !== false,
+        hideExtension: state.settings?.hide_extension !== false,
+    }) : zhPair("empty row", "空行");
     const label = filteredOut
-        ? zhPair(`${row.name} (filtered)`, `${row.name}（已筛选）`)
-        : (row.name || zhPair("empty row", "空行"));
-    const shown = fitText(ctx, label, nameWidth);
+        ? zhPair(`${rowLabel} (filtered)`, `${rowLabel}（已筛选）`)
+        : rowLabel;
+    // 长名称截断也跟加载器共用：默认截尾，「middle」保留结尾的 checkpoint 编号。
+    // 用 fitLoraLabel 而不是对整串做中间截断：有目录时先挤目录，文件名仍完整。
+    const shown = row.name && state.settings?.name_cut === "middle"
+        ? (() => {
+            const parts = fitLoraLabel(label, nameWidth, (text) => ctx.measureText(text).width);
+            return parts.folder + parts.name;
+        })()
+        : fitText(ctx, label, nameWidth);
     ctx.fillStyle = filteredOut ? "rgba(120, 132, 139, .55)"
         : row.name ? (off ? COLOR.textEmpty : COLOR.text) : COLOR.textEmpty;
     ctx.fillText(shown, nameX, posY + ROW_HEIGHT / 2);
+    // 名称显示结果留档给探针：画布文字读不到，但设置改没改必须可验证。
+    state.nameLabels = state.nameLabels || {};
+    state.nameLabels[index] = shown;
     if (off && row.name) {
         ctx.fillStyle = "rgba(190, 205, 214, .38)";
         ctx.fillRect(nameX, posY + ROW_HEIGHT / 2 - 0.5, ctx.measureText(shown).width, 1);
@@ -662,64 +779,72 @@ function drawRow(ctx, node, state, index, posY, width) {
     const shownStrength = strengthState.value;
     const sameClip = Math.abs(row.strength_clip - row.strength) < 0.005
         && !strengthState.linked;   // 外控只改模型强度，CLIP 仍是存档值，不再并成一个数字
-    const strengthText = strengthState.linked && strengthState.unknown
-        ? zhPair("wire", "外控")
-        : sameClip
-            ? shownStrength.toFixed(2)
-            : `${shownStrength.toFixed(2)}/${row.strength_clip.toFixed(2)}`;
     const strengthLinked = strengthState.linked && !strengthState.unknown;
     const dragging = state.drag?.index === index;
     const centerY = posY + ROW_HEIGHT / 2 - 1;
     const dim = off || !row.name;
-    const arrowFg = dim ? "rgba(160, 178, 190, .48)"
-        : (hovered ? COLOR.accent : "rgba(198, 216, 226, .66)");
-    const arrowBg = hovered && !dim ? "rgba(111, 208, 240, .12)" : "rgba(160, 178, 190, .07)";
-    drawStrengthArrow(ctx, cols.arrowLeftMid, centerY, -1, arrowFg, arrowBg);
-    drawStrengthArrow(ctx, cols.arrowRightMid, centerY, 1, arrowFg, arrowBg);
-
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    fitNumberFont(ctx, strengthText, cols.valueRight - cols.valueLeft - 2);
-    ctx.fillStyle = dragging ? COLOR.accent
-        : strengthLinked ? "#6fd0f0"   // 外控实时值用青色，和行外控青框同色，一眼看出由线驱动
-        : (dim ? COLOR.textEmpty : COLOR.text);
-    ctx.fillText(strengthText, cols.valueMid, centerY);
-    // 供探针断言「数值确实居中、双值没溢出、箭头分列两侧、外控值实时显示」。
-    state.strengthLayout = {
-        text: strengthText,
-        external: strengthState.linked,
-        externalUnknown: strengthState.unknown,
-        externalValue: strengthState.linked ? shownStrength : null,
-        font: ctx.font,
-        textWidth: ctx.measureText(strengthText).width,
-        centerX: cols.valueMid,
-        arrowDecX: cols.arrowLeftMid,
-        arrowIncX: cols.arrowRightMid,
-        valueLeft: cols.valueLeft,
-        valueRight: cols.valueRight,
-    };
+    const paintOpts = { dim, hovered, dragging };
+    let modelLayout;
+    if (cols.separate) {
+        // 分开模式两套控件：M=模型强度（外控只驱动这一套），C=CLIP 强度。
+        const modelText = (strengthState.linked && strengthState.unknown
+            ? zhPair("wire", "外控") : shownStrength.toFixed(2));
+        const clipText = row.strength_clip.toFixed(2);
+        modelLayout = paintStrengthBox(ctx, cols.model, centerY, `M ${modelText}`,
+            { ...paintOpts, linked: strengthLinked });
+        const clipLayout = paintStrengthBox(ctx, cols.clip, centerY, `C ${clipText}`, paintOpts);
+        // 老探针仍从 state.strengthLayout 读模型数值，新探针读 model / clip 两份。
+        state.strengthLayout = {
+            ...modelLayout,
+            model: modelLayout,
+            clip: clipLayout,
+            external: strengthState.linked,
+            externalUnknown: strengthState.unknown,
+            externalValue: strengthState.linked ? shownStrength : null,
+        };
+    } else {
+        const strengthText = strengthState.linked && strengthState.unknown
+            ? zhPair("wire", "外控")
+            : sameClip
+                ? shownStrength.toFixed(2)
+                : `${shownStrength.toFixed(2)}/${row.strength_clip.toFixed(2)}`;
+        modelLayout = paintStrengthBox(ctx, cols, centerY, strengthText,
+            { ...paintOpts, linked: strengthLinked });
+        state.strengthLayout = {
+            ...modelLayout,
+            external: strengthState.linked,
+            externalUnknown: strengthState.unknown,
+            externalValue: strengthState.linked ? shownStrength : null,
+        };
+    }
     // 逐行留档：strengthLayout 只留最后一行，探针要按行核对实时外控值。
     state.strengthByRow = state.strengthByRow || {};
     state.strengthByRow[index] = state.strengthLayout;
 
     // 强度条：0 在中间的一条细线，只铺在数值区下方（不占箭头的位置）。
     // 数字给「现在是多少」，条给「离两端还有多远」——拖的时候不用盯着数字算。
-    if (row.name) {
-        const barLeft = cols.valueLeft + 1;
-        const barRight = cols.valueRight - 1;
-        const barY = posY + ROW_HEIGHT - 5;
-        const barMid = (barLeft + barRight) / 2;
-        ctx.fillStyle = "rgba(160, 178, 190, .20)";
-        ctx.fillRect(barLeft, barY, barRight - barLeft, 1.5);
-        const value = clampStrength(shownStrength);
-        // 正负极各自除以自己的端点：哪天上下界不再对称，条也不会画歪。
-        const span = value < 0 ? -STRENGTH_MIN : STRENGTH_MAX;
-        const tip = barMid + (barRight - barMid) * (value / span);
-        ctx.fillStyle = dragging ? COLOR.accent
-            : (off ? "rgba(160, 178, 190, .34)" : "rgba(111, 208, 240, .62)");
-        ctx.fillRect(Math.min(barMid, tip), barY, Math.max(Math.abs(tip - barMid), 1), 1.5);
-        ctx.fillStyle = "rgba(226, 238, 246, .50)";
-        ctx.fillRect(barMid - 0.5, barY - 1, 1, 3.5);
+    state.strengthBarsDrawn = Boolean(row.name && state.settings?.strength_bars !== false);
+    if (row.name && state.settings?.strength_bars !== false) {
+        const boxes = cols.separate
+            ? [{ box: cols.model, value: shownStrength }, { box: cols.clip, value: row.strength_clip }]
+            : [{ box: cols, value: shownStrength }];
+        for (const { box, value: barValue } of boxes) {
+            const barLeft = box.valueLeft + 1;
+            const barRight = box.valueRight - 1;
+            const barY = posY + ROW_HEIGHT - 5;
+            const barMid = (barLeft + barRight) / 2;
+            ctx.fillStyle = "rgba(160, 178, 190, .20)";
+            ctx.fillRect(barLeft, barY, barRight - barLeft, 1.5);
+            const value = clampStrength(barValue);
+            // 正负极各自除以自己的端点：哪天上下界不再对称，条也不会画歪。
+            const span = value < 0 ? -STRENGTH_MIN : STRENGTH_MAX;
+            const tip = barMid + (barRight - barMid) * (value / span);
+            ctx.fillStyle = dragging ? COLOR.accent
+                : (off ? "rgba(160, 178, 190, .34)" : "rgba(111, 208, 240, .62)");
+            ctx.fillRect(Math.min(barMid, tip), barY, Math.max(Math.abs(tip - barMid), 1), 1.5);
+            ctx.fillStyle = "rgba(226, 238, 246, .50)";
+            ctx.fillRect(barMid - 0.5, barY - 1, 1, 3.5);
+        }
     }
 
     // 触发词图标：一个描边小方块里放个 T，跟 rgthree 那种行内图标按钮一个路子。
@@ -806,10 +931,35 @@ function rowDrawWidth(node, widget) {
 
 // 行内各列的 x 坐标。绘制和命中判定共用这一个函数 —— 分开各写一套的话，
 // 改一处忘另一处，就会出现「画在这儿、点在那儿」。
-function rowColumns(width) {
+function rowColumns(width, separate = false) {
     const clearX = width - 8 - CLEAR_W;              // × 的起点
     const triggerX = clearX - TRIGGER_END_GAP - TRIGGER_W;  // 触发词图标的左边缘
     const strengthRight = triggerX - 6;              // 强度控件右边缘
+    const oneBand = (left) => {
+        const right = left + SEPARATE_BAND;
+        const valueLeft = left + ARROW_W;
+        const valueRight = right - ARROW_W;
+        return {
+            strengthLeft: left, strengthRight: right,
+            valueLeft, valueRight, valueMid: (valueLeft + valueRight) / 2,
+            arrowLeftMid: left + ARROW_W / 2, arrowRightMid: right - ARROW_W / 2,
+        };
+    };
+    if (separate) {
+        const clip = oneBand(strengthRight - SEPARATE_BAND);
+        const model = oneBand(clip.strengthLeft - SEPARATE_GAP - SEPARATE_BAND);
+        return {
+            clearX, triggerX, separate: true,
+            strengthLeft: model.strengthLeft, strengthRight: clip.strengthRight,
+            // 顶层这几个字段保持「模型那一半」的口径：老的命中判定与输入框定位
+            // 都读它们。CLIP 那一半另在 cols.clip 里，不会混。
+            valueLeft: model.valueLeft, valueRight: model.valueRight,
+            valueMid: model.valueMid,
+            arrowLeftMid: model.arrowLeftMid, arrowRightMid: model.arrowRightMid,
+            nameRight: model.strengthLeft - 6,
+            model, clip,
+        };
+    }
     const strengthLeft = strengthRight - STRENGTH_BAND;
     // 两侧箭头各占 ARROW_W，中间是数值（可拖、可点开输入框）。
     const valueLeft = strengthLeft + ARROW_W;
@@ -817,6 +967,7 @@ function rowColumns(width) {
     return {
         clearX,
         triggerX,
+        separate: false,
         strengthLeft,
         strengthRight,
         valueLeft,
@@ -828,11 +979,16 @@ function rowColumns(width) {
     };
 }
 
+// 唯一入口：绘制与命中判定都按当前节点的「分开强度」设置取列。
+function columnsFor(state, width) {
+    return rowColumns(width, Boolean(state?.settings?.separate_strengths));
+}
+
 function rowHitZones(node, index, posY, drawWidth) {
     // 命中区必须和绘制宽度一致：Nodes 2.0 下按 node.size[0] 算会把 `×` 判定
     // 放在 canvas 外，点了没反应（用户报「添加的行删不掉」）。
     const width = drawWidth || node.size[0];
-    const cols = rowColumns(width);
+    const cols = columnsFor(node.__qgSwitchStack, width);
     return {
         switch: { x0: SLOT_BAND, x1: SLOT_BAND + 4 + SWITCH_W + 6 },
         name: { x0: SLOT_BAND + 4 + SWITCH_W + 6, x1: cols.nameRight },
@@ -841,6 +997,10 @@ function rowHitZones(node, index, posY, drawWidth) {
         strength: { x0: cols.strengthLeft, x1: cols.triggerX - 4 },
         strengthDec: { x0: cols.strengthLeft, x1: cols.valueLeft },
         strengthInc: { x0: cols.valueRight, x1: cols.strengthRight + 2 },
+        // 分开模式下 CLIP 那半另有自己的一对箭头和数值热区。
+        clipStrengthDec: cols.clip ? { x0: cols.clip.strengthLeft, x1: cols.clip.valueLeft } : null,
+        clipStrengthInc: cols.clip ? { x0: cols.clip.valueRight, x1: cols.clip.strengthRight + 2 } : null,
+        clipStrengthMid: cols.clip ? { x0: cols.clip.valueLeft, x1: cols.clip.valueRight } : null,
         // T 图标到 × 之间（含原来的三点留白）都算触发词热区：那片没有别的
         // 功能，点开卡片比「点了没反应」顺手，也和加三点按钮之前的手感一致。
         trigger: { x0: cols.triggerX - 2, x1: cols.clearX - 2 },
@@ -1105,17 +1265,18 @@ function stopStepRepeat(state) {
 // Alt 又被「拖拽克隆节点」吃掉 —— 节点内 widget 根本收不到这次 pointerdown。
 // 实测只有 Shift 能穿过去。FINE_STEP 的微调请走「拖起来之后再按 Ctrl」（window 级
 // pointermove 读得到 ctrlKey）或直接点数值键入。
-function stepStrength(state, index, direction, event) {
+function stepStrength(state, index, direction, event, forceClip = false) {
     stopStepRepeat(state);
     const row = state.rows[index];
     if (!row) return;
     // widget 路径来的是 litegraph Pointer（修饰键在 eDown），节点级 onMouseDown
-    // 来的是 DOM MouseEvent，两处都认。Shift = 改 CLIP 强度。
+    // 来的是 DOM MouseEvent，两处都认。Shift = 改 CLIP 强度；分开模式的 CLIP
+    // 控件直接通过 forceClip 指定，不必要求按 Shift。
     const down = event?.eDown ?? event;
-    const step = DEFAULT_STEP;
-    const key = down?.shiftKey ? "strength_clip" : "strength";
+    const step = roundStrength(state.settings?.step ?? DEFAULT_STEP);
+    const key = (down?.shiftKey || forceClip) ? "strength_clip" : "strength";
     const apply = (commit) => {
-        row[key] = clampStrength(Number((row[key] + direction * step).toFixed(2)));
+        row[key] = clampSuggestedStrength(row.name, Number((row[key] + direction * step).toFixed(2)));
         writeRows(state, !commit);
     };
     // 起始这一档也走 quiet：松手时 finish 会统一正式写一次，
@@ -1167,6 +1328,15 @@ function onRowMouse(state, event, pos, index) {
             beginRowDrag(state, index, event);
             return true;
         }
+        // 与加载器同款：名字也是强度拖动面（只改模型强度）。Alt 排序优先；
+        // 没拖动的普通点击仍然开选择器，不弹数值输入框。
+        if (row.name && state.settings?.name_scrub !== false) {
+            beginDrag(state, event, index, false, {
+                openOnClick: false,
+                onClick: () => openPicker(state, index),
+            });
+            return true;
+        }
         openPicker(state, index);
         return true;
     }
@@ -1180,6 +1350,20 @@ function onRowMouse(state, event, pos, index) {
         return true;
     }
     if (x >= zone.strength.x0) {
+        // 分开模式：右边那一整块是 CLIP 强度，箭头与数值都直接改 strength_clip。
+        if (zone.clipStrengthDec
+            && x >= zone.clipStrengthDec.x0 && x < zone.clipStrengthInc.x1) {
+            if (x < zone.clipStrengthDec.x1) {
+                stepStrength(state, index, -1, event, true);
+                return true;
+            }
+            if (x >= zone.clipStrengthInc.x0) {
+                stepStrength(state, index, 1, event, true);
+                return true;
+            }
+            beginDrag(state, event, index, true);
+            return true;
+        }
         // 两边箭头是按钮：点一下 ±1 档，按住连发。别让它们进 beginDrag，
         // 否则松手时会顺手弹出数值输入框。
         if (x < zone.strengthDec.x1) {
@@ -1224,8 +1408,9 @@ function endDrag(state) {
     state.drag = null;
 }
 
-function beginDrag(state, pointer, index, useClip) {
+function beginDrag(state, pointer, index, useClip, options = {}) {
     endDrag(state);
+    hidePickerThumb();
     const row = state.rows[index];
     const downEvent = pointer?.eDown ?? pointer?.eMove ?? pointer;
     let lastX = Number(downEvent?.clientX ?? downEvent?.screenX);
@@ -1253,11 +1438,11 @@ function beginDrag(state, pointer, index, useClip) {
         travel += Math.abs(delta);
         lastX = clientX;
         // Ctrl 是微调（FINE_STEP）。Shift 已经被「改 CLIP 强度」占了，不能再当微调键。
-        const step = moveEvent.ctrlKey ? FINE_STEP : DEFAULT_STEP;
+        const step = moveEvent.ctrlKey ? FINE_STEP : roundStrength(state.settings?.step ?? DEFAULT_STEP);
         const steps = Math.trunc(accum / quantum);
         if (!steps) return;
         accum -= steps * quantum;
-        const next = clampStrength(Number((value + steps * step).toFixed(2)));
+        const next = clampSuggestedStrength(row.name, Number((value + steps * step).toFixed(2)));
         if (next === value) return;
         value = next;
         moved = true;
@@ -1276,7 +1461,10 @@ function beginDrag(state, pointer, index, useClip) {
         // 取消 / 失焦只收尾，别在这种时候弹出输入框。
         const cancelled = event?.type === "pointercancel" || event?.type === "blur";
         // 一次没动的点击 = 打开数值输入框，直接键入 0.85 这种。
-        if (!cancelled && travel < SCRUB_DEAD_ZONE) openStrengthInput(state, index, useClip);
+        if (!cancelled && travel < SCRUB_DEAD_ZONE) {
+            if (options.onClick) options.onClick();
+            else if (options.openOnClick !== false) openStrengthInput(state, index, useClip);
+        }
     };
     state.drag = { index, move, up };
     state.node.setDirtyCanvas?.(true, true);
@@ -1323,8 +1511,33 @@ function rowAtClientY(state, clientY) {
     return -1;
 }
 
+// 悬停某一行的名字区时弹该行的预览图 —— 加载器的行名是 DOM、绑了 pointerenter，
+// 开关堆的行画在画布上，只能从 onMouseMove 的屏幕坐标反算。X 判定与 rowAtClientY
+// 同一口径（画布 frame + ds 缩放），再用 rowHitZones 的 name 热区，避免在强度 /
+// 开关 / 删除区也弹图。Vue 下画布 frame 换算不到时退回「整行可弹」，至少能用。
+function rowHoverThumb(state, clientX, clientY) {
+    if (state.drag || state.rowDrag) { hidePickerThumb(); return; }
+    const index = rowAtClientY(state, clientY);
+    if (index < 0 || state.settings?.thumbnails === false) { hidePickerThumb(); return; }
+    const row = state.rows[index];
+    if (!row?.name) { hidePickerThumb(); return; }
+    const node = state.node;
+    const frame = app.canvas?.canvas?.getBoundingClientRect?.();
+    const ds = app.canvas?.ds ?? { scale: 1, offset: [0, 0] };
+    const scale = ds.scale || 1;
+    const offset = ds.offset ?? [0, 0];
+    if (frame && Number.isFinite(clientX)) {
+        const localX = (clientX - frame.left) / scale - (node.pos[0] + offset[0]);
+        const widget = state.rowWidgets[index];
+        const zone = rowHitZones(node, index, widget?.y ?? 0, rowDrawWidth(node, widget));
+        if (localX < zone.name.x0 || localX > zone.name.x1) { hidePickerThumb(); return; }
+    }
+    showPickerThumb(state, row.name, clientX, clientY);
+}
+
 function beginRowDrag(state, index, pointer) {
     endRowDrag(state);
+    hidePickerThumb();
     // 强度拖拽的窗口监听必须先收掉，否则同一次移动会同时改强度和挪行。
     endDrag(state);
     const node = state.node;
@@ -1367,15 +1580,16 @@ function openStrengthInput(state, index, useClip) {
     if (!node || !widget || !row) return;
     // 列宽必须和绘制同基准：Vue 下独立 canvas 比 node.size 窄 24px，
     // 按 node.size 算会让输入框 / 触发词卡片整体右偏。
-    const cols = rowColumns(rowDrawWidth(node, widget));
+    const cols = columnsFor(state, rowDrawWidth(node, widget));
+    const box = useClip && cols.clip ? cols.clip : cols;
     const ds = app.canvas?.ds ?? { scale: 1, offset: [0, 0] };
     const scale = ds.scale || 1;
     const offset = ds.offset ?? [0, 0];
     const frame = app.canvas.canvas.getBoundingClientRect();
-    const left = frame.left + (node.pos[0] + cols.valueLeft + offset[0]) * scale;
+    const left = frame.left + (node.pos[0] + box.valueLeft + offset[0]) * scale;
     const top = frame.top + (node.pos[1] + widget.y + offset[1]) * scale;
     const height = ROW_HEIGHT * scale;
-    const valueWidth = (cols.valueRight - cols.valueLeft) * scale;
+    const valueWidth = (box.valueRight - box.valueLeft) * scale;
 
     const input = document.createElement("input");
     input.type = "text";
@@ -1405,7 +1619,7 @@ function openStrengthInput(state, index, useClip) {
         // 空 = 回到默认 1，跟加载器那个「擦掉就取默认」的手感一致。
         const parsed = raw === "" ? 1 : Number(raw);
         if (Number.isFinite(parsed)) {
-            const value = clampStrength(Number(parsed.toFixed(2)));
+            const value = clampSuggestedStrength(row.name, Number(parsed.toFixed(2)));
             if (useClip) row.strength_clip = value;
             else row.strength = value;
             writeRows(state);
@@ -1462,8 +1676,8 @@ function scaleAllStrengths(state, factor) {
     let touched = 0;
     for (const row of state.rows) {
         if (!row.name) continue;
-        row.strength = clampStrength(row.strength * factor);
-        row.strength_clip = clampStrength(row.strength_clip * factor);
+        row.strength = clampSuggestedStrength(row.name, row.strength * factor);
+        row.strength_clip = clampSuggestedStrength(row.name, row.strength_clip * factor);
         touched += 1;
     }
     if (touched) writeRows(state);
@@ -2090,7 +2304,7 @@ async function openStackPanel(state) {
     const scaleInput = document.createElement("input");
     scaleInput.type = "number";
     // step 复用 shared 的真相源，别在这里另写 0.05（守卫会盯）。
-    scaleInput.step = String(DEFAULT_STEP);
+    scaleInput.step = String(roundStrength(state.settings?.step ?? DEFAULT_STEP));
     scaleInput.value = "1";
     scaleInput.dataset.qgScaleInput = "1";
     scaleInput.style.cssText = `width:84px; padding:4px 7px; border-radius:6px; font:inherit;
@@ -2824,6 +3038,129 @@ function gearAnchor(node) {
     return { left: cx - half, top: cy - half, bottom: cy + half, width: half * 2 };
 }
 
+// ---------------------------------------------------------------- 吸收链式 LoRA
+// 与加载器齿轮「Absorb chain LoRAs」走同一条链路（共享 lora_stack.mjs 的图遍历 /
+// 节点识别 / 名字解析 / 合并 / 摘要），差别只在开关堆要把行铺回 24 个槽位，并且：
+//   🔴 on_N / strength_N 外控线绑在**槽位下标**上，不是绑在行上。吸收会把上游行
+//   插到前面、现有行往后挪，连线就会控制错行 —— 所以只要有任何一行接着外控，
+//   就拒绝吸收（跟加载器「rows_data 由接线提供时先断开」是同一安全口径）。
+function stackToast(detail, severity) {
+    showToast({
+        summary: "LoRA Switch Stack", detail, life: 7000,
+        ...(severity ? { severity } : {}),
+    });
+}
+
+async function runImportChain(state) {
+    if (state.importing) return;
+    // 读不出来的栈不能当空栈覆盖：别的工具写过 rows_data 时，导入会把它冲掉。
+    const raw = state.dataWidget?.value;
+    try {
+        const parsed = JSON.parse(typeof raw === "string" ? raw : "[]");
+        if (!Array.isArray(parsed)) throw new Error("not an array");
+    } catch (_) {
+        stackToast(zhPair(
+            "This stack could not be read, so nothing was absorbed. Another tool wrote that value; importing would overwrite it.",
+            "这段 LoRA 栈读不出来，什么都没吸收。那是别的工具写的值，导入会把它覆盖掉。"));
+        return;
+    }
+    if ([MUTE_MODE, BYPASS_MODE].includes(state.node.mode ?? 0)) {
+        stackToast(zhPair("Enable this LoRA stack before absorbing a chain.",
+            "先启用这个 LoRA 堆，再吸收整条链。"));
+        return;
+    }
+    const wired = (state.node.inputs ?? []).some((input) => {
+        const name = String(input?.name ?? "");
+        return (/^on_\d+$/.test(name) || /^strength_\d+$/.test(name))
+            && (input.link != null || input.linkId != null);
+    });
+    if (wired) {
+        stackToast(zhPair(
+            "Some rows have wired switches or strengths. Disconnect them before absorbing; the wires would move to the wrong rows.",
+            "有行接了开关或强度外控线。先断开它们再吸收，否则重排后连线会错到别的行上。"));
+        return;
+    }
+    // 吸收要等一次取列表的请求。请求没回来之前再点一次，两次都会带着同一份
+    // 还没导入的栈往下走，同一批行被加两遍 —— 整段串行化。
+    state.importing = true;
+    try {
+        await absorbChainIntoStack(state);
+    } finally {
+        state.importing = false;
+    }
+}
+
+async function absorbChainIntoStack(state) {
+    const { node } = state;
+    const isActive = (loader) => loader.mode !== BYPASS_MODE && loader.mode !== MUTE_MODE;
+    const upstream = collectUpstreamLoaders(node);
+    const downstream = collectDownstreamLoaders(node);
+    const issue = absorbChainIssue(node, upstream, downstream);
+    if (issue) { stackToast(issue); return; }
+    const activeUp = upstream.filter(isActive);
+    const activeDown = downstream.filter(isActive);
+    const sources = [...activeUp, ...activeDown];
+    // 快照复现不了另一个节点在运行时算出来的值：来源加载器的 LoRA 设置若接线进来，
+    // 先把线断开再吸收。
+    if (sources.some((loader) => loader.inputs?.some((input) => input.link != null
+        && !["MODEL", "CLIP"].includes(String(input.type).toUpperCase())))) {
+        stackToast(zhPair(
+            "A source loader has linked LoRA settings. Disconnect those settings before absorbing; source loaders remain active.",
+            "有一个来源加载器的 LoRA 设置是接线进来的。先断开那些设置再吸收；来源加载器仍然生效。"));
+        return;
+    }
+    const entriesOf = (loader) => loaderLoraEntries({
+        type: String(loader.type ?? loader.comfyClass ?? ""),
+        widgets: (loader.widgets ?? []).map((widget) => ({ name: widget.name, value: widget.value })),
+    })?.map((row) => ({
+        ...row,
+        strength_clip: loader.inputs?.some((input) =>
+            String(input.type).toUpperCase() === "CLIP" && input.link != null) ? row.strength_clip : 0,
+    })) ?? [];
+    // 上游最近的先，倒过来才是应用顺序；下游最近的先已经就是应用顺序。
+    const upEntries = activeUp.slice().reverse().flatMap(entriesOf);
+    const downEntries = activeDown.flatMap(entriesOf);
+    if (!upEntries.length && !downEntries.length) { stackToast(importSummary({})); return; }
+    let available = [];
+    try {
+        // 用新鲜列表而不是 60 秒缓存：刚加进来的 LoRA 也要能当场对上路径。
+        const response = await api.fetchApi("/qg/lora/list");
+        const data = await response.json();
+        available = Array.isArray(data?.loras) ? data.loras : [];
+    } catch (_) { /* 离线：名字原样导入，行会标红，运行时解析器还有一次机会 */ }
+    // 等请求这段时间节点可能已被删掉或被撤销带走：再写就是往图外的节点写。
+    if (state.disposed) return;
+    let remapped = 0;
+    let missing = 0;
+    let ambiguous = 0;
+    const resolve = (item) => {
+        if (!available.length) return { ...item };
+        const fit = resolveLoraName(item.name, available);
+        if (fit.status === "remapped") remapped += 1;
+        else if (fit.status === "missing") missing += 1;
+        else if (fit.status === "ambiguous") ambiguous += 1;
+        return { ...item, name: fit.name };
+    };
+    // 空槽不参与顺序：上游 → 本栈原有行 → 下游，重复文件不去重（两次应用就是两行）。
+    const existing = state.rows.filter((row) => row?.name);
+    const upMerge = mergeImportedRows(existing, upEntries.map(resolve),
+        { position: "before", deduplicate: false });
+    const downMerge = mergeImportedRows(upMerge.rows, downEntries.map(resolve),
+        { position: "after", deduplicate: false });
+    // 24 槽是硬上限，装不下的行算进 skipped，别静默丢。
+    const overflow = Math.max(0, downMerge.rows.length - SLOT_COUNT);
+    // 先旁通来源、再铺回本栈：铺回是同步的，反过来会出现「来源停了、行没进来」的空窗。
+    for (const loader of sources) loader.mode = BYPASS_MODE;
+    applyPresetRows(state, downMerge.rows);
+    node.graph?.change?.();
+    stackToast(importSummary({
+        added: Math.max(0, Math.min(downMerge.rows.length, SLOT_COUNT) - existing.length),
+        skipped: upMerge.skipped + downMerge.skipped + overflow,
+        bypassed: sources.length,
+        remapped, missing, ambiguous,
+    }), "success");
+}
+
 // 齿轮菜单本身：三项 action 直接调用现成的面板函数。每项都先关菜单再开面板，
 // 与加载器的 action 项一致；scope 用固定值即可（action 不读写存储）。
 function openStackGearMenu(node, anchor) {
@@ -2831,10 +3168,59 @@ function openStackGearMenu(node, anchor) {
     if (!state) return;
     const schema = [
         {
+            key: "_stack_settings",
+            label: zhPair("Settings", "设置"),
+            type: "action",
+            button: zhPair("Open", "打开"),
+            hideButton: true,   // 点整行文字即可打开，不再显示右侧「打开」按钮
+            hint: zhPair("Strength, names, missing files and Civitai preferences. Shared with the LoRA Loader.",
+                "强度、名称、缺文件与 Civitai 偏好，与 LoRA 加载器共用。"),
+            onAction: () => {
+                closeSettingsMenu();
+                const sep = (node.widgets ?? []).find((w) => w.name === "trigger_separator");
+                const missing = (node.widgets ?? []).find((w) => w.name === "on_missing");
+                openSettingsMenu({
+                    scope: LORA_SETTINGS_SCOPE,
+                    schema: LORA_SETTINGS_SCHEMA,
+                    // 🔴 必须传锚点：共享 place() 读 anchor.left/bottom 定位；漏传会让
+                    // 它抛错、面板停在 position:fixed 默认左上角 (0,0)。实时算齿轮
+                    // 屏幕矩形，与「删除」action 同口径，跟随画布平移/缩放。
+                    anchor: gearAnchor(node),
+                    initial: {
+                        ...state.settings,
+                        separate_strengths: node.properties?.qgLoraLinked === false,
+                        ...(sep ? { separator: sep.value } : {}),
+                        ...(missing ? { strict_missing: missing.value === "error" } : {}),
+                    },
+                    onChange: (values, key) => {
+                        state.settings = values;
+                        node.properties ??= {};
+                        node.properties.qgLoraLinked = !values.separate_strengths;
+                        if ((key === "separate_strengths" || key === null)
+                            && !values.separate_strengths && !state.parseError) {
+                            // 合回一个数值时把每行的 CLIP 强度并回模型强度，
+                            // 与加载器同一口径，免得切开关后还藏着旧的两套值。
+                            for (const row of state.rows) {
+                                if (!row?.name) continue;
+                                row.strength_clip = row.strength;
+                            }
+                            writeRows(state);
+                        }
+                        if ((key === "separator" || key === null) && sep) sep.value = values.separator;
+                        if ((key === "strict_missing" || key === null) && missing) {
+                            missing.value = values.strict_missing ? "error" : "skip";
+                        }
+                        state.node.setDirtyCanvas?.(true, true);
+                    },
+                });
+            },
+        },
+        {
             key: "_stack_tools",
             label: zhPair("Stack tools", "栈工具"),
             type: "action",
             button: zhPair("Open", "打开"),
+            hideButton: true,   // 点整行文字即可打开，不再显示右侧「打开」按钮
             hint: zhPair("Presets and global strength multiplier.", "预设与全局强度倍率。"),
             onAction: () => { closeSettingsMenu(); openStackPanel(state); },
         },
@@ -2843,6 +3229,7 @@ function openStackGearMenu(node, anchor) {
             label: zhPair("Delete", "删除"),
             type: "action",
             button: zhPair("Open", "打开"),
+            hideButton: true,   // 点整行文字即可打开，不再显示右侧「打开」按钮
             hint: zhPair("Delete empty/duplicate rows, clear the stack or a preset.", "删空行、去重行、清空整栈或删预设。"),
             // 删除原本是右键的二级菜单，四个动作带各自 callback（含预设二次
             // 确认）。这里直接弹同一套原生菜单，行为逐字不变，不重做逻辑。
@@ -2865,8 +3252,21 @@ function openStackGearMenu(node, anchor) {
             label: zhPair("Organize", "整理栈"),
             type: "action",
             button: zhPair("Open", "打开"),
+            hideButton: true,   // 点整行文字即可打开，不再显示右侧「打开」按钮
             hint: zhPair("Seed combo, batch control, missing check and trigger copy.", "种子组合、批量外控、缺失体检与触发词复制。"),
             onAction: () => { closeSettingsMenu(); openOrganizePanel(state); },
+        },
+        {
+            // 吸收从设置面板底部挪到这里，与其整栈动作并列；点文字执行。
+            key: "_import_chain",
+            label: zhPair("Absorb chain LoRAs", "吸收链式 LoRA"),
+            type: "action",
+            button: zhPair("Absorb", "吸收"),
+            hideButton: true,
+            hint: zhPair(
+                "Pull every LoRA loader wired into this node's model chain - upstream and downstream - into this stack and bypass those nodes; the graph keeps computing the same thing.",
+                "把模型链上接进这个节点的所有 LoRA 加载器（上游和下游）搬进这一堆，并旁通那些节点；出图结果不变。"),
+            onAction: () => { closeSettingsMenu(); runImportChain(state); },
         },
     ];
     openSettingsMenu({
@@ -3028,7 +3428,7 @@ function installGearHit() {
 // 服务器算 SHA256 → **本浏览器**问 civitai.com（服务器从不联网）→ 服务器验过
 // 是同一个文件再写侧车。区别只在于这里没有齿轮菜单，两个偏好直接沿用加载器
 // 存在 localStorage 里的那份 —— 同一台浏览器、同一套文件，设置不该有两份。
-const LORA_SETTINGS_KEY = "qg.settings.lora_loader";
+const LORA_SETTINGS_KEY = `qg.settings.${LORA_SETTINGS_SCOPE}`;
 
 function loraPreferences() {
     let stored = {};
@@ -3092,10 +3492,12 @@ function openTriggerEditor(state, index) {
     const offset = canvas.ds.offset ?? [0, 0];
     // 列宽必须和绘制同基准：Vue 下独立 canvas 比 node.size 窄 24px，
     // 按 node.size 算会让输入框 / 触发词卡片整体右偏。
-    const cols = rowColumns(rowDrawWidth(node, widget));
+    const cols = columnsFor(state, rowDrawWidth(node, widget));
     // 图标贴着节点右边缘，卡片就右对齐到图标、往左展开，别压在别的行上。
     // 节点贴屏幕最右侧时图标可能已经出界，右边界也夹一下，别让卡片被裁。
-    const POPUP_W = 320;
+    // 横版卡片：左边放缩略图，右边放标题 / 徽标 / 词表 / Civitai 操作。
+    // 位置仍以 T 图标右缘为锚点往左展开，只是宽度加大、高度收紧。
+    const POPUP_W = 560;
     const iconRight = frame.left + (node.pos[0] + cols.triggerX + TRIGGER_W + offset[0]) * scale;
     const left = iconRight - POPUP_W;
     const popupLeft = Math.max(8, Math.min(Math.round(left), window.innerWidth - POPUP_W - 8));
@@ -3104,23 +3506,49 @@ function openTriggerEditor(state, index) {
     const abort = new AbortController();
     const element = document.createElement("div");
     element.className = "qg-switchstack-triggers";
+    element.dataset.qgTriggerCard = "landscape";
     element.style.cssText = `
         position: fixed; left: ${popupLeft}px; top: ${Math.round(top)}px;
-        width: ${POPUP_W}px; max-height: 420px; padding: 8px;
-        display: flex; flex-direction: column; gap: 6px;
-        z-index: 10000; box-sizing: border-box;
+        width: ${POPUP_W}px; max-width: calc(100vw - 16px);
+        min-height: 300px; max-height: 360px; padding: 10px;
+        display: flex; flex-direction: column; gap: 8px;
+        z-index: 10000; box-sizing: border-box; overflow: hidden;
         background: #23282c; border: 1px solid #3a4248; border-radius: 8px;
         box-shadow: 0 12px 32px rgba(0,0,0,.55);
         font: 12px Inter, "Microsoft YaHei", "PingFang SC", Arial, sans-serif;`;
 
-    // 预览图放最上面，跟 LoRA 加载器那张卡片一样。文件旁边没有图就整块不出现 ——
-    // 一个空的 180px 框比没有图更难看。
+    // 两栏容器。没有预览图时左栏收掉，右栏自动铺满，不留一块空白。
+    const content = document.createElement("div");
+    content.dataset.qgCardBody = "1";
+    content.style.cssText = `
+        display: grid; grid-template-columns: 190px minmax(0, 1fr);
+        gap: 10px; flex: 1; min-height: 0; overflow: hidden;`;
+
+    const media = document.createElement("div");
+    media.dataset.qgPreviewPane = "1";
+    media.style.cssText = `
+        display: none; min-width: 0; overflow: hidden; align-items: flex-start;
+        justify-content: center; background: #1a1e21;
+        border: 1px solid #333b40; border-radius: 6px;`;
+
     const preview = document.createElement("img");
     preview.alt = "";
+    preview.dataset.qgTriggerPreview = "1";
     preview.style.cssText = `
-        max-width: 100%; max-height: 180px; object-fit: contain; border-radius: 5px;
-        align-self: center; display: none;`;
-    preview.addEventListener("error", () => { preview.style.display = "none"; });
+        display: block; width: 100%; height: 100%; object-fit: contain;`;
+    const setPreviewVisible = (visible) => {
+        media.style.display = visible ? "flex" : "none";
+        content.style.gridTemplateColumns = visible
+            ? "190px minmax(0, 1fr)" : "minmax(0, 1fr)";
+    };
+    preview.addEventListener("error", () => setPreviewVisible(false));
+    media.append(preview);
+
+    const details = document.createElement("div");
+    details.dataset.qgCardDetails = "1";
+    details.style.cssText = `
+        display: flex; flex-direction: column; gap: 6px;
+        min-width: 0; min-height: 0; overflow: hidden;`;
 
     const header = document.createElement("div");
     header.style.cssText = "color: #dbe3e7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
@@ -3140,7 +3568,10 @@ function openTriggerEditor(state, index) {
     metaRow.dataset.qgMeta = "1";
 
     const chipsHost = document.createElement("div");
-    chipsHost.style.cssText = "max-height: 240px; overflow-y: auto; padding-right: 2px;";
+    chipsHost.dataset.qgTriggerWords = "1";
+    chipsHost.style.cssText = `
+        flex: 1; min-height: 70px; max-height: 240px;
+        overflow-y: auto; padding-right: 2px;`;
 
     const input = document.createElement("input");
     input.type = "text";
@@ -3178,7 +3609,9 @@ function openTriggerEditor(state, index) {
     const note = document.createElement("div");
     note.style.cssText = "line-height: 1.4; display: none;";
 
-    element.append(preview, header, sub, metaRow, chipsHost, footer, note, input, hint);
+    details.append(header, sub, metaRow, chipsHost, footer, note, input, hint);
+    content.append(media, details);
+    element.append(content);
     document.body.append(element);
     // 有预览图时卡片接近 420 高：行靠在窗口底部就会掉出去，量一下再翻到行上方。
     // 图是异步来的，加载完高度会变，所以 load 之后再来一次。
@@ -3194,6 +3627,21 @@ function openTriggerEditor(state, index) {
 
     const current = () => splitTriggerWords(row.triggers);
     const active = (word) => hasTrigger(row.triggers, word);
+
+    // 删除「我的词」时也要把它从当前行拿掉。复刻 shared 的整段匹配口径：
+    // 一个自定义词本身可能带逗号，按单个片段删会漏掉半截词。
+    const removeWordFromTriggers = (triggers, word) => {
+        const parts = splitTriggerWords(triggers);
+        const wanted = splitTriggerWords(word);
+        if (!wanted.length) return triggers || "";
+        for (let start = 0; start + wanted.length <= parts.length;) {
+            const hit = wanted.every((part, i) =>
+                parts[start + i].toLowerCase() === part.toLowerCase());
+            if (hit) parts.splice(start, wanted.length);
+            else start += 1;
+        }
+        return parts.join(", ");
+    };
 
     const syncInput = () => {
         input.value = row.triggers || "";
@@ -3215,19 +3663,104 @@ function openTriggerEditor(state, index) {
 
     let info = null;
 
-    const chip = (word) => {
+    // 「我的词」逐个带一个删除按钮：删的是服务端那份自定义词表，不是只把
+    // 当前行的勾去掉。行里若已选中同一个词，也同步拿掉，免得下次打开卡片
+    // 又出现一个已经从词库删掉的幽灵词。
+    async function deleteCustomWord(word) {
+        if (!row.name || !word) return;
+        const next = (info?.custom_triggers ?? [])
+            .filter((item) => String(item).toLowerCase() !== String(word).toLowerCase());
+        try {
+            const response = await api.fetchApi("/qg/lora/triggers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: row.name, words: next }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(payload?.error || `HTTP ${response.status}`);
+            }
+            if (abort.signal.aborted) return;
+            if (info) info.custom_triggers = Array.isArray(payload.words) ? payload.words : next;
+            row.triggers = removeWordFromTriggers(row.triggers, word);
+            writeRows(state);
+            syncInput();
+            renderChips(info);
+            setNote(zhPair("Deleted the custom trigger word.", "已删除自定义触发词。"), "info");
+        } catch (error) {
+            if (abort.signal.aborted) return;
+            setNote(zhPair("Could not delete this word.", "删除这个词失败。") +
+                " " + (error?.message || ""), "error");
+        }
+    }
+
+    // 建议强度只发 min/max，绝不带 words：后端对缺席的 words 是「继承磁盘
+    // 那份」，带上渲染那一刻的快照会把卡片打开期间新加的自定义词抹掉。
+    async function saveSuggestedRange(values) {
+        if (!row.name) return;
+        try {
+            const response = await api.fetchApi("/qg/lora/triggers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: row.name,
+                    min: Number.isFinite(values.min) ? values.min : null,
+                    max: Number.isFinite(values.max) ? values.max : null,
+                }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(payload?.error || `HTTP ${response.status}`);
+            }
+            if (abort.signal.aborted) return;
+            if (info) {
+                const next = {};
+                if (Number.isFinite(values.min)) next.min = values.min;
+                if (Number.isFinite(values.max)) next.max = values.max;
+                info.range = next;
+            }
+            strengthRangeCache.set(row.name, info?.range ?? null);
+        } catch (error) {
+            if (abort.signal.aborted) return;
+            setNote(zhPair("Could not save the suggested strength.",
+                "建议强度没能保存。") + " " + (error?.message || ""), "error");
+        }
+    }
+
+    const chip = (word, { deletable = false } = {}) => {
+        const wrap = document.createElement("span");
+        wrap.style.cssText = "display: inline-flex; align-items: center; margin: 0 4px 4px 0;";
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = word;
         const on = active(word);
         button.style.cssText = `
-            font: inherit; cursor: pointer; padding: 2px 7px; margin: 0 4px 4px 0;
+            font: inherit; cursor: pointer; padding: 2px 7px;
             border-radius: 10px; line-height: 1.5;
             border: 1px solid ${on ? "rgba(111,208,240,.65)" : "#3a4248"};
             background: ${on ? "rgba(111,208,240,.18)" : "transparent"};
             color: ${on ? "#9fe3ff" : "#a9b4bb"};`;
         button.addEventListener("click", () => toggleWord(word), { signal: abort.signal });
-        return button;
+        wrap.append(button);
+        if (deletable) {
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.textContent = "×";
+            remove.dataset.qgDeleteCustom = "1";
+            remove.dataset.qgWord = word;
+            remove.title = zhPair("Delete this custom trigger word", "删除这个自定义触发词");
+            remove.style.cssText = `
+                font: inherit; cursor: pointer; padding: 2px 5px; margin-left: -4px;
+                border: 0; border-radius: 9px; background: transparent;
+                color: #c98080; line-height: 1.5;`;
+            remove.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                deleteCustomWord(word);
+            }, { signal: abort.signal });
+            wrap.append(remove);
+        }
+        return wrap;
     };
 
     const section = (label, words) => {
@@ -3238,6 +3771,7 @@ function openTriggerEditor(state, index) {
         title2.textContent = label;
         title2.style.cssText = "color: #78848b; margin-bottom: 3px;";
         const row2 = document.createElement("div");
+        row2.style.cssText = "display: flex; flex-wrap: wrap;";
         for (const word of words) row2.append(chip(word));
         wrap.append(title2, row2);
         return wrap;
@@ -3274,6 +3808,8 @@ function openTriggerEditor(state, index) {
             // 卡片在请求途中被关掉时不要再写回：闭包里的 row 可能已经被删掉 /
             // 换过，addWord 会往旧行里塞词，还多记一次撤销。
             if (abort.signal.aborted) return;
+            // 本地这份 info 也跟上，renderChips 才能立刻给新词画上删除按钮。
+            if (info) info.custom_triggers = words;
             addWord(word);
         };
         addButton.addEventListener("click", submit, { signal: abort.signal });
@@ -3289,19 +3825,15 @@ function openTriggerEditor(state, index) {
         return wrap;
     };
 
-    // 底模徽标 + 推荐强度一键套用。两件事都只用 lora_info 已经返回的数据。
-    // 底模做成徽标（有值才出现），一眼能看出这行是 Flux / SDXL / SD1.5 还是
-    // 别的；推荐强度存在时给「套用」按钮，把中值写回当前行的两个强度。
+    // 底模徽标 + 建议强度。建议强度跟加载器信息卡一样可填：两端都能拖动 /
+    // 键入 / 清空，落定就写侧车；没有值时显示「任意」。有区间时旁边多一个
+    // 「套用」按钮，把中值写回当前行。
     // 🔴 按钮文案带 qg 标记，探针好认；套用只改这一行，不碰别的行。
     const renderMeta = (data) => {
         metaRow.replaceChildren();
         const range = data && typeof data.range === "object" ? data.range : null;
-        const hasRange = range && (Number.isFinite(range.min) || Number.isFinite(range.max));
         const family = data && typeof data.base_model === "string" ? data.base_model.trim() : "";
-        if (!family && !hasRange) {
-            metaRow.style.display = "none";
-            return;
-        }
+        // 建议强度那一行永远在，所以 metaRow 不再整体隐藏。
         metaRow.style.display = "";
         if (family) {
             const badge = document.createElement("span");
@@ -3315,37 +3847,79 @@ function openTriggerEditor(state, index) {
             badge.title = zhPair("Base model declared by this LoRA", "这个 LoRA 声明的底层模型");
             metaRow.append(badge);
         }
-        if (hasRange) {
-            const low = Number.isFinite(range.min) ? range.min : range.max;
-            const high = Number.isFinite(range.max) ? range.max : range.min;
-            const mid = Math.round(((low + high) / 2) * 100) / 100;
-            // 第二行：文字与按钮并排，但整块和上面的徽标分行。
-            const rangeRow = document.createElement("div");
-            rangeRow.style.cssText = "display: flex; align-items: center; gap: 8px; flex-wrap: wrap;";
-            const label = document.createElement("span");
-            label.textContent = zhPair("Suggested", "推荐强度") + " " + String(low) + "–" + String(high);
-            label.style.cssText = "color: #a6c3b8; font-size: 12px;";
-            const apply = document.createElement("button");
-            apply.type = "button";
-            apply.dataset.qgApplyRange = "1";
+
+        const midpoint = (low, high) => {
+            const left = Number.isFinite(low) ? low : (Number.isFinite(high) ? high : null);
+            if (left === null) return null;
+            const right = Number.isFinite(high) ? high : left;
+            return Math.round(((left + right) / 2) * 100) / 100;
+        };
+        const bounds = {};
+        const rangeRow = document.createElement("div");
+        rangeRow.dataset.qgSuggestedRow = "1";
+        rangeRow.style.cssText = "display: flex; align-items: center; gap: 6px; flex-wrap: wrap;";
+        const label = document.createElement("span");
+        label.textContent = zhPair("Suggested strength", "建议强度");
+        label.dataset.qgSuggestedLabel = "1";
+        label.style.cssText = "color: #a6c3b8; font-size: 12px; white-space: nowrap;";
+
+        const apply = document.createElement("button");
+        apply.type = "button";
+        apply.dataset.qgApplyRange = "1";
+        apply.style.cssText = `
+            font: inherit; font-size: 12px; cursor: pointer; padding: 2px 10px;
+            border-radius: 9px; border: 1px solid rgba(159,225,203,.5);
+            background: rgba(29,158,117,.14); color: #9fe1cb; white-space: nowrap;`;
+        apply.title = zhPair("Set this row's model and CLIP strength to the suggested midpoint",
+            "把这一行的模型与 CLIP 强度都设为建议中值");
+        const updateApply = () => {
+            const mid = midpoint(bounds.min?.get(), bounds.max?.get());
+            if (mid === null) {
+                apply.style.display = "none";
+                return;
+            }
+            apply.style.display = "";
             apply.textContent = zhPair("Apply", "套用") + " " + String(mid);
-            apply.style.cssText = `
-                font: inherit; font-size: 12px; cursor: pointer; padding: 2px 10px;
-                border-radius: 9px; border: 1px solid rgba(159,225,203,.5);
-                background: rgba(29,158,117,.14); color: #9fe1cb;`;
-            apply.title = zhPair("Set this row's model and CLIP strength to the suggested midpoint",
-                "把这一行的模型与 CLIP 强度都设为推荐中值");
-            apply.addEventListener("click", () => {
-                row.strength = mid;
-                row.strength_clip = mid;
-                writeRows(state);
-                syncInput();
-                apply.textContent = zhPair("Applied", "已套用");
-                apply.dataset.qgRangeApplied = "1";
-            }, { signal: abort.signal });
-            rangeRow.append(label, apply);
-            metaRow.append(rangeRow);
+            apply.dataset.qgMid = String(mid);
+        };
+        apply.addEventListener("click", () => {
+            const mid = clampSuggestedStrength(row.name, Number(apply.dataset.qgMid));
+            if (!Number.isFinite(mid)) return;
+            row.strength = mid;
+            row.strength_clip = mid;
+            writeRows(state);
+            syncInput();
+            apply.textContent = zhPair("Applied", "已套用");
+            apply.dataset.qgRangeApplied = "1";
+        }, { signal: abort.signal });
+
+        for (const key of ["min", "max"]) {
+            bounds[key] = makeScrubInput({
+                value: Number.isFinite(range?.[key]) ? range[key] : null,
+                allowEmpty: true,
+                emptyStart: key === "min" ? 0 : 1,
+                placeholder: zhPair("any", "任意"),
+                min: STRENGTH_MIN, max: STRENGTH_MAX,
+                step: roundStrength(state.settings?.step ?? DEFAULT_STEP), fineStep: FINE_STEP,
+                decimals: 2, width: 76,
+                title: key === "min"
+                    ? zhPair("Suggested lowest strength; erase it for any. Drag to scrub, click to type, arrows to step; Shift = fine.",
+                        "建议最低强度；清空表示任意。可拖动调整、点击输入、箭头步进，Shift 为微调。")
+                    : zhPair("Suggested highest strength; erase it for any. Drag to scrub, click to type, arrows to step; Shift = fine.",
+                        "建议最高强度；清空表示任意。可拖动调整、点击输入、箭头步进，Shift 为微调。"),
+                onSettle: () => {
+                    saveSuggestedRange({ min: bounds.min.get(), max: bounds.max.get() });
+                    updateApply();
+                },
+            });
+            bounds[key].root.dataset.qgSuggested = key;
         }
+        const dash = document.createElement("span");
+        dash.textContent = zhPair("to", "至");
+        dash.style.cssText = "color: #78848b;";
+        rangeRow.append(label, bounds.min.root, dash, bounds.max.root, apply);
+        updateApply();
+        metaRow.append(rangeRow);
     };
 
     const renderChips = (data) => {
@@ -3379,7 +3953,8 @@ function openTriggerEditor(state, index) {
         myTitle.textContent = zhPair("Your words", "我的词");
         myTitle.style.cssText = "color: #78848b; margin-bottom: 3px;";
         const myList = document.createElement("div");
-        for (const word of groups.custom) myList.append(chip(word));
+        myList.style.cssText = "display: flex; flex-wrap: wrap;";
+        for (const word of groups.custom) myList.append(chip(word, { deletable: true }));
         myWrap.append(myTitle, myList, addWordRow(groups.custom));
         parts.push(myWrap);
 
@@ -3421,10 +3996,10 @@ function openTriggerEditor(state, index) {
     const showPreview = (data) => {
         if (!row.name || !data?.has_preview) {
             preview.removeAttribute("src");
-            preview.style.display = "none";
+            setPreviewVisible(false);
             return;
         }
-        preview.style.display = "";
+        setPreviewVisible(true);
         preview.src = thumbUrl(row.name);
     };
 
@@ -3524,6 +4099,8 @@ function openTriggerEditor(state, index) {
             const data = await readLoraInfo((...args) => api.fetchApi(...args), row.name);
             if (!element.isConnected) return;
             info = data;
+            // 卡片自己读到的 info 是最新的，直接喂给硬限制缓存，别等下一次预取。
+            strengthRangeCache.set(row.name, data.range ?? null);
             renderChips(data);
             if (fetchButton.isConnected) setButtonIdle(data);
             showLink(data);
@@ -3536,6 +4113,8 @@ function openTriggerEditor(state, index) {
             chipsHost.replaceChildren(message);
             // 读不到文件的词，不代表没法去 Civitai 查它 —— 按钮留着。
             showLink(null);
+            strengthRangeCache.set(row.name, null);
+            renderMeta(null);
         }
         // 词表 / 标题 / 预览图都是异步填进来的，卡片可能从 200px 涨到近 420px。
         // 只在 append 和 preview.load 量一次不够 —— 没有预览图的 LoRA 根本不触发
@@ -3554,8 +4133,51 @@ function openTriggerEditor(state, index) {
 // ---------------------------------------------------------------- 选择器
 
 let pickerState = null;
+let pickerThumb = null;
+
+function ensurePickerThumb() {
+    if (pickerThumb) return pickerThumb;
+    const img = document.createElement("img");
+    img.dataset.qgPickerThumb = "1";
+    img.alt = "";
+    img.style.cssText = `
+        position: fixed; z-index: 10001; width: 188px; height: 188px;
+        object-fit: contain; pointer-events: none; display: none;
+        background: #1a1e21; border: 1px solid #3a4248; border-radius: 6px;
+        box-shadow: 0 10px 28px rgba(0,0,0,.5); padding: 4px; box-sizing: border-box;`;
+    img.addEventListener("load", () => {
+        if (img.dataset.show === "1") img.style.display = "";
+    });
+    img.addEventListener("error", () => { img.style.display = "none"; });
+    document.body.append(img);
+    pickerThumb = img;
+    return img;
+}
+
+function hidePickerThumb() {
+    if (!pickerThumb) return;
+    pickerThumb.dataset.show = "0";
+    pickerThumb.style.display = "none";
+}
+
+function showPickerThumb(state, name, x, y) {
+    if (!name || state.settings?.thumbnails === false) return;
+    const img = ensurePickerThumb();
+    img.dataset.show = "1";
+    if (img.dataset.name !== name) {
+        img.dataset.name = name;
+        img.style.display = "none";
+        img.src = thumbUrl(name);
+    } else if (img.complete && img.naturalWidth > 0) {
+        img.style.display = "";
+    }
+    const spot = thumbPosition(x, y, window.innerWidth, window.innerHeight);
+    img.style.left = `${spot.left}px`;
+    img.style.top = `${spot.top}px`;
+}
 
 function closePicker() {
+    hidePickerThumb();
     if (!pickerState) return;
     pickerState.abort.abort();
     pickerState.element.remove();
@@ -3643,7 +4265,14 @@ async function openPicker(state, index, options = {}) {
         // 换文件就把旧词的痕迹擦掉：新文件没有触发词时，留着上一份的词
         // 会静悄悄混进 triggers 输出，界面上还看不出来。
         if (row.name !== name) row.triggers = "";
+        const wasEmpty = !row.name;
         row.name = name;
+        if (wasEmpty) {
+            // 默认强度跟加载器共用同一份设置；新行只在这里出生，别写死 1。
+            const initial = roundStrength(state.settings?.default_strength ?? 1);
+            row.strength = initial;
+            row.strength_clip = initial;
+        }
         writeRows(state);
         closePicker();
         // 触发词跟着文件走：读一次 sidecar / 元数据，填进行里。
@@ -3652,6 +4281,7 @@ async function openPicker(state, index, options = {}) {
             .then((payload) => {
                 // 🔴 `{ok, info}`：少剥一层就永远拿不到词（这里曾经静默失效过）。
                 const info = payload?.info ?? payload;
+                strengthRangeCache.set(name, info?.range ?? null);
                 const words = info?.file_triggers ?? [];
                 // 读回来之前用户可能已经手动改过（卡片开着），别覆盖他。
                 if (state.rows[index] !== row || row.triggers) return;
@@ -3679,17 +4309,26 @@ async function openPicker(state, index, options = {}) {
         for (const name of items) {
             const item = document.createElement("div");
             item.dataset.name = name;
-            item.textContent = name;
+            // 选择器靠文件夹分组消歧，所以只跟加载器一样藏扩展名，不藏目录。
+            item.textContent = shortLoraName(name, {
+                hideFolders: false,
+                hideExtension: state.settings?.hide_extension !== false,
+            });
             item.style.cssText = `
                 padding: 5px 8px; border-radius: 5px; color: #cfd8dc; cursor: pointer;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
-            item.addEventListener("mouseenter", () => { item.style.background = "#2f363b"; },
-                { signal: abort.signal });
-            item.addEventListener("mouseleave", () => { item.style.background = ""; },
-                { signal: abort.signal });
+            item.addEventListener("mouseenter", (event) => {
+                item.style.background = "#2f363b";
+                showPickerThumb(state, name, event.clientX, event.clientY);
+            }, { signal: abort.signal });
+            item.addEventListener("mouseleave", () => {
+                item.style.background = "";
+                hidePickerThumb();
+            }, { signal: abort.signal });
             item.addEventListener("pointerdown", (event) => {
                 if (event.button !== 0) return;
                 event.preventDefault();
+                hidePickerThumb();
                 pick(name);
             }, { signal: abort.signal });
             list.append(item);
@@ -3874,6 +4513,7 @@ function installConfigureHook(node) {    if (node.__qgSwitchStackHooked) return;
         const saved = storedRows(info);
         if (saved !== null) state.dataWidget.value = saved;
         state.rows = readRows(this);
+        prefetchSuggestedRanges(state);
         // 🔴 不再 `Math.max(1, ...)`：空存档加载后就该是零行（只剩「+ 添加 LoRA」）。
         // 有名字的行由 filledRows 从存档数出来，不需要靠 minRows 兜底留空行。
         // 也**必须归零**：「+ 添加」临时撑出来的空行属于上一次界面状态，
@@ -3934,7 +4574,21 @@ function mount(node) {
     hideWidget((node.widgets ?? []).find((widget) => widget.name === "trigger_separator"));
     hideWidget((node.widgets ?? []).find((widget) => widget.name === "on_missing"));
 
+    // 与加载器共用同一份持久化偏好；separate_strengths 例外，按节点自己的
+    // properties 决定（新节点永远合并），不写进 localStorage。
+    if (!state.settings) {
+        state.settings = loadSettings(LORA_SETTINGS_SCOPE, LORA_SETTINGS_SCHEMA);
+        node.properties ??= {};
+        if (node.properties.qgLoraLinked === undefined) node.properties.qgLoraLinked = true;
+        state.settings.separate_strengths = node.properties.qgLoraLinked === false;
+        const sep = (node.widgets ?? []).find((widget) => widget.name === "trigger_separator");
+        if (sep) sep.value = state.settings.separator;
+        const missing = (node.widgets ?? []).find((widget) => widget.name === "on_missing");
+        if (missing) missing.value = state.settings.strict_missing ? "error" : "skip";
+    }
+
     state.rows = readRows(node);
+    prefetchSuggestedRanges(state);
 
     // 建 SLOT_COUNT 个行 widget，把对应的 on_N 输入绑上去 —— 槽从此长在行上。
     state.rowWidgets = [];
@@ -4076,12 +4730,18 @@ app.registerExtension({
                     this.setDirtyCanvas?.(true, true);
                 }
             }
+            // 行名悬停弹预览图：event 是 DOM MouseEvent，clientX/Y 是屏幕坐标。
+            // 与加载器的行名 hover 对齐，且遵守「预览缩略图」设置。
+            if (s && Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
+                rowHoverThumb(s, event.clientX, event.clientY);
+            }
             return result;
         };
         const onMouseLeave = nodeType.prototype.onMouseLeave;
         nodeType.prototype.onMouseLeave = function () {
             const result = onMouseLeave?.apply(this, arguments);
             const s = this.__qgSwitchStack;
+            hidePickerThumb();
             if (s && s.hoverRow !== -1) {
                 s.hoverRow = -1;
                 this.setDirtyCanvas?.(true, true);

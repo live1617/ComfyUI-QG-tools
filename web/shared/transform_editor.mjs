@@ -1,30 +1,30 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { zh, zhOn, zhPair, zhReady, zhSep } from "./zh.mjs?v=202611201255";
-import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "./widget_visibility.mjs?v=202611201255";
-import { mountTransformTrim } from "./transform_trim.mjs?v=202611201255";
-import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=202611201255";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=202611201255";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=202611201255";
-import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=202611201255";
-import { createMediaPicker } from "./media_picker.mjs?v=202611201255";
-import { normalizeFillColor } from "./fill_color.mjs?v=202611201255";
-import { sizeFor } from "./node_width.mjs?v=202611201255";
-import { makeScrubInput } from "./scrub_input.mjs?v=202611201255";
-import { confirmDiscard } from "./discard_prompt.mjs?v=202611201255";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=202611201255";
-import { vueNodesEnabled } from "./vue_mode.mjs?v=202611201255";
-import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=202611201255";
-import { suppressCoreVideoPreview } from "./core_preview.mjs?v=202611201255";
-import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=202611201255";
-import { createSettle } from "./settle.mjs?v=202611201255";
+import { zh, zhOn, zhPair, zhReady, zhSep } from "./zh.mjs?v=202611210910";
+import { hideInputsInDef, hideWidget, suppressCoreImagePreview } from "./widget_visibility.mjs?v=202611210910";
+import { mountTransformTrim } from "./transform_trim.mjs?v=202611210910";
+import { clipOutputRate, inputNumber } from "./clip_rate.mjs?v=202611210910";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast } from "./index.mjs?v=202611210910";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "./panel_layout.mjs?v=202611210910";
+import { mediaViewQuery, unlistedMedia } from "./media_list.mjs?v=202611210910";
+import { createMediaPicker } from "./media_picker.mjs?v=202611210910";
+import { normalizeFillColor } from "./fill_color.mjs?v=202611210910";
+import { sizeFor } from "./node_width.mjs?v=202611210910";
+import { makeScrubInput } from "./scrub_input.mjs?v=202611210910";
+import { confirmDiscard } from "./discard_prompt.mjs?v=202611210910";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=202611210910";
+import { vueNodesEnabled } from "./vue_mode.mjs?v=202611210910";
+import { featherGeneratedMask, generatedAreaMask, overlayPlan, seeThroughMap, stitchBlendFromMask } from "./stitch_preview.mjs?v=202611210910";
+import { suppressCoreVideoPreview } from "./core_preview.mjs?v=202611210910";
+import { gearIconSvg, loadSettings, openSettingsMenu } from "./settings_menu.mjs?v=202611210910";
+import { createSettle } from "./settle.mjs?v=202611210910";
 import {
   INPUT_FOLDER_MODE,
   LOCAL_PATH_MODE,
   normalizeVideoOptions,
   mediaSourceState,
   videoSourceState,
-} from "./video_source_card.mjs?v=202611201255";
+} from "./video_source_card.mjs?v=202611210910";
 import {
   alignChanges,
   aspectMatches,
@@ -79,9 +79,9 @@ import {
   turnedCrop,
   wrapDegrees,
   zoomAround,
-} from "./transform_geometry.mjs?v=202611201255";
-import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=202611201255";
-import { liftSocket } from "./widget_card.mjs?v=202611201255";
+} from "./transform_geometry.mjs?v=202611210910";
+import { clampFrame, clipInfo, frameTime } from "./timeline_math.mjs?v=202611210910";
+import { liftSocket } from "./widget_card.mjs?v=202611210910";
 
 const HIDDEN_WIDGETS = [
   "image", "upload",

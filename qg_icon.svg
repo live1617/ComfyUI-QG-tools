@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img">
+  <title>QG 工具图标（浅底版）</title>
+  <desc>蓝色圆环内 QG 字标，右上角一段青绿色高亮弧</desc>
+  <!-- 主环 -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#185FA5" stroke-width="44"/>
+  <!-- 高亮弧：右上 70°，起点角 -75°，终点角 -5° -->
+  <path d="M 310.3 53.2 A 210 210 0 0 1 465.2 237.7"
+    fill="none" stroke="#1D9E75" stroke-width="44" stroke-linecap="round"/>
+  <!-- 字标 -->
+  <text x="256" y="268" text-anchor="middle" dominant-baseline="central"
+    font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="190" font-weight="700"
+    fill="#0C447C">QG</text>
+</svg>

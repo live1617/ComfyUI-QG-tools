@@ -23,6 +23,10 @@ What is deliberately different from that node:
 
 Three sizing rules, applied in this order:
 
+  0. A negative side value crops that edge of the source image (the picture
+     itself is sliced, and the mask with it). Crops are capped so at least
+     ``ceil(size * 0.1)`` pixels survive on each axis - Goohaitools 88f2dd1's
+     ``_limit_crops``. Positive values still grow the canvas as before.
   1. ``unit`` turns the four side values into pixels (``percent`` reads left
      and right against the width, top and bottom against the height).
   2. ``max_output_side`` > 0 shrinks the padding only - the picture keeps its
@@ -59,20 +63,56 @@ from ._qg_tensor_helpers import as_image_batch
 # Hard stop, not a real limit: it only keeps a typo (999999) from asking for a
 # canvas that will not fit in memory.
 PAD_LIMIT = 16384
+# A negative side pads means "crop that edge of the source" (Goohaitools 88f2dd1).
+# Same hard-stop idea as PAD_LIMIT: far past any real crop, just blocks typos.
+CROP_LIMIT = 3000
+# At least this share of the source must survive a crop on each axis. Mirrors
+# Goohaitools' ``_limit_crops``: budget = size - ceil(size * 0.1).
+MIN_SOURCE_RATIO = 0.1
 
 
 # ----------------------------------------------------------------------
 # Sizing
 # ----------------------------------------------------------------------
 def _to_px(value, unit, base):
-    """One side value as pixels. ``percent`` is measured on that axis."""
+    """One side value as pixels. ``percent`` is measured on that axis.
+
+    Negative stays negative - it means crop that edge. Clamped to
+    ``[-CROP_LIMIT, PAD_LIMIT]`` so a typo cannot ask for an absurd canvas.
+    """
     try:
         v = float(value)
     except (TypeError, ValueError):
         v = 0.0
-    if unit == "percent":
-        return int(round(base * v / 100.0))
-    return int(round(v))
+    px = int(round(base * v / 100.0)) if unit == "percent" else int(round(v))
+    return min(PAD_LIMIT, max(-CROP_LIMIT, px))
+
+
+def _nearest(value):
+    """Python 2-style round-half-up, matching Goohaitools' ``_nearest``."""
+    return int(math.floor(value + 0.5))
+
+
+def _limit_crops(width, height, pads):
+    """Cap each axis' negative pads so at least 10% of the source survives.
+
+    ``pads`` is ``[l, r, t, b]``. Only negative entries count as crops; their
+    total per axis may not exceed ``size - ceil(size * MIN_SOURCE_RATIO)``,
+    i.e. ``ceil(size * 0.1)`` pixels of source remain. When over budget both
+    sides shrink proportionally (integer, never negative). 1:1 with
+    Goohaitools 88f2dd1's ``_limit_crops``. Returns a new list.
+    """
+    pads = list(pads)
+    for first, second, size in ((0, 1, width), (2, 3, height)):
+        a, b = max(0, -pads[first]), max(0, -pads[second])
+        budget = size - int(math.ceil(size * MIN_SOURCE_RATIO))
+        if a + b > budget:
+            cropped_first = _nearest(budget * a / float(a + b))
+            if a:
+                pads[first] = -cropped_first
+            if b:
+                pads[second] = -(budget - cropped_first)
+    return pads
 
 
 def _scale_pair(a, b, allow):
@@ -96,10 +136,18 @@ def compute_layout(w, h, unit, left, right, top, bottom, max_side=0, divisor=0):
 
     Pure function, no tensors, so it can be tested on its own.
     """
-    l = min(PAD_LIMIT, max(0, _to_px(left, unit, w)))
-    r = min(PAD_LIMIT, max(0, _to_px(right, unit, w)))
-    t = min(PAD_LIMIT, max(0, _to_px(top, unit, h)))
-    b = min(PAD_LIMIT, max(0, _to_px(bottom, unit, h)))
+    l = _to_px(left, unit, w)
+    r = _to_px(right, unit, w)
+    t = _to_px(top, unit, h)
+    b = _to_px(bottom, unit, h)
+
+    # Negative pads crop the source. Cap them before anything else so at least
+    # 10% of each axis survives -- otherwise "crop 3000" on a 100px picture
+    # would ask for a negative canvas.
+    l, r, t, b = _limit_crops(w, h, [l, r, t, b])
+
+    crop_l, crop_r, crop_t, crop_b = max(0, -l), max(0, -r), max(0, -t), max(0, -b)
+    kept_w, kept_h = w - crop_l - crop_r, h - crop_t - crop_b
 
     try:
         max_side = int(max_side or 0)
@@ -112,20 +160,29 @@ def compute_layout(w, h, unit, left, right, top, bottom, max_side=0, divisor=0):
 
     warns = []
 
-    # Long-side ceiling: padding gives way, the picture does not.
+    # Long-side ceiling: padding gives way, the picture does not. With crops
+    # the "picture" is what survives the slice (kept_w x kept_h), so the head-
+    # room is measured against that. Negative pads (crops) are left untouched -
+    # they already shrink the canvas; only positive padding is trimmed.
     if max_side > 0:
-        if w > max_side or h > max_side:
-            # The picture itself is over the line, so the ceiling is already
-            # impossible to meet. Any padding only makes it worse, so all four
-            # sides go, not just the ones that overflow.
-            l = r = t = b = 0
+        if kept_w > max_side or kept_h > max_side:
+            # The kept picture itself is over the line, so the ceiling is
+            # already impossible. Positive padding all goes; crops stay.
+            l = min(0, l)
+            r = min(0, r)
+            t = min(0, t)
+            b = min(0, b)
             warns.append(
                 "picture %dx%d is already past max_output_side %d; all padding "
-                "dropped (scale it down with another node)" % (w, h, max_side)
+                "dropped (scale it down with another node)" % (kept_w, kept_h, max_side)
             )
         else:
-            l, r = _scale_pair(l, r, max_side - w)
-            t, b = _scale_pair(t, b, max_side - h)
+            pos_l, pos_r = max(0, l), max(0, r)
+            pos_t, pos_b = max(0, t), max(0, b)
+            nl, nr = _scale_pair(pos_l, pos_r, max_side - kept_w)
+            nt, nb = _scale_pair(pos_t, pos_b, max_side - kept_h)
+            l, r = min(0, l) + nl, min(0, r) + nr
+            t, b = min(0, t) + nt, min(0, b) + nb
 
     out_w, out_h = w + l + r, h + t + b
 
@@ -208,14 +265,14 @@ class QGOutpaintBoard(io.ComfyNode):
                 io.Image.Input("image", tooltip="The picture to grow. Padding is added around it; the picture itself is copied into the bigger canvas, never resampled or cropped."),
                 io.Combo.Input("unit", options=["pixels", "percent"], default="pixels",
                     tooltip="pixels: the four side values are literal pixels. percent: left/right read against the width, top/bottom against the height."),
-                io.Int.Input("left", default=0, min=0, max=PAD_LIMIT, step=1,
-                    tooltip="How far to grow the left side. pixels: literal pixels; percent: a share of the width. 0 = none."),
-                io.Int.Input("right", default=0, min=0, max=PAD_LIMIT, step=1,
-                    tooltip="How far to grow the right side. pixels: literal pixels; percent: a share of the width. 0 = none."),
-                io.Int.Input("top", default=0, min=0, max=PAD_LIMIT, step=1,
-                    tooltip="How far to grow the top side. pixels: literal pixels; percent: a share of the height. 0 = none."),
-                io.Int.Input("bottom", default=0, min=0, max=PAD_LIMIT, step=1,
-                    tooltip="How far to grow the bottom side. pixels: literal pixels; percent: a share of the height. 0 = none."),
+                io.Int.Input("left", default=0, min=-CROP_LIMIT, max=PAD_LIMIT, step=1,
+                    tooltip="How far to grow the left side. pixels: literal pixels; percent: a share of the width. Negative crops that edge of the source (at least 10% of each axis is kept). 0 = none."),
+                io.Int.Input("right", default=0, min=-CROP_LIMIT, max=PAD_LIMIT, step=1,
+                    tooltip="How far to grow the right side. pixels: literal pixels; percent: a share of the width. Negative crops that edge of the source (at least 10% of each axis is kept). 0 = none."),
+                io.Int.Input("top", default=0, min=-CROP_LIMIT, max=PAD_LIMIT, step=1,
+                    tooltip="How far to grow the top side. pixels: literal pixels; percent: a share of the height. Negative crops that edge of the source (at least 10% of each axis is kept). 0 = none."),
+                io.Int.Input("bottom", default=0, min=-CROP_LIMIT, max=PAD_LIMIT, step=1,
+                    tooltip="How far to grow the bottom side. pixels: literal pixels; percent: a share of the height. Negative crops that edge of the source (at least 10% of each axis is kept). 0 = none."),
                 io.Int.Input("max_output_side", default=0, min=0, max=PAD_LIMIT, step=128,
                     tooltip="0 = no ceiling. When the canvas would go past it, only the padding is trimmed - the picture is never cropped or rescaled. A picture already over the limit drops all padding and says so."),
                 io.Int.Input("divisible_by", default=0, min=0, max=256, step=1,
@@ -253,13 +310,25 @@ class QGOutpaintBoard(io.ComfyNode):
             kw.get("max_output_side", 0), kw.get("divisible_by", 0),
         )
 
+        # Negative pads slice the source (Goohaitools 88f2dd1): l=-50 crops 50px
+        # off the left, t=-30 crops 30 off the top. The rest become positive pads
+        # around the kept piece. compute_layout already capped crops at 10%.
+        crop_l, crop_r = max(0, -l), max(0, -r)
+        crop_t, crop_b = max(0, -t), max(0, -b)
+        pad_l, pad_r = max(0, l), max(0, r)
+        pad_t, pad_b = max(0, t), max(0, b)
+        src_x0, src_x1 = crop_l, w - crop_r
+        src_y0, src_y1 = crop_t, h - crop_b
+        kept = image[:, src_y0:src_y1, src_x0:src_x1, :]
+        kept_h, kept_w = int(kept.shape[1]), int(kept.shape[2])
+
         rgb255 = parse_fill_color(kw.get("pad_color", "#808080"),
                                   "Outpaint Board pad_color")
         rgb = tuple(c / 255.0 for c in rgb255)
         has_pad = (l + r + t + b) > 0
 
-        # Output picture: paint the fill, then copy the source in place. No
-        # interpolation anywhere on this path.
+        # Output picture: paint the fill, then copy the kept pixels in place. No
+        # interpolation anywhere on this path - a pure crop + paste.
         out = torch.empty((batch, out_h, out_w, channels),
                           dtype=image.dtype, device=image.device)
         if channels >= 3:
@@ -271,15 +340,19 @@ class QGOutpaintBoard(io.ComfyNode):
             out[..., 0] = gray
         if channels >= 4:
             out[..., 3] = 1.0
-        out[:, t:t + h, l:l + w, :] = image
+        out[:, pad_t:pad_t + kept_h, pad_l:pad_l + kept_w, :] = kept
 
-        # Output mask: 1.0 on the new area, the source mask inside the frame.
+        # Output mask: 1.0 on the added area (including cropped-away edges),
+        # the input mask's surviving slice inside the frame. A crop discards
+        # source pixels, so their mask slice goes with them.
         out_mask = torch.ones((batch, out_h, out_w),
                               dtype=torch.float32, device=image.device)
         if mask_in is not None:
-            out_mask[:, t:t + h, l:l + w] = _fit_mask(mask_in, batch, h, w, image.device)
+            kept_mask = _fit_mask(mask_in, batch, h, w, image.device)[
+                :, src_y0:src_y1, src_x0:src_x1]
+            out_mask[:, pad_t:pad_t + kept_h, pad_l:pad_l + kept_w] = kept_mask
         else:
-            out_mask[:, t:t + h, l:l + w] = 0.0
+            out_mask[:, pad_t:pad_t + kept_h, pad_l:pad_l + kept_w] = 0.0
 
         for msg in warns:
             print("[QG-tools] Outpaint Board: %s" % msg)

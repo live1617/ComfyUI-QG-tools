@@ -7,8 +7,8 @@
     "ported": "搬运 —— 整段照抄上游代码，只改类名 / 节点 ID / 分类 / 显示名 / 中文文案，逻辑一行没动"
   },
   "counts": {
-    "total": 71,
-    "original": 65,
+    "total": 76,
+    "original": 70,
     "ported": 6
   },
   "upstreams": {
@@ -1023,6 +1023,70 @@
         "relation": "idea",
         "node": "Tiled Upscale Stitch 🆎"
       }
+    },
+    {
+      "id": "QG_BoolToInt",
+      "display": "布尔到整数",
+      "file": "nodes/qg_bool_to_int.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。把 BOOLEAN 转成 INT（True→1 / False→0），纯后端，无上游代码、不复用任何外部实现。输入为强制接线槽，不接线按 False 处理。自带 tools/_check_qg_bool_to_int.py 收进 regress。"
+    },
+    {
+      "id": "QG_StringSelect",
+      "display": "字符串选择",
+      "file": "nodes/qg_string_select.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。功能形态参考用户给的 Impact Pack「字符串选择」截图与本机该节点的输入输出定义（多行文本 / 布尔开关 / 选择索引 → 字符串）；代码零复用、自行实现，分段与取模回绕规则自己写。纯后端，无上游代码。自带 tools/_check_qg_string_select.py 收进 regress。",
+      "reference": {
+        "plugin": "ComfyUI-Impact-Pack",
+        "node": "ImpactStringSelector / String Selector",
+        "license": "MIT",
+        "relation": "idea"
+      }
+    },
+    {
+      "id": "QG_BatchCount",
+      "display": "批次计数",
+      "file": "nodes/qg_batch_count.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。功能形态参考用户给的 essentials「批次计数」截图（一个任意类型输入 → 整数）；代码零复用、自行实现，计数口径 shape[0] / LATENT samples / len / 未接线 0 自己写。纯后端，无上游代码。自带 tools/_check_qg_batch_count.py 收进 regress。",
+      "reference": {
+        "plugin": "ComfyUI_essentials",
+        "node": "BatchCount+ / Batch Count",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      }
+    },
+    {
+      "id": "QG_ForLoopStart",
+      "display": "循环开始",
+      "file": "nodes/qg_for_loop_start.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。功能形态参考用户给的 Easy-Use「For循环-起始」截图；代码零复用。零依赖循环对的一半，回环在 QG_ForLoopEnd 用 ComfyUI 内核 GraphBuilder + 节点展开实现，不依赖任何外部插件。自带 tools/_check_qg_for_loop.py 收进 regress。",
+      "reference": {
+        "plugin": "ComfyUI-Easy-Use",
+        "node": "For循环-起始 / easy forLoopStart",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      }
+    },
+    {
+      "id": "QG_ForLoopEnd",
+      "display": "循环结束",
+      "file": "nodes/qg_for_loop_end.py",
+      "origin": "original",
+      "upstream": null,
+      "note": "自写。功能形态参考用户给的 Easy-Use「For循环-结束」截图；代码零复用。零依赖循环对的另一半，用 ComfyUI 内核 GraphBuilder + 节点展开实现真回环，idx 回带递增，不依赖任何外部插件。与起点共用 tools/_check_qg_for_loop.py。",
+      "reference": {
+        "plugin": "ComfyUI-Easy-Use",
+        "node": "For循环-结束 / easy forLoopEnd",
+        "license": "GPL-3.0",
+        "relation": "idea"
+      }
     }
   ],
   "sections": [
@@ -1430,6 +1494,36 @@
       "anchor": "## 切块超分拼回",
       "nodes": [
         "QG_TiledUpscaleStitch"
+      ]
+    },
+    {
+      "anchor": "## 布尔到整数",
+      "nodes": [
+        "QG_BoolToInt"
+      ]
+    },
+    {
+      "anchor": "## 字符串选择",
+      "nodes": [
+        "QG_StringSelect"
+      ]
+    },
+    {
+      "anchor": "## 批次计数",
+      "nodes": [
+        "QG_BatchCount"
+      ]
+    },
+    {
+      "anchor": "## 循环（For 循环，零依赖）",
+      "nodes": [
+        "QG_ForLoopStart"
+      ]
+    },
+    {
+      "anchor": "## 循环结束（配合循环开始）",
+      "nodes": [
+        "QG_ForLoopEnd"
       ]
     }
   ]

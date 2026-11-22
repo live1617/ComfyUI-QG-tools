@@ -5,7 +5,7 @@
  * （带多行文本框的节点会被撑到 400，普通节点是 270，某些只有两个控件的算出来只有 159）。
  * Python 侧 grep 不到宽度，也没法声明。所以统一在这里钉一遍。
  *
- * 规模：**65 个节点全部在表里**，一个都不漏（`tools/verify_node_sizes.py` 会核对
+ * 规模：**76 个节点全部在表里**，一个都不漏（`tools/verify_node_sizes.py` 会核对
  * 表里的条目与 `nodes/*.py` 注册的 QG_ 节点一一对应，漏一个、多一个都报红）。
  * 改尺寸只改这一处，别再往节点文件里写数字。
  *
@@ -30,7 +30,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=202611201255";
+import { chainCallback } from "./index.mjs?v=202611210910";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════
@@ -63,7 +63,9 @@ export const SIZES = {
     QG_AddWatermark: { w: 270, minW: 160, h: 366, minH: 366 },  // 13 控件 + 2 输入 + 1 输出
     QG_MaskColorize: { w: 270, minW: 140, h: 162, minH: 162 },
     QG_MaskConcat: { w: 270, minW: 140, h: 102, minH: 102 },
-    QG_MaskBlend: { w: 270, minW: 160, h: 200, minH: 200 },  // 3 下拉 + 2 可选输入 + 3 输出
+    // 3 下拉 + 2 可选输入 + 3 输出；真机 computeSize 210x146，按内容收紧避免底部大片空白。
+    // migrateH：旧默认高度 200 的已存工作流加载时顺带收紧；手拖过的其它尺寸不动。
+    QG_MaskBlend: { w: 270, minW: 160, h: 150, minH: 150, migrateH: 200 },
     QG_MaskAnalysis: { w: 270, minW: 160, h: 250, minH: 250 },
     QG_MaskDetect: { w: 270, minW: 140, h: 58, minH: 58 },  // 1 输入 + 1 滑块 + 1 输出
     // ↑ h 是实测的：computeSize 给 210x250（12 槽 / 4 控件），写 230 会裁掉最下面
@@ -165,6 +167,16 @@ export const SIZES = {
     QG_TiledUpscale: { w: 300, minW: 280, h: 254, minH: 254 },
     // 切块超分拼回：h 是占位值，必须用 tools/_probe_sizes_vs_table.cjs 实测后回填。
     QG_TiledUpscaleStitch: { w: 300, minW: 280, h: 78, minH: 78 },
+    // 布尔到整数：1 强制接线输入 + 1 输出，无控件；真机 computeSize 140x26。
+    QG_BoolToInt: { w: 210, minW: 140, h: 26, minH: 26 },
+    // 字符串选择：多行文本框 + 2 控件，真机 computeSize 210x136。
+    QG_StringSelect: { w: 270, minW: 220, h: 136, minH: 120 },
+    // 批次计数：1 任意类型接线输入 + 1 输出，无控件；真机 computeSize 140x26。
+    QG_BatchCount: { w: 210, minW: 140, h: 26, minH: 26 },
+    // 循环开始：总量 + 2 值 + 流/索引/2 值，真机 computeSize 210x118。
+    QG_ForLoopStart: { w: 270, minW: 220, h: 118, minH: 100 },
+    // 循环结束：流 + 2 值 + 内部 idx，真机 computeSize 210x98。
+    QG_ForLoopEnd: { w: 270, minW: 220, h: 98, minH: 98 },
 };
 
 /** 不在表里的节点用这个（新节点忘了登记也有兜底）。 */
@@ -193,6 +205,7 @@ export function sizeFor(nodeName) {
         minW: entry.minW ?? w ?? DEFAULT_MIN_WIDTH,
         h: entry.h ?? null,
         minH: entry.minH ?? null,
+        migrateH: entry.migrateH ?? null,
     };
 }
 
@@ -225,7 +238,7 @@ export function heightFor(nodeName) {
  * 🔴 只影响新建：存档里已有尺寸的节点由 onConfigure 覆盖回来，不动用户调过的尺寸。
  */
 export function pinNodeSize(nodeType, nodeData) {
-    const { w, h, minW, minH } = sizeFor(nodeData?.name);
+    const { w, h, minW, minH, migrateH } = sizeFor(nodeData?.name);
     if (!w) return;
 
     const clamp = (node) => {
@@ -245,6 +258,17 @@ export function pinNodeSize(nodeType, nodeData) {
         if (minH) this.minHeight = Math.max(Number(this.minHeight) || 0, minH);
         this.setDirtyCanvas?.(true, true);
     });
+
+    // 旧默认高度的存量节点：加载存档时只收紧「正好还是旧默认值」的节点，
+    // 用户自己拖成别的高度一律保留（不拿新默认值覆盖用户布局）。
+    if (migrateH && h) {
+        chainCallback(nodeType.prototype, "onConfigure", function () {
+            if (Math.abs(this.size[1] - migrateH) < 0.5) {
+                this.size[1] = h;
+                this.setDirtyCanvas?.(true, true);
+            }
+        });
+    }
 
     // LiteGraph 各版本对 minWidth / minHeight 的处理不一致（有的只在拖拽时读，setSize 不读），
     // 所以既写属性给拖拽用，也在 setSize / onResize 之后直接把 size 夹回来。

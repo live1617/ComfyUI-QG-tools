@@ -8,7 +8,7 @@
 
 - 本插件：ComfyUI-QG-tools · GPL-3.0-or-later · https://github.com/live1617/ComfyUI-QG-tools
 - 依据：`ORIGINS.json`（更新于 2026-11-08）
-- 规模：71 个节点 = **6 个搬运** + **65 个原创**
+- 规模：76 个节点 = **6 个搬运** + **70 个原创**
 
 ## 口径
 
@@ -117,10 +117,14 @@
 | `QG_RealignToSource` | 编辑对位回源 | ComfyUI-AusBoss「Realign to Source (EXPERIMENTAL) 🆎」 | MIT | 参考思路，代码自行实现 |
 | `QG_TiledUpscale` | 切块超分 | ComfyUI-AusBoss「Tiled Upscale 🆎」 | MIT | 参考思路，代码自行实现 |
 | `QG_TiledUpscaleStitch` | 切块超分拼回 | ComfyUI-AusBoss「Tiled Upscale Stitch 🆎」 | MIT | 参考思路，代码自行实现 |
+| `QG_StringSelect` | 字符串选择 | ComfyUI-Impact-Pack「ImpactStringSelector / String Selector」 | MIT | 参考思路，代码自行实现 |
+| `QG_BatchCount` | 批次计数 | ComfyUI_essentials「BatchCount+ / Batch Count」 | GPL-3.0 | 参考思路，代码自行实现 |
+| `QG_ForLoopStart` | 循环开始 | ComfyUI-Easy-Use「For循环-起始 / easy forLoopStart」 | GPL-3.0 | 参考思路，代码自行实现 |
+| `QG_ForLoopEnd` | 循环结束 | ComfyUI-Easy-Use「For循环-结束 / easy forLoopEnd」 | GPL-3.0 | 参考思路，代码自行实现 |
 
 ## 完全原创（无上游参考）
 
-9 个节点从零实现，没有对应的上游项目：`QG_ColorMatch`、`QG_ColorMatchPro`、`QG_BoolToggle`、`QG_Number`、`QG_Slider`、`QG_Math`、`QG_Exists`、`QG_ExportImage`、`QG_StepPreview`。
+10 个节点从零实现，没有对应的上游项目：`QG_ColorMatch`、`QG_ColorMatchPro`、`QG_BoolToggle`、`QG_Number`、`QG_Slider`、`QG_Math`、`QG_Exists`、`QG_ExportImage`、`QG_StepPreview`、`QG_BoolToInt`。
 
 另有 16 个节点合并自作者自己的插件（`QG_RemoveBGByMask`、`QG_MaskBlend`、`QG_MaskAnalysis`、`QG_MaskDetect`、`QG_RunTimer`、`QG_AddWatermark`、`QG_EmptyLatentResolution`、`QG_ImageScale`、`QG_RatioResolution`、`QG_MDReader`、`QG_TripleLoader`、`QG_PromptLine`、`QG_ImageNormalize`、`QG_Note`、`QG_SetPoint`、`QG_GetPoint`），版权同属作者。
 
