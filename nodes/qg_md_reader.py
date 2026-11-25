@@ -65,7 +65,7 @@ class QGMarkdownReader(io.ComfyNode):
         )
 
     @classmethod
-    def IS_CHANGED(cls, md_file, mode="plain", custom_path=""):
+    def fingerprint_inputs(cls, md_file, mode="plain", custom_path=""):
         path = md_core.resolve_path((custom_path or "").strip() or md_file)
         if not path or not os.path.isfile(path):
             return "missing:%s" % (md_file or "")

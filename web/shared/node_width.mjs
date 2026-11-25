@@ -30,7 +30,7 @@
  * 🔴 只影响新建：存档里已有宽度的节点由 onConfigure 覆盖回来，不动用户手调过的尺寸。
  */
 
-import { chainCallback } from "./index.mjs?v=202611210910";
+import { chainCallback } from "./index.mjs?v=202611251300";
 
 export const SIZES = {
     // ══════════════════════════════════════════════════════════════
@@ -52,8 +52,9 @@ export const SIZES = {
     QG_ImageGrid: { w: 270, minW: 140, h: 130, minH: 130 },
     // 1 输入 + 3 输出（WIDTH / HEIGHT / COUNT），实测 computeSize 159x66
     QG_ImageOrLatentSize: { w: 210, minW: 140, h: 66, minH: 66 },
-    // 9 控件 + 1 输入槽 + 3 输出，实测 computeSize 210x290
-    QG_RatioResolution: { w: 270, minW: 160, h: 290, minH: 290 },
+    // 9 控件 + 1 输入槽 + 3 输出，实测 computeSize 210x170；旧默认 290 底部大片空白，
+    // 2026-11-24 收紧到 170，migrateH 让老存档也跟着收；前端 shrinkNodeHeight 按模式显隐再压。
+    QG_RatioResolution: { w: 270, minW: 160, h: 170, minH: 170, migrateH: 290 },
     QG_ImageScale: { w: 270, minW: 160, h: 334, minH: 334 },
     // ↑ h 是实测的：computeSize 给 210x334（16 槽 / 10 控件），按「10 控件 + 4 输出」
     //   估成 320 会裁掉最下面那十几个像素。别估，跑 _probe_sizes_vs_table.cjs。
@@ -71,7 +72,8 @@ export const SIZES = {
     // ↑ h 是实测的：computeSize 给 210x250（12 槽 / 4 控件），写 230 会裁掉最下面
     //   那行输出槽。别按「5 个输入 + 7 个输出」估，槽是 20px 一条算的。
     QG_MaskRefine: { w: 270, minW: 140, h: 270, minH: 270 },
-    QG_RemoveBGByMask: { w: 270, minW: 160, h: 240, minH: 240 },  // 2 输入 + 5 控件 + 3 输出
+    // 2 输入 + 5 控件 + 3 输出，实测 computeSize 210x194；旧 240 空白约 46px。
+    QG_RemoveBGByMask: { w: 270, minW: 160, h: 194, minH: 194, migrateH: 240 },  // 按遮罩抠图
     // 12 个控件（尺寸四件套 + 四方向扩展 + 倍数 + 补洞 + 填充）铺满 315 高。
     QG_MaskCrop: { w: 270, minW: 160, h: 315, minH: 315 },
     QG_CropRestore: { w: 270, minW: 160, h: 170, minH: 170 },
@@ -82,14 +84,18 @@ export const SIZES = {
     QG_StitchInpaint: { w: 270, minW: 160, h: 140, minH: 140 },
     QG_RouteBlocker: { w: 210, minW: 140, h: 82, minH: 82 },
     QG_SizeSelector: { w: 270, minW: 140, h: 310, minH: 310 },
-    QG_TextConcat: { w: 270, minW: 140, h: 78, minH: 78 },
+    // 实测 computeSize 210x78；前端旧 fitHeight 估算撑到 102 留白，已改为实测优先。
+    // migrateH=102 让老存档里被撑高的节点加载时收紧到 78。
+    QG_TextConcat: { w: 270, minW: 140, h: 78, minH: 78, migrateH: 102 },
     // 1 控件 + 1 输出，真机 computeSize 210x58；pinNodeWidth 钉宽只会更矮。
-    // 3 输入槽 + 6 控件（透明度滑条 / 扩展 / 模糊 / 匹配开关 / 图像×2），真机待测。
-    QG_ImageMergeMask: { w: 270, minW: 160, h: 210, minH: 210 },
-    // 4 必填控件 + 1 可选输入 + 1 输出，真机待测。
-    QG_ColorImage: { w: 270, minW: 160, h: 190, minH: 190 },
-    // 2 可选输入槽 + 4 控件 + 2 输出槽，真机待测。
-    QG_ImageScaleRange: { w: 270, minW: 160, h: 190, minH: 190 },
+    // 3 输入槽 + 6 控件（透明度滑条 / 扩展 / 模糊 / 匹配开关 / 图像×2），实测 computeSize 210x170；
+    // 旧 210 空白约 40px。
+    QG_ImageMergeMask: { w: 270, minW: 160, h: 170, minH: 170, migrateH: 210 },
+    // 4 控件 + 1 输入 + 1 输出，真机 computeSize 210x130（同 ImageGrid 的布局）。
+    // 原来是「待测」估值 190，底部空了约 60px（用户 2026-11-23 截图报），改 130。
+    QG_ColorImage: { w: 270, minW: 160, h: 130, minH: 130 },
+    // 2 可选输入槽 + 4 控件 + 2 输出槽，实测 computeSize 210x150；旧 190 空白约 40px。
+    QG_ImageScaleRange: { w: 270, minW: 160, h: 150, minH: 150, migrateH: 190 },
 
 
     QG_StringConstant: { w: 270, minW: 140, h: 58, minH: 58 },
@@ -98,7 +104,6 @@ export const SIZES = {
     QG_TextReplace: { w: 270, minW: 140, h: 202, minH: 202 },
 
     // —— 400：带多行输入框，270 打不动字 ——
-    QG_GoogleTranslateText: { w: 270, minW: 140, h: 200, minH: 200 },
     QG_TextEditOutput: { w: 400, minW: 140, h: 200, minH: 200 },  // 显示名「文本」
     QG_TextSplit: { w: 270, minW: 140, h: 272, minH: 272 },
     QG_StringSwitch: { w: 270, minW: 140, h: 200, minH: 200 },
@@ -127,7 +132,7 @@ export const SIZES = {
     // 所以节点地板 = 面板地板 + 标题/底栏，由面板自报，表里只给新建时的高度。
     // 默认 430x645，与「加载图像」同尺寸，并排摆时上下边对得上。
     QG_OutpaintBoard: { w: 430, minW: 380, h: 645, minH: 470, own: true },
-    QG_RunTimer: { w: 510, minW: 510, h: 140, minH: 140, own: true },  // 计时器深色面板（Capture it 字体）
+    QG_RunTimer: { w: 270, minW: 270, h: 90, minH: 90, own: true },  // 计时器深色面板（Capture it 字体），2026-11-23 改 270x90
     QG_Seed: { w: 320, minW: 300, h: 216, minH: 120, own: true },  // 种子卡片
     QG_TripleLoader: { w: 430, minW: 140, h: 210, minH: 210, own: true },  // 三联加载器，与 LoRA 加载器等宽
     QG_WorkflowNote: { w: 520, minW: 300, h: 620, minH: 120, own: true },  // 说明卡
@@ -149,7 +154,10 @@ export const SIZES = {
     // 零行 computeSize=102、24 行全展开 node.size[1]=678）。按最大登记才不会在
     // 满栈时被裁掉底部输出槽；_probe_sizes_vs_table 测的是零行基准，678 也满足。
     // 改 SLOT_COUNT / ROW_HEIGHT 后必须重测回填。
-    QG_LoraSwitchStack: { w: 380, minW: 380, h: 678, minH: 120 },
+    // 宽度 430 = 与 QG_LoraLoader（LoRA 加载器）同宽（用户 2026-11-22 要求）。
+    // 行绘制宽度按 nodeWidth 算，加宽后行/强度条/× 会自动铺满，不用另调；
+    // 高度与宽度无关，678 仍是满栈实测值。
+    QG_LoraSwitchStack: { w: 430, minW: 430, h: 678, minH: 120 },
     // 图像适配缩放：h 是占位值，必须用 tools/_probe_sizes_vs_table.cjs 实测后回填。
     // h 是「全部 10 个控件都可见」时的实测高度（334）。这是动态显隐节点：
     // 前端按目标模式收起无关控件，新建后实际停在 190/238/262 之一，但表里
@@ -177,6 +185,20 @@ export const SIZES = {
     QG_ForLoopStart: { w: 270, minW: 220, h: 118, minH: 100 },
     // 循环结束：流 + 2 值 + 内部 idx，真机 computeSize 210x98。
     QG_ForLoopEnd: { w: 270, minW: 220, h: 98, minH: 98 },
+    // ---- 2026-11-25 从 Multipack v2.22.13 搬入的 9 个节点 ----
+    // h 全部按真机 computeSize() 实测（_probe_all_sizes 建节点读数），
+    // 各 +2px 余量防主题字体偏大时裁末行 —— 不是按控件数估的。
+    QG_ColorPicker: { w: 270, minW: 240, h: 104, minH: 104 },
+    QG_DualColorPicker: { w: 290, minW: 260, h: 148, minH: 148 },
+    QG_ColorConvert: { w: 270, minW: 240, h: 104, minH: 104 },
+    QG_CustomColor: { w: 300, minW: 270, h: 204, minH: 204 },
+    QG_DominantColor: { w: 290, minW: 260, h: 84, minH: 84 },
+    // 动态槽节点：高度由 web/image_batch_builder/index.js 的 fitNodeHeight 自己管，
+    // 这里的 h 是 1 槽状态的自然高度（实测 78）。
+    QG_ImageBatchBuilder: { w: 300, minW: 260, h: 78, minH: 78 },
+    QG_ImageComposite: { w: 300, minW: 270, h: 172, minH: 172 },
+    QG_MaskOrderFilter: { w: 330, minW: 300, h: 224, minH: 224 },
+    QG_ImageMaskPreview: { w: 320, minW: 290, h: 248, minH: 248 },
 };
 
 /** 不在表里的节点用这个（新节点忘了登记也有兜底）。 */

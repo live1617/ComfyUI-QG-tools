@@ -115,7 +115,8 @@ class QGRunTimer(io.ComfyNode, metaclass=_NoSourceBadgeMeta):
 
     @classmethod
     def define_schema(cls):
-        # 零输入零输出 + OUTPUT_NODE；hidden unique_id 显式声明（基类另注入 prompt/extra_pnginfo）。
+        # 零输入零输出 + OUTPUT_NODE；hidden unique_id 显式声明（V3 只走 cls.hidden，
+        # 不进 execute 形参，原先挂着的 unique_id 形参永远收到 None）。
         return io.Schema(
             node_id="QG_RunTimer",
             display_name="Run Timer",
@@ -129,7 +130,7 @@ class QGRunTimer(io.ComfyNode, metaclass=_NoSourceBadgeMeta):
         )
 
     @classmethod
-    def execute(cls, unique_id=None):
+    def execute(cls):
         # 前端负责一切绘制与交互，这里只回一个空 UI 结果，保证节点可执行/缓存。
         return io.NodeOutput()
 

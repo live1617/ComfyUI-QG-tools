@@ -24,7 +24,7 @@
  * 长相和交互差异很大，而且没法放常用预设色。
  */
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=202611210910";
+import { zhPair } from "../shared/zh.mjs?v=202611251300";
 
 const STYLE_ID = "qg-color-picker-style";
 const FALLBACK = "#364254";
@@ -38,6 +38,24 @@ const FALLBACK = "#364254";
  * 等于告诉用户只能选色 —— 而且面板选中预设后会把原本的 `red` 改成 hex。故意不挂。
  */
 const COLOR_WIDGETS = {
+    // 2026-11-25 从 Multipack v2.22.13 搬入的四个节点。QG_ColorConvert 的
+    // color 故意不挂：它设计上就吃 hex / RGB 整数 / HSL 百分比 / 0-1 浮点四种
+    // 写法，套色板等于告诉用户只能选色（源包也是这么决定的）。
+    QG_ColorPicker: {
+        color: { en: "Colour", zh: "颜色" },
+    },
+    QG_DualColorPicker: {
+        primary_color: { en: "Primary", zh: "主色" },
+        secondary_color: { en: "Secondary", zh: "辅色" },
+    },
+    QG_CustomColor: {
+        color1: { en: "Colour 1", zh: "颜色 1" },
+        color2: { en: "Colour 2", zh: "颜色 2" },
+    },
+    QG_ImageMaskPreview: {
+        mask_color: { en: "Mask colour", zh: "遮罩颜色" },
+        index_color: { en: "Index colour", zh: "序号颜色" },
+    },
     QG_RemoveBGByMask: {
         stroke_color: { en: "Stroke colour", zh: "描边颜色" },
     },
@@ -46,6 +64,9 @@ const COLOR_WIDGETS = {
     },
     QG_AddWatermark: {
         text_color: { en: "Text colour", zh: "文字颜色" },
+    },
+    QG_ColorImage: {
+        color: { en: "Colour", zh: "颜色" },
     },
 };
 
@@ -228,6 +249,14 @@ function applyColor(node, widget, raw) {
         node.graph?.incrementVersion?.();
     }
     node.setDirtyCanvas?.(true, true);
+    // 🔴 Nodes 2.0 里这个控件被渲染成一块独立的小 canvas（WidgetLegacy），
+    // setDirtyCanvas 只刷主画布 —— 不 triggerDraw 的话选完颜色节点上的色块
+    // 纹丝不动，要等拖动/缩放节点才更新。经典模式没有这个钩子，安全跳过。
+    try {
+        widget.triggerDraw?.();
+    } catch (e) {
+        /* 经典渲染器没有 triggerDraw */
+    }
     app.canvas?.setDirty?.(true, true);
 }
 

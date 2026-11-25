@@ -1,14 +1,14 @@
 {
   "pack": "ComfyUI-QG-tools",
-  "updated": "2026-11-08",
+  "updated": "2026-11-25",
   "about": "每个节点的来源清单。发布前由 tools/verify_origin.py 校验：本文件的 ID 集合必须等于实际注册的节点集合；README「节点来源」表与本表必须一致；搬运节点的源文件头必须保留上游出处。",
   "legend": {
     "original": "原创 —— 代码是自己写的，三种都算：① 从零实现；② 参考过上游的用法/思路后自己重写（reference.relation = idea）；③ 合并作者自己的旧插件（relation = own）。reference 只记录参考对象，不代表代码来自上游",
     "ported": "搬运 —— 整段照抄上游代码，只改类名 / 节点 ID / 分类 / 显示名 / 中文文案，逻辑一行没动"
   },
   "counts": {
-    "total": 76,
-    "original": 70,
+    "total": 84,
+    "original": 78,
     "ported": 6
   },
   "upstreams": {
@@ -565,19 +565,6 @@
       "note": "2026-11-08 从作者自有插件 1:1 搬入（ratio_resolution_node.py + web/qg_ratio_resolution.js），计算逻辑与源文件**完全等价**：同一组参数 1248 组对照（13 比例 × 6 模式 × 4 倍数 × 4 种图）输出逐项相同，包括「未知模式回落固定长边」「倍数取整不足一个倍数仍给一个倍数」这些边界。搬入只做命名与文案的适配，一行算法没动：① 输入名英文化（比例→ratio、固定边像素→fixed_edge…），② 两个下拉的中文值换英文 key（原始比例→original、长边（范围）→long-side-range），老存档登记在 `_qg_combo_legacy.LEGACY` 由前端 onConfigure 与后端 `combo_legacy` 双路迁移；③ 输出槽名 比例/宽度/高度 → ratio/width/height；④ 文案英化 + 前端 import 改绝对路径；⑤ 前端那行 `function hookWidgetCallbacks(node) {    if` 的格式笔误修掉。概念参考孤海工具箱 Goohaitools「比例与分辨率」（GPL-3.0），源包为独立实现。🔴 **与 QG_EmptyLatentResolution / QG_SizeSelector 不重叠**（清单标了 overlap，核实后否）：那两个直接产出 LATENT，是「生成空 latent」的；本节点**只算数**，输出比例字符串 + 宽高，接给任何要尺寸的地方（EmptyLatent、缩放的 width/height、超分参数），且多一个「长边范围」模式（跟随已接图像夹取）和输出口旁的青色实时预览。断言 `tools/_check_ratio_resolution.py`：契约 / 六模式 / 边界 / 与源包的全量对照 / 两个下拉的中文迁移 / 两份中文档 + 前端资源存在。"
     },
     {
-      "id": "QG_GoogleTranslateText",
-      "display": "Google 翻译",
-      "file": "nodes/qg_google_translate.py",
-      "origin": "original",
-      "reference": {
-        "plugin": "ComfyUI_Custom_Nodes_AlekPet",
-        "node": "GoogleTranslateTextNode",
-        "relation": "idea",
-        "license": "MIT"
-      },
-      "note": "上游依赖 googletrans（驱动未公开的 Google 网页端点，隔几个月坏一次）；这里直接用 requests 打同一批端点，代码里没有一行上游实现"
-    },
-    {
       "id": "QG_AnySwitch",
       "display": "任意切换",
       "file": "nodes/qg_any_switch.py",
@@ -697,7 +684,7 @@
       "file": "nodes/qg_slider.py",
       "origin": "original",
       "upstream": null,
-      "note": "一行：滑条 + 读数 + 齿轮；范围 / 步长 / 类型收在齿轮菜单里"
+      "note": "一行：滑条 + 读数 + 齿轮；范围 / 步长收在齿轮菜单里，固定输出小数"
     },
     {
       "id": "QG_Math",
@@ -1087,6 +1074,132 @@
         "license": "GPL-3.0",
         "relation": "idea"
       }
+    },
+    {
+      "id": "QG_ColorPicker",
+      "display": "取色器",
+      "file": "nodes/qg_color_picker.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-QG-Multipack v2.22.13",
+        "node": "QG 取色器",
+        "license": "GPL-3.0-or-later",
+        "relation": "own"
+      },
+      "note": "2026-11-25 从作者自有插件 ComfyUI-QG-Multipack v2.22.13 搬入（源文件与 v2.22.13 发布包 md5 逐字节一致，不是 2.18.4 旧版）。V3 迁移（io.ComfyNode + define_schema + io.NodeOutput）；CATEGORY「QG 工具」→ 本包子分类；显示名 / DESCRIPTION / tooltip 英化。normalize_color / to_rgb_string / to_hsl_string 的算法与输出口径逐字未改 —— HEX 大写、RGB/HSL 逗号后带一个空格，下游解析器按这个格式写的。图形化色块与色板由本包 web/color_picker/index.js 接管（后端值仍是 STRING，老工作流与 API 调用不受影响）。"
+    },
+    {
+      "id": "QG_DualColorPicker",
+      "display": "双色取色器",
+      "file": "nodes/qg_dual_color_picker.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-QG-Multipack v2.22.13",
+        "node": "QG 双色取色器",
+        "license": "GPL-3.0-or-later",
+        "relation": "own"
+      },
+      "note": "2026-11-25 从作者自有插件 ComfyUI-QG-Multipack v2.22.13 搬入（源文件与 v2.22.13 发布包 md5 逐字节一致，不是 2.18.4 旧版）。V3 迁移（io.ComfyNode + define_schema + io.NodeOutput）；CATEGORY「QG 工具」→ 本包子分类；显示名 / DESCRIPTION / tooltip 英化。mode 输出改成 io.Combo.Output(options=…) —— 源包 V1 靠 RETURN_TYPES 第一槽塞 options 列表、再让前端把槽类型改成 COMBO 才连得上下游，V3 的 Combo 输出自带 options，那段前端 hack 一并去掉。normalize_hex 保持为 QG_CustomColor 的公共工具，两节点共用同一套色值规范化。"
+    },
+    {
+      "id": "QG_ColorConvert",
+      "display": "颜色转换",
+      "file": "nodes/qg_color_convert.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-QG-Multipack v2.22.13",
+        "node": "QG 颜色转换",
+        "license": "GPL-3.0-or-later",
+        "relation": "own"
+      },
+      "note": "2026-11-25 从作者自有插件 ComfyUI-QG-Multipack v2.22.13 搬入（源文件与 v2.22.13 发布包 md5 逐字节一致，不是 2.18.4 旧版）。V3 迁移（io.ComfyNode + define_schema + io.NodeOutput）；CATEGORY「QG 工具」→ 本包子分类；显示名 / DESCRIPTION / tooltip 英化。四种写法识别（hex / RGB 整数 / HSL 百分比 / 0-1 浮点）、全角转半角、解析失败回退白色全部未改。前端不挂取色器：它设计上就吃四种写法，套色板等于告诉用户只能选色（源包也是这个决定）。"
+    },
+    {
+      "id": "QG_CustomColor",
+      "display": "自定义颜色",
+      "file": "nodes/qg_custom_color.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-QG-Multipack v2.22.13",
+        "node": "QG 自定义颜色",
+        "license": "GPL-3.0-or-later",
+        "relation": "own"
+      },
+      "note": "2026-11-25 从作者自有插件 ComfyUI-QG-Multipack v2.22.13 搬入（源文件与 v2.22.13 发布包 md5 逐字节一致，不是 2.18.4 旧版）。V3 迁移（io.ComfyNode + define_schema + io.NodeOutput）；CATEGORY「QG 工具」→ 本包子分类；显示名 / DESCRIPTION / tooltip 英化。渲染算术一行未改：分块计算（_CHUNK_ROWS）控大图内存、缩放对渐变推进与半径的作用、颗粒强度 = grain/100 × 0.15、插值系数钳在 [0,1] 不溢色。依赖同批搬入的 qg_dual_color_picker.normalize_hex。"
+    },
+    {
+      "id": "QG_DominantColor",
+      "display": "主色提取",
+      "file": "nodes/qg_dominant_color.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-QG-Multipack v2.22.13",
+        "node": "QG 主色提取",
+        "license": "GPL-3.0-or-later",
+        "relation": "own"
+      },
+      "note": "2026-11-25 从作者自有插件 ComfyUI-QG-Multipack v2.22.13 搬入（源文件与 v2.22.13 发布包 md5 逐字节一致，不是 2.18.4 旧版）。V3 迁移（io.ComfyNode + define_schema + io.NodeOutput）；CATEGORY「QG 工具」→ 本包子分类；显示名 / DESCRIPTION / tooltip 英化。🔴 本次搬的 v2.22.13 比主环境装的 2.18.4 多 12 行：新增空批次（0 帧）明确报错，旧版会直接 IndexError。统计口径未改：只取第一帧、LANCZOS 降采样且下限 4 像素、平均亮度 15/240 剔黑白边、按容差分桶、频次并列取亮度更高者。\"display\": \"slider\" 改成 V3 的 display_mode=io.NumberDisplay.slider。"
+    },
+    {
+      "id": "QG_ImageBatchBuilder",
+      "display": "图像批次组合",
+      "file": "nodes/qg_image_batch_builder.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-QG-Multipack v2.22.13",
+        "node": "QG 图像批次组合",
+        "license": "GPL-3.0-or-later",
+        "relation": "own"
+      },
+      "note": "2026-11-25 从作者自有插件 ComfyUI-QG-Multipack v2.22.13 搬入（源文件与 v2.22.13 发布包 md5 逐字节一致，不是 2.18.4 旧版）。V3 迁移（io.ComfyNode + define_schema + io.NodeOutput）；CATEGORY「QG 工具」→ 本包子分类；显示名 / DESCRIPTION / tooltip 英化。🔴 丢掉源包的 _SlotSpecs dict 子类技巧（覆写 __contains__ / __getitem__，让帮助卡只列 1 条却接受 24 个槽名）；V3 的 io.Schema 直接序列化 inputs 列表，没有等价覆写点，改为老实声明 24 个 optional Image.Input（与本包 QG_TextConcat 的 8 槽同构）。代价是帮助卡列 24 行同义条目，换来序列化 / 校验 / 执行三条路径都走官方实现，不会因 ComfyUI 内部改取值方式而静默失效。槽位键名 image_01…image_24 与源包一致，老存档不受影响；collect_frames / align_frames 的尺寸与通道对齐策略未改。前端 web/image_batch_builder/index.js 负责动态增删槽与高度收紧。"
+    },
+    {
+      "id": "QG_ImageComposite",
+      "display": "图像合成",
+      "file": "nodes/qg_image_composite.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-QG-Multipack v2.22.13",
+        "node": "QG 图像合成",
+        "license": "GPL-3.0-or-later",
+        "relation": "own"
+      },
+      "note": "2026-11-25 从作者自有插件 ComfyUI-QG-Multipack v2.22.13 搬入（源文件与 v2.22.13 发布包 md5 逐字节一致，不是 2.18.4 旧版）。V3 迁移（io.ComfyNode + define_schema + io.NodeOutput）；CATEGORY「QG 工具」→ 本包子分类；显示名 / DESCRIPTION / tooltip 英化。几何算术一行未改：源图矩形与画布矩形求交集、四边越界统一裁切、帧数取两边较大值、遮罩双三次缩放后按先验 alpha 混合。与 QG_ImageMergeMask 分工：那个是全画布按遮罩叠加，本节点按坐标贴图且可越界裁切。"
+    },
+    {
+      "id": "QG_MaskOrderFilter",
+      "display": "遮罩次序过滤",
+      "file": "nodes/qg_mask_order_filter.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-QG-Multipack v2.22.13",
+        "node": "QG 遮罩次序过滤",
+        "license": "GPL-3.0-or-later",
+        "relation": "own"
+      },
+      "note": "2026-11-25 从作者自有插件 ComfyUI-QG-Multipack v2.22.13 搬入（源文件与 v2.22.13 发布包 md5 逐字节一致，不是 2.18.4 旧版）。V3 迁移（io.ComfyNode + define_schema + io.NodeOutput）；CATEGORY「QG 工具」→ 本包子分类；显示名 / DESCRIPTION / tooltip 英化。🔴 六个输入名与两组下拉值全部英化：优先规则→priority（面积大小/宽度大小/高度大小/上下左右/下上左右 → area/width/height/top_down/bottom_up）、正反顺序→direction（正序/反序 → forward/reverse）、开始索引→start_index、过滤数量→count、分组阈值→group_threshold、重叠因子→overlap、合并遮罩→merge_mask；老存档中文值登记在 nodes/_qg_combo_legacy.py 的 LEGACY 表，执行前由 coerce() 换掉。🔴 QG_SEGS 容器从源包 qg_simple_seg_detector.py 抽出为 nodes/_qg_segs.py（只依赖 numpy，不拖 ultralytics / segment_anything / cv2 进来），类型字符串保持 \"QG_SEGS\" 与 Multipack 一致 —— 两包同装时跨包 seg 连线仍成立（消费方按 duck-typing 取 mask_batch()）。排序 / 分组 / 去重 / 合并算术未改：面积与外接框由非零像素行列下标直接求出、X 分组拿组首当基准、超出尾部从头循环取满、合并取逐像素最大值、一段都没选中时兜底一帧全 0。"
+    },
+    {
+      "id": "QG_ImageMaskPreview",
+      "display": "图像与遮罩预览",
+      "file": "nodes/qg_image_mask_preview.py",
+      "origin": "original",
+      "upstream": null,
+      "reference": {
+        "plugin": "ComfyUI-QG-Multipack v2.22.13",
+        "node": "QG 图像与遮罩预览",
+        "license": "GPL-3.0-or-later",
+        "relation": "own"
+      },
+      "note": "2026-11-25 从作者自有插件 ComfyUI-QG-Multipack v2.22.13 搬入（源文件与 v2.22.13 发布包 md5 逐字节一致，不是 2.18.4 旧版）。V3 迁移（io.ComfyNode + define_schema + io.NodeOutput）；CATEGORY「QG 工具」→ 本包子分类；显示名 / DESCRIPTION / tooltip 英化。🔴 字体来源换掉：源包读自己 assets/fonts/NotoSansSC-VF.ttf（随包 54 MB，其中含商业授权字体，不能进公开仓库），改为与 QG_AddWatermark 同一套系统字体发现 —— 插件 fonts/ 目录优先，其后用户字体目录与系统字体目录；字体名用不带扩展名的 stem，老存档里存的 xxx.ttf 由 _resolve_font 的 stem 兜底接住。index_scale 下拉值英化（跟随遮罩缩放/固定大小 → follow_mask/fixed），中文值登记 LEGACY。上色算术（多帧按 over 运算累积 alpha，只占一张全图缓冲）、序号绘制口径（跟随遮罩/固定大小两种字号）、遮罩 0.5 二值化阈值均未改。"
     }
   ],
   "sections": [
@@ -1303,12 +1416,6 @@
       ]
     },
     {
-      "anchor": "## Google 翻译（提示词对翻）",
-      "nodes": [
-        "QG_GoogleTranslateText"
-      ]
-    },
-    {
       "anchor": "## 尺寸选择器",
       "nodes": [
         "QG_SizeSelector"
@@ -1410,6 +1517,60 @@
       "nodes": [
         "QG_CropForInpaint",
         "QG_StitchInpaint"
+      ]
+    },
+    {
+      "anchor": "## 取色器（点色块选色，按 HEX / RGB / HSL 出字符串）",
+      "nodes": [
+        "QG_ColorPicker"
+      ]
+    },
+    {
+      "anchor": "## 双色取色器（模式 + 主色 + 辅色，三路输出）",
+      "nodes": [
+        "QG_DualColorPicker"
+      ]
+    },
+    {
+      "anchor": "## 颜色转换（hex / RGB / HSL / 0-1 浮点互转）",
+      "nodes": [
+        "QG_ColorConvert"
+      ]
+    },
+    {
+      "anchor": "## 自定义颜色（纯色 / 上下渐变 / 中心渐变底图）",
+      "nodes": [
+        "QG_CustomColor"
+      ]
+    },
+    {
+      "anchor": "## 主色提取（一张图的主色，输出大写 #RRGGBB）",
+      "nodes": [
+        "QG_DominantColor"
+      ]
+    },
+    {
+      "anchor": "## 图像批次组合（24 个槽，接几张合几张）",
+      "nodes": [
+        "QG_ImageBatchBuilder"
+      ]
+    },
+    {
+      "anchor": "## 图像合成（把源图按坐标贴到画布上）",
+      "nodes": [
+        "QG_ImageComposite"
+      ]
+    },
+    {
+      "anchor": "## 遮罩次序过滤（排序 / 分组 / 筛选 / 去重 / 合并）",
+      "nodes": [
+        "QG_MaskOrderFilter"
+      ]
+    },
+    {
+      "anchor": "## 图像与遮罩预览（遮罩上色 + 按段编号）",
+      "nodes": [
+        "QG_ImageMaskPreview"
       ]
     },
     {

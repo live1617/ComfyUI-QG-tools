@@ -21,7 +21,8 @@
  * 后端节点：nodes/qg_prompt_line.py。改本文件只需 F5 刷新页面。
  */
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=202611210910";
+import { zhPair } from "../shared/zh.mjs?v=202611251300";
+import { showToast } from "../shared/index.mjs?v=202611251300";
 
 const TYPE = "QG_PromptLine";
 
@@ -31,7 +32,7 @@ const TITLE = () => zhPair("Prompt Line", "提示词行");
 
 /** 找不到 COMBO 连线或下游没有可抄的下拉时弹的警告（与包内其他模块同款）。 */
 function toastError(detail) {
-    app.extensionManager?.toast?.add?.({
+    showToast({
         severity: "error",
         summary: TITLE(),
         detail,

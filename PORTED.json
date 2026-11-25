@@ -502,28 +502,6 @@
       ]
     },
     {
-      "id": "QG_GoogleTranslateText",
-      "class": "QGGoogleTranslateText",
-      "display": "Google 翻译",
-      "category": "QG-tools/文本",
-      "source_id": "GoogleTranslateTextNode",
-      "source_class": "GoogleTranslateTextNode",
-      "source_ref": "AlekPet/ComfyUI_Custom_Nodes_AlekPet (GoogleTranslateNode)，MIT",
-      "kind": "文本翻译节点：STRING 进 STRING 出；免费通道用 requests 直连 Google 非官方接口，设 GOOGLE_TRANSLATION_API_KEY 则走官方 Cloud Translation API。节点带「手动翻译」按钮就地改写文本。",
-      "files_new": [
-        "nodes/qg_google_translate.py（节点 + /qg/translate/manual 路由 + 免费/官方双通道）",
-        "web/google_translate/index.js（手动翻译按钮）"
-      ],
-      "notes": [
-        "🔴 零第三方依赖：用户说「要依赖就先等等」，所以没搬上游的 googletrans。改用 requests（ComfyUI 核心自带）直连 Google 同一端点（translate.googleapis.com/translate_a/single）。",
-        "语言表 LANGUAGES（107 条）从本机 googletrans 抓取后内嵌进模块，运行期不再 import googletrans。",
-        "路由 /alekpet/translate_manual → /qg/translate/manual；扩展名 QG.GoogleTranslate；widget 内部名保持 from_translate/to_translate/manual_translate/text（前端 findWidget 靠 name）。",
-        "失败回退原文（不静默吞掉、打印告警），避免翻译异常把提示词流水线打断。",
-        "仅搬 Text 节点，未搬 GoogleTranslateCLIPTextEncodeNode 变体（用户只要文本翻译）。",
-        "免费通道有 HTTP 429 限流风险（沙盒 IP 实测 429），桌面 IP 可能更稳；限流时回退原文。"
-      ]
-    },
-    {
       "id": "QG_AnySwitch",
       "class": "QGAnySwitch",
       "display": "任意切换",
@@ -607,7 +585,7 @@
       ],
       "notes": [
         "改名走 tools/port_triple_loader.py：6 条规则全部带「命中计数断言」，逐条命中，品牌串残留扫描归零。",
-        "display 按作者惯例保留中文「QG 模型加载器」，与 QG_MDReader / QG_GoogleTranslateText 一致。",
+        "display 按作者惯例保留中文「QG 模型加载器」，与 QG_MDReader 一致。",
         "前端改名清单：import 改绝对路径 /scripts/app.js（与其它 QG 前端一致）；TARGET_CLASS → NODE_CLASS，值 QG_TripleLoader（用 NODE_CLASS 这个名字是为了让 verify_port.py 第 4 项自动覆盖它）；注册名 QG.TripleLoader；widget 标记 _triplePrettyPatched → _qgTriplePrettyPatched；日志前缀 [QG-tools]。",
         "🔴 兼容导入刻意保留：先试 comfy_extras.nodes_model_loading，ImportError 再回退 from nodes import —— 本机 Leopard-cat-meow fork 走的是后者，别删。",
         "零新增依赖：只用 ComfyUI 内置加载器 + 标准库。下拉列表在 import 时从内置节点读取，自动适配 ComfyUI 版本。",

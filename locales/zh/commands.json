@@ -1,0 +1,41 @@
+{
+  "QG_Align_Panel": {
+    "label": "QG 排列：对齐 / 统一尺寸 / 等间距"
+  },
+  "QG_Align_left": {
+    "label": "QG 排列：左对齐"
+  },
+  "QG_Align_middleX": {
+    "label": "QG 排列：垂直居中"
+  },
+  "QG_Align_right": {
+    "label": "QG 排列：右对齐"
+  },
+  "QG_Align_top": {
+    "label": "QG 排列：顶对齐"
+  },
+  "QG_Align_middleY": {
+    "label": "QG 排列：水平居中"
+  },
+  "QG_Align_bottom": {
+    "label": "QG 排列：底对齐"
+  },
+  "QG_Align_widest": {
+    "label": "QG 排列：同最宽"
+  },
+  "QG_Align_narrowest": {
+    "label": "QG 排列：同最窄"
+  },
+  "QG_Align_tallest": {
+    "label": "QG 排列：同最高"
+  },
+  "QG_Align_shortest": {
+    "label": "QG 排列：同最矮"
+  },
+  "QG_Align_across": {
+    "label": "QG 排列：横向等距"
+  },
+  "QG_Align_down": {
+    "label": "QG 排列：纵向等距"
+  }
+}

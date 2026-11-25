@@ -5,10 +5,10 @@
 // entry points live in web/<node>/index.js and import from here.
 
 import { app } from "/scripts/app.js";
-import { zh } from "./zh.mjs?v=202611210910";
+import { zh } from "./zh.mjs?v=202611251300";
 
 // Re-exported so node entry points keep a single shared import path.
-export { zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "./zh.mjs?v=202611210910";
+export { zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "./zh.mjs?v=202611251300";
 
 // Kept in lockstep with __version__ in the pack's __init__.py by hand.
 // The backend does not serve a matching version endpoint here, so this
@@ -58,8 +58,20 @@ export function isQgNode(node) {
 export function showToast({ detail, severity = "info", summary = "QG-tools", life = 5000 } = {}) {
   const title = zh(summary);
   const body = zh(detail);
+  // Frontend 1.58+ replaced the PrimeVue toast with its own: the per-severity
+  // helpers (success / info / warn / error) are the supported entry points and
+  // add() is only a deprecated alias. Try the current API first, fall back to
+  // add(), then to the console — a message must never break its action.
+  // 1.58+ 的 per-severity 助手把 V1 的 "warn" 改名为 "warning"。直接用
+  // toast[severity] 会让所有警告级提示要么打不到方法、要么落回弃用的 add()。
+  const aliases = { warn: "warning", secondary: "info", contrast: "info" };
+  const kind = aliases[severity] ?? severity;
   try {
     const toast = app?.extensionManager?.toast;
+    if (typeof toast?.[kind] === "function") {
+      toast[kind](title, { description: body, duration: life });
+      return;
+    }
     if (typeof toast?.add === "function") {
       toast.add({ severity, summary: title, detail: body, life });
       return;

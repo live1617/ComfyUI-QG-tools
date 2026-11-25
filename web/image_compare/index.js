@@ -11,20 +11,20 @@
 
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611210910";
+import { sizeFor } from "../shared/node_width.mjs?v=202611251300";
 import {
   BRAND,
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
-} from "../shared/index.mjs?v=202611210910";
-import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=202611210910";
-import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=202611210910";
-import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=202611210910";
-import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=202611210910";
-import { zhPair } from "../shared/zh.mjs?v=202611210910";
-import { savedLinks } from "../shared/compare_erase.mjs?v=202611210910";
-import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=202611210910";
+} from "../shared/index.mjs?v=202611251300";
+import { isForeignRun, outputKey } from "../shared/prompt_scope.mjs?v=202611251300";
+import { WIDGET_FRAME, fillNodeHeight } from "../shared/panel_layout.mjs?v=202611251300";
+import { mediaViewQuery, responsivePreviewHeight } from "../shared/video_preview.mjs?v=202611251300";
+import { makeSlideSwitch } from "../shared/slide_switch.mjs?v=202611251300";
+import { zhPair } from "../shared/zh.mjs?v=202611251300";
+import { savedLinks } from "../shared/compare_erase.mjs?v=202611251300";
+import { ERASE_CSS, makeEraser } from "../shared/compare_erase_stage.mjs?v=202611251300";
 import {
   compareBadges,
   compareClip,
@@ -34,7 +34,7 @@ import {
   findCompareImages,
   normalizeCompareMode,
   slideFraction,
-} from "../shared/compare.mjs?v=202611210910";
+} from "../shared/compare.mjs?v=202611251300";
 
 const NODE_NAME = "QG_ImageCompare";
 const PANEL_WIDGET = "qgtools_compare_panel";

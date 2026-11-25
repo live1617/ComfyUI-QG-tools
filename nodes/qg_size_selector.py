@@ -302,9 +302,7 @@ class QGSizeSelector(io.ComfyNode):
             ],
         )
 
-    def __init__(self):
-        self._device = comfy.model_management.intermediate_device()
-
+    # 🔴 2026-11-24 修复：V3 lock_class 禁止实例属性赋值，_device 移到 _execute 内局部变量。
     @staticmethod
     def _parse_ratio(ratio_str):
         if not ratio_str or ratio_str == "none":
@@ -402,6 +400,7 @@ class QGSizeSelector(io.ComfyNode):
 
     def _execute(self, preset, batch_size, long_edge, ratio, frames, factor,
                  latent_channels, width=0, height=0, mp=0.0, ratio_custom=""):
+        device = comfy.model_management.intermediate_device()
         width_num = self._parse_num(width)
         height_num = self._parse_num(height)
         # 求解路径（比例 / 百万像素 / 长边）的网格步长。
@@ -470,7 +469,7 @@ class QGSizeSelector(io.ComfyNode):
             latent_frames = ((int(frames) - 1) // 4) + 1
             samples = torch.zeros(
                 [batch_size, channels, latent_frames, out_h // 8, out_w // 8],
-                device=self._device,
+                device=device,
             )
             # 🔴 只在有帧的时候声明。图像 latent 是 4 维，核心把 shape[2]
             #    当成时间轴 —— 对 4 维来说那是高度，声明了会把高度当帧数缩放。
@@ -478,7 +477,7 @@ class QGSizeSelector(io.ComfyNode):
         else:
             samples = torch.zeros(
                 [batch_size, channels, out_h // 8, out_w // 8],
-                device=self._device,
+                device=device,
             )
             frames = 0
 

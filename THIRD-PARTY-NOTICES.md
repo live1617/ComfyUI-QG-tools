@@ -7,8 +7,8 @@
 > 要增删节点或改来源，改 `ORIGINS.json` 后重跑脚本。
 
 - 本插件：ComfyUI-QG-tools · GPL-3.0-or-later · https://github.com/live1617/ComfyUI-QG-tools
-- 依据：`ORIGINS.json`（更新于 2026-11-08）
-- 规模：76 个节点 = **6 个搬运** + **70 个原创**
+- 依据：`ORIGINS.json`（更新于 2026-11-25）
+- 规模：84 个节点 = **6 个搬运** + **78 个原创**
 
 ## 口径
 
@@ -88,7 +88,6 @@
 | `QG_ImageScale` | 图像缩放 | ComfyUI-QG-Multipack v0.1.0「QG_ImageScale」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
 | `QG_ImageOrLatentSize` | 图像或 Latent 尺寸 | rgthree-comfy「Image or Latent Size」 | MIT | 参考思路，代码自行实现 |
 | `QG_RatioResolution` | 比例与分辨率 | ComfyUI-QG-Multipack v0.1.0「QG_RatioResolution」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
-| `QG_GoogleTranslateText` | Google 翻译 | ComfyUI_Custom_Nodes_AlekPet「GoogleTranslateTextNode」 | MIT | 参考思路，代码自行实现 |
 | `QG_AnySwitch` | 任意切换 | 孤海工具箱 Goohaitools-comfyui「GoohaiAnySwitch」 | GPL-3.0 | 参考思路，代码自行实现 |
 | `QG_DisplayAny` | 展示任意 | 孤海工具箱 Goohaitools-comfyui「GoohaiDisplayAny」 | GPL-3.0 | 参考思路，代码自行实现 |
 | `QG_RouteBlocker` | 路由阻断 | 孤海工具箱 Goohaitools-comfyui「GoohaiRouteBlocker」 | GPL-3.0 | 参考思路，代码自行实现 |
@@ -121,12 +120,23 @@
 | `QG_BatchCount` | 批次计数 | ComfyUI_essentials「BatchCount+ / Batch Count」 | GPL-3.0 | 参考思路，代码自行实现 |
 | `QG_ForLoopStart` | 循环开始 | ComfyUI-Easy-Use「For循环-起始 / easy forLoopStart」 | GPL-3.0 | 参考思路，代码自行实现 |
 | `QG_ForLoopEnd` | 循环结束 | ComfyUI-Easy-Use「For循环-结束 / easy forLoopEnd」 | GPL-3.0 | 参考思路，代码自行实现 |
+| `QG_ColorPicker` | 取色器 | ComfyUI-QG-Multipack v2.22.13「QG 取色器」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
+| `QG_DualColorPicker` | 双色取色器 | ComfyUI-QG-Multipack v2.22.13「QG 双色取色器」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
+| `QG_ColorConvert` | 颜色转换 | ComfyUI-QG-Multipack v2.22.13「QG 颜色转换」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
+| `QG_CustomColor` | 自定义颜色 | ComfyUI-QG-Multipack v2.22.13「QG 自定义颜色」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
+| `QG_DominantColor` | 主色提取 | ComfyUI-QG-Multipack v2.22.13「QG 主色提取」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
+| `QG_ImageBatchBuilder` | 图像批次组合 | ComfyUI-QG-Multipack v2.22.13「QG 图像批次组合」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
+| `QG_ImageComposite` | 图像合成 | ComfyUI-QG-Multipack v2.22.13「QG 图像合成」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
+| `QG_MaskOrderFilter` | 遮罩次序过滤 | ComfyUI-QG-Multipack v2.22.13「QG 遮罩次序过滤」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
+| `QG_ImageMaskPreview` | 图像与遮罩预览 | ComfyUI-QG-Multipack v2.22.13「QG 图像与遮罩预览」 | GPL-3.0-or-later | 作者自有插件，合并进来 |
 
 ## 完全原创（无上游参考）
 
 10 个节点从零实现，没有对应的上游项目：`QG_ColorMatch`、`QG_ColorMatchPro`、`QG_BoolToggle`、`QG_Number`、`QG_Slider`、`QG_Math`、`QG_Exists`、`QG_ExportImage`、`QG_StepPreview`、`QG_BoolToInt`。
 
-另有 16 个节点合并自作者自己的插件（`QG_RemoveBGByMask`、`QG_MaskBlend`、`QG_MaskAnalysis`、`QG_MaskDetect`、`QG_RunTimer`、`QG_AddWatermark`、`QG_EmptyLatentResolution`、`QG_ImageScale`、`QG_RatioResolution`、`QG_MDReader`、`QG_TripleLoader`、`QG_PromptLine`、`QG_ImageNormalize`、`QG_Note`、`QG_SetPoint`、`QG_GetPoint`），版权同属作者。
+另有 25 个节点合并自作者自己的插件（`QG_RemoveBGByMask`、`QG_MaskBlend`、`QG_MaskAnalysis`、`QG_MaskDetect`、`QG_RunTimer`、`QG_AddWatermark`、`QG_EmptyLatentResolution`、`QG_ImageScale`、`QG_RatioResolution`、`QG_MDReader`、`QG_TripleLoader`、`QG_PromptLine`、`QG_ImageNormalize`、`QG_Note`、`QG_SetPoint`、`QG_GetPoint`、`QG_ColorPicker`、`QG_DualColorPicker`、`QG_ColorConvert`、`QG_CustomColor`、`QG_DominantColor`、`QG_ImageBatchBuilder`、`QG_ImageComposite`、`QG_MaskOrderFilter`、`QG_ImageMaskPreview`），版权同属作者。
+
+> 合并自自有插件不等于整包搬过来：随包资源按许可与体积另作判断。例如 ComfyUI-QG-Multipack 的 `assets/fonts/`（54 MB，含苹方、华文细黑等商业授权字体）不进本仓库，`QG_ImageMaskPreview` 因此改成读系统字体与插件自己的 `fonts/` 目录，与 `QG_AddWatermark` 的口径一致。
 
 ## 许可兼容性
 

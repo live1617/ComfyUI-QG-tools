@@ -9,8 +9,8 @@
 // languages.
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611210910";
-import { zhPair } from "../shared/zh.mjs?v=202611210910";
+import { sizeFor } from "../shared/node_width.mjs?v=202611251300";
+import { zhPair } from "../shared/zh.mjs?v=202611251300";
 
 const MAX_INPUTS = 16;
 const MIN_INPUTS = 2;

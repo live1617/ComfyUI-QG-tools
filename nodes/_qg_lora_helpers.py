@@ -654,7 +654,7 @@ def _metadata_family(path: Path) -> str:
 def stack_fingerprint(rows: list[dict[str, Any]]) -> str:
     """缓存键：行上的值 + 每个文件在盘上的身份 + 触发词。
 
-    触发词必须在里面。``IS_CHANGED`` 一旦存在，核心就**只**看它的返回值，
+    触发词必须在里面。``fingerprint_inputs`` 一旦存在，核心就**只**看它的返回值，
     不再比较输入有没有变；漏掉触发词的话，改完触发词接着排队会直接命中上一次
     的输出缓存，STRING 那路还是旧的。模型和 CLIP 确实不受影响，但这条输出
     是节点承诺要产出的东西。

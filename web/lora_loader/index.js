@@ -1,23 +1,25 @@
 import { api } from "/scripts/api.js";
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611210910";
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhOn, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=202611210910";
-import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=202611210910";
-import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=202611210910";
+import { sizeFor } from "../shared/node_width.mjs?v=202611251300";
+import { badgeCenter } from "../shared/help_badge.mjs?v=202611251300";
+import { vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611251300";
+import { BRAND, chainCallback, chainHandler, keepDomWidgetWidthAuto, notifyQgChange, showToast, zh, zhPair, zhCount, zhSep, zhEnd } from "../shared/index.mjs?v=202611251300";
+import { WIDGET_FRAME, fillNodeHeight, holdVueNodeMinWidth } from "../shared/panel_layout.mjs?v=202611251300";
+import { hideInputsInDef, hideWidget as collapseWidget } from "../shared/widget_visibility.mjs?v=202611251300";
 import {
   closeSettingsMenu,
   gearIconSvg,
   loadSettings,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=202611210910";
+} from "../shared/settings_menu.mjs?v=202611251300";
 // 设置表真相源已抽到 shared：LoRA 加载器与 LoRA 堆开同一张面板、存同一份偏好。
-import { LORA_SETTINGS_SCOPE, LORA_SETTINGS_SCHEMA } from "../shared/lora_settings.mjs?v=202611210910";
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=202611210910";
-import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=202611210910";
-import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=202611210910";
-import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=202611210910";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611210910";
-import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=202611210910";
+import { LORA_SETTINGS_SCOPE, LORA_SETTINGS_SCHEMA } from "../shared/lora_settings.mjs?v=202611251300";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=202611251300";
+import { isAppShortcut, keepKeyInField } from "../shared/canvas_passthrough.mjs?v=202611251300";
+import { resetUnknownValues } from "../shared/widget_card_math.mjs?v=202611251300";
+import { boxRowInputs, boxRowsWidget, boxesOf, hostBox, rowsInputName, workflowNodes } from "../shared/lora_box.mjs?v=202611251300";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611251300";
+import { SETTINGS_PROPERTY, releaseStackRow, stackRowOwners } from "../shared/workflow_switches.mjs?v=202611251300";
 import {
   BYPASS_MODE,
   DEFAULT_STEP,
@@ -26,12 +28,8 @@ import {
   STRENGTH_MAX,
   STRENGTH_MIN,
   clampHighlight,
-  commonFolderPrefix,
-  filterLoras,
   fitLoraLabel,
   formatFileSize,
-  groupByFolder,
-  highlightedName,
   hoverRowIndex,
   applyTemplate,
   cycleMasterToggle,
@@ -58,6 +56,7 @@ import {
   setStrength,
   shortLoraName,
   snapshotEnabled,
+  BAR_COLORS,
   strengthBarBackground,
   strengthBarScale,
   thumbPosition,
@@ -75,11 +74,11 @@ import {
   loraStackKeyAction,
   readLoraInfo,
   triggerGroups,
-} from "../shared/lora_stack.mjs?v=202611210910";
-import { civitaiButtonLabel, civitaiFailureText, pictureErrorText } from "../shared/civitai_lookup.mjs?v=202611210910";
+} from "../shared/lora_stack.mjs?v=202611251300";
+import { civitaiButtonLabel, civitaiFailureText, pictureErrorText } from "../shared/civitai_lookup.mjs?v=202611251300";
 // 查询编排（哈希 → 问 Civitai → 存侧车 → 存预览图）与 QG LoRA堆共用一份。
 // UI 差异全在回调里：这里弹 toast + pictureSaved()。
-import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611210910";
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611251300";
 
 const NODE_CLASS = "QG_LoraLoader";
 // A workflow saved by a 1.x release holds the panel's own empty value where
@@ -88,8 +87,14 @@ const NODE_CLASS = "QG_LoraLoader";
 const RESET_UNKNOWN = { on_missing: "error" };
 const ROW_HEIGHT = 30;
 const ROW_GAP = 6;
+// 行强度外控槽的数量，与后端 qg_lora_loader.py 的 SLOT_COUNT 一致。改这里
+// 必须同时改后端，否则前端会去绑一个不存在的槽（连线无处可落）。
+const STRENGTH_SLOT_COUNT = 24;
 const ACTIONS_HEIGHT = 26;
 const GROUP_HEIGHT = 36;
+// 主开关那行离上面的 CLIP 槽行太近（用户 2026-11-23 截图要求往下移一点）。
+// headmode 下给 bar 加上边距，panelHeight 的预算同步加，别把底部按钮挤出去。
+const BAR_TOP_GAP = 8;
 const STACK_PADDING = 8;
 const BLANK_HEIGHT = 44;
 // 栈读不出来那行提示占的高度：11px/1.4 的两行字 + 内边距 + 外边距，
@@ -157,7 +162,7 @@ function installStyles() {
   .qgtools-lora-bargroup, .qgtools-lora-stack,
   .qgtools-lora-actions { pointer-events: auto; }
   .qgtools-lora-row { flex: none; display: flex; align-items: center; gap: 6px; height: ${ROW_HEIGHT}px; }
-  .qgtools-lora-row:focus-visible { outline: 2px solid ${BRAND}; outline-offset: 1px; border-radius: 4px; }
+  .qgtools-lora-row:focus-visible { outline: 2px solid var(--qg-accent, ${BRAND}); outline-offset: 1px; border-radius: 4px; }
   /* An off row dims its controls, not itself: the row's own opacity would
      dim the focus outline with them. A dragged row is dimmed as one piece. */
   .qgtools-lora-row.off > * { opacity: 0.45; }
@@ -170,12 +175,12 @@ function installStyles() {
   .qgtools-lora-row.dragging .qgtools-lora-grip { cursor: grabbing; }
   /* A row a Workflow Switches switch sets: a lock in the grip's place, and a
      thin line down its left edge. Clicking the lock takes the row over. */
-  .qgtools-lora-grip.locked { color: #8fdcd4; cursor: pointer; }
-  .qgtools-lora-grip.locked:hover { color: #c4f1ec; }
-  .qgtools-lora-row.owned { box-shadow: inset 2px 0 0 ${BRAND}; }
+  .qgtools-lora-grip.locked { color: var(--qg-accent-soft, #8fdcd4); cursor: pointer; }
+  .qgtools-lora-grip.locked:hover { color: var(--qg-accent, #c4f1ec); }
+  .qgtools-lora-row.owned { box-shadow: inset 2px 0 0 var(--qg-accent, ${BRAND}); }
   /* Where an inner loader's rows are set when its box holds them. */
   .qgtools-lora-onbox { flex: none; height: ${NOTE_HEIGHT}px; line-height: ${NOTE_HEIGHT}px;
-    text-align: center; color: #8fb9b4; font: 11px system-ui; white-space: nowrap;
+    text-align: center; color: var(--qg-accent-soft, #8fb9b4); font: 11px system-ui; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; pointer-events: auto; }
   .qgtools-lora-panel.readonly .qgtools-lora-bargroup,
   .qgtools-lora-panel.readonly .qgtools-lora-stack { pointer-events: none; opacity: .55; }
@@ -183,7 +188,7 @@ function installStyles() {
     background: #3a4047; cursor: pointer; position: relative; flex: none; padding: 0; }
   .qgtools-lora-toggle::after { content: ""; position: absolute; top: 2px; left: 2px;
     width: 12px; height: 12px; border-radius: 50%; background: #9ba2aa; transition: left .12s; }
-  .qgtools-lora-toggle.on { background: ${BRAND}; }
+  .qgtools-lora-toggle.on { background: var(--qg-accent, ${BRAND}); }
   .qgtools-lora-toggle.on::after { left: 16px; background: #fff; }
   .qgtools-lora-toggle.mixed { background: #4d6763; }
   .qgtools-lora-toggle.mixed::after { left: 9px; background: #cfd6da; }
@@ -212,13 +217,13 @@ function installStyles() {
   .qgtools-lora-gear { width: 24px; height: 24px; border: 1px solid #3a4047;
     border-radius: 5px; background: #23272c; color: #9ba2aa; cursor: pointer;
     display: grid; place-items: center; flex: none; padding: 0; }
-  .qgtools-lora-gear:hover { border-color: ${BRAND}; color: ${BRAND}; }
+  .qgtools-lora-gear:hover { border-color: var(--qg-accent, ${BRAND}); color: var(--qg-accent, ${BRAND}); }
   /* 高度封顶之后（panelCap），多的行不裁掉而是滚动。滚轮归属交给
      canvas_passthrough 判：这个盒子还能朝那个方向滚就归它，滚到头才把滚轮
      交还画布 —— 所以底下不用再自己 stopPropagation。 */
   .qgtools-lora-stack { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto;
     display: flex; flex-direction: column; gap: ${ROW_GAP}px;
-    padding: ${STACK_PADDING}px; border: 1px solid rgba(0,180,170,.22); border-radius: 6px;
+    padding: ${STACK_PADDING}px; border: 1px solid var(--qg-accent-fade, rgba(0,180,170,.22)); border-radius: 6px;
     background: rgba(0,0,0,.38); scrollbar-width: thin; }
   .qgtools-lora-stack::-webkit-scrollbar { width: 8px; }
   .qgtools-lora-stack::-webkit-scrollbar-thumb { background: #3a4047; border-radius: 4px; }
@@ -227,7 +232,7 @@ function installStyles() {
     width: 100%; min-height: ${BLANK_HEIGHT}px; border: 1px dashed #3a4047;
     border-radius: 5px; background: transparent; color: #9ba2aa; font: italic 12px system-ui;
     text-align: center; padding: 0 10px; cursor: pointer; }
-  .qgtools-lora-blank:hover { border-color: ${BRAND}; color: ${BRAND}; }
+  .qgtools-lora-blank:hover { border-color: var(--qg-accent, ${BRAND}); color: var(--qg-accent, ${BRAND}); }
   .qgtools-lora-strength.out-of-range { color: #ffb26b; }
   .qgtools-lora-strengthbox.out-of-range { border-color: #7a5230; }
   .qgtools-lora-folder { padding: 6px 8px 2px; color: #9ba2aa; font-size: 11px;
@@ -240,8 +245,8 @@ function installStyles() {
   .qgtools-lora-folder-toggle { flex: none; width: 24px; height: 24px; display: grid;
     place-items: center; padding: 0; border: none; border-radius: 4px; background: transparent;
     color: #9ba2aa; cursor: pointer; }
-  .qgtools-lora-folder-toggle:hover { background: #3a4047; color: ${BRAND}; }
-  .qgtools-lora-folder-toggle:focus-visible { outline: 2px solid #9becf5; outline-offset: -2px; }
+  .qgtools-lora-folder-toggle:hover { background: #3a4047; color: var(--qg-accent, ${BRAND}); }
+  .qgtools-lora-folder-toggle:focus-visible { outline: 2px solid var(--qg-accent, ${BRAND}); outline-offset: -2px; }
   .qgtools-lora-folder-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
   .qgtools-lora-folder-count { flex: none; color: #9ba2aa; font-size: 11px; }
   .qgtools-lora-picker-note { padding: 0 10px 8px; color: #9ba2aa; font-size: 11px; }
@@ -253,7 +258,7 @@ function installStyles() {
     border-radius: 5px; background: #23272c; color: inherit; text-align: left; padding: 0 8px;
     cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     touch-action: none; }
-  .qgtools-lora-name:hover { border-color: ${BRAND}; }
+  .qgtools-lora-name:hover { border-color: var(--qg-accent, ${BRAND}); }
   .qgtools-lora-name.missing { color: #ff8a80; }
   .qgtools-lora-name.moved { border-style: dashed; border-color: #3c6663; }
   .qgtools-lora-name.dup { border-color: #f0a11e;
@@ -266,7 +271,7 @@ function installStyles() {
   .qgtools-lora-dir { opacity: .6; }
   .qgtools-lora-strengthbox { display: flex; width: 66px; height: 24px; border: 1px solid #3a4047;
     border-radius: 5px; background: #23272c; overflow: hidden; flex: none; }
-  .qgtools-lora-strengthbox:focus-within { border-color: ${BRAND}; }
+  .qgtools-lora-strengthbox:focus-within { border-color: var(--qg-accent, ${BRAND}); }
   .qgtools-lora-strength { flex: 1 1 auto; min-width: 0; height: 100%; border: none; padding: 0;
     background: transparent; color: inherit; text-align: center; cursor: ew-resize;
     user-select: none; }
@@ -275,17 +280,17 @@ function installStyles() {
     border-left: 1px solid #3a4047; }
   .qgtools-lora-step button { flex: 1 1 0; border: none; background: transparent; color: #9ba2aa;
     cursor: pointer; padding: 0; display: grid; place-items: center; }
-  .qgtools-lora-step button:hover { color: ${BRAND}; background: rgba(255,255,255,.05); }
+  .qgtools-lora-step button:hover { color: var(--qg-accent, ${BRAND}); background: rgba(255,255,255,.05); }
   .qgtools-lora-info { width: 24px; height: 24px; border: 1px solid #3a4047; border-radius: 5px;
     background: #23272c; color: #9ba2aa; cursor: pointer; flex: none;
     font: 700 11px system-ui; }
-  .qgtools-lora-info:hover { border-color: ${BRAND}; color: ${BRAND}; }
-  .qgtools-lora-add { flex: none; height: ${ACTIONS_HEIGHT}px; border: 1px solid ${BRAND};
-    border-radius: 6px; background: ${BRAND}; color: #06211f; font: 600 12px system-ui;
+  .qgtools-lora-info:hover { border-color: var(--qg-accent, ${BRAND}); color: var(--qg-accent, ${BRAND}); }
+  .qgtools-lora-add { flex: none; height: ${ACTIONS_HEIGHT}px; border: 1px solid var(--qg-accent, ${BRAND});
+    border-radius: 6px; background: var(--qg-accent, ${BRAND}); color: var(--qg-on-accent, #06211f); font: 600 12px system-ui;
     cursor: pointer; padding: 0 12px; white-space: nowrap; box-shadow: 0 1px 0 rgba(0,0,0,.35); }
-  .qgtools-lora-add:hover { background: #00c9be; border-color: #00c9be; }
+  .qgtools-lora-add:hover { background: var(--qg-accent-hover, #19c9bf); border-color: var(--qg-accent-hover, #19c9bf); }
   .qgtools-lora-add:active { transform: translateY(1px); box-shadow: none; }
-  .qgtools-lora-add:focus-visible { outline: 2px solid #9becf5; outline-offset: 1px; }
+  .qgtools-lora-add:focus-visible { outline: 2px solid var(--qg-accent, ${BRAND}); outline-offset: 1px; }
   .qgtools-lora-add:disabled { opacity: 0.4; cursor: default; }
   .qgtools-lora-actions .qgtools-lora-add { flex: 1 1 auto; }
   .qgtools-lora-summary { color: #9ba2aa; flex: 1 1 auto; min-width: 0; overflow: hidden;
@@ -295,25 +300,25 @@ function installStyles() {
     font: ${POP_FONT}; color: #d7dde2; display: flex; flex-direction: column; }
   .qgtools-lora-search { margin: 8px; height: 26px; border: 1px solid #3a4047; border-radius: 5px;
     background: #23272c; color: inherit; padding: 0 8px; outline: none; }
-  .qgtools-lora-search:focus { border-color: ${BRAND}; }
+  .qgtools-lora-search:focus { border-color: var(--qg-accent, ${BRAND}); }
   .qgtools-lora-list { overflow-y: auto; max-height: 48vh; padding: 0 ${LIST_PAD_X}px 6px;
     scrollbar-gutter: stable; }
   .qgtools-lora-option { padding: 5px ${OPTION_PAD_X}px; border-radius: 4px; cursor: pointer;
     overflow: hidden; }
   .qgtools-lora-option.highlight, .qgtools-lora-folder-option:hover { background: #2c3238; }
-  .qgtools-lora-option.current { color: ${BRAND}; }
+  .qgtools-lora-option.current { color: var(--qg-accent, ${BRAND}); }
   /* 多选：每个文件行左边一个勾选框。勾上的行淡淡亮着，一眼能数出来。 */
   .qgtools-lora-option.tickable { position: relative; }
   .qgtools-lora-tick { position: absolute; top: 50%; width: 15px; height: 15px;
     margin-top: -7.5px; border: 1.5px solid #5c666f; border-radius: 3px;
     background: #2a3036; cursor: pointer; box-sizing: border-box; }
   .qgtools-lora-option.tickable:hover .qgtools-lora-tick { border-color: #b6bec6; }
-  .qgtools-lora-tick:hover { border-color: ${BRAND} !important; }
-  .qgtools-lora-tick.on { background: ${BRAND}; border-color: ${BRAND}; }
+  .qgtools-lora-tick:hover { border-color: var(--qg-accent, ${BRAND}) !important; }
+  .qgtools-lora-tick.on { background: var(--qg-accent, ${BRAND}); border-color: var(--qg-accent, ${BRAND}); }
   .qgtools-lora-tick.on::after { content: ""; position: absolute; left: 3px; top: 1px;
-    width: 5px; height: 9px; border: solid #06211f; border-width: 0 2px 2px 0;
+    width: 5px; height: 9px; border: solid var(--qg-on-accent, #06211f); border-width: 0 2px 2px 0;
     transform: rotate(45deg); }
-  .qgtools-lora-option.ticked { background: rgba(0, 180, 170, .14); }
+  .qgtools-lora-option.ticked { background: var(--qg-accent-fade, rgba(0, 180, 170, .14)); }
   /* 已经在栈里的文件不给勾：点了也只会被跳过，勾上就是骗人。 */
   .qgtools-lora-option.instack { opacity: .5; cursor: default; }
   .qgtools-lora-option.instack:hover { background: none; }
@@ -325,8 +330,8 @@ function installStyles() {
     border: 1px solid #3a4047; border-radius: 6px; background: #23272c; color: #d7dde2;
     font-size: 11.5px; cursor: pointer; }
   .qgtools-lora-tickbar button:hover { border-color: #9ba2aa; }
-  .qgtools-lora-tickbar .qgtools-lora-tickadd { background: ${BRAND};
-    border-color: ${BRAND}; color: #06211f; font-weight: 600; }
+  .qgtools-lora-tickbar .qgtools-lora-tickadd { background: var(--qg-accent, ${BRAND});
+    border-color: var(--qg-accent, ${BRAND}); color: var(--qg-on-accent, #06211f); font-weight: 600; }
   .qgtools-lora-empty { padding: 10px; color: #9ba2aa; font-style: italic; }
   .qgtools-lora-menu { min-width: 140px; padding: 4px; }
   /* Direct children only - those are the plain list rows. Buttons that sit
@@ -355,18 +360,18 @@ function installStyles() {
   .qgtools-lora-card h4 { margin: 0; font-size: 12px; color: #fff; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   .qgtools-lora-meta { color: #9ba2aa; }
-  .qgtools-lora-civitai-link { color: ${BRAND}; text-decoration: none; align-self: flex-start; }
+  .qgtools-lora-civitai-link { color: var(--qg-accent, ${BRAND}); text-decoration: none; align-self: flex-start; }
   .qgtools-lora-civitai-link:hover { text-decoration: underline; }
   .qgtools-lora-chips { display: flex; flex-wrap: wrap; gap: 4px; }
   .qgtools-lora-chip { border: 1px solid #3a4047; border-radius: 10px; background: #23272c;
     color: inherit; cursor: pointer; padding: 2px 8px; font-size: 11px; }
-  .qgtools-lora-chip.active { border-color: ${BRAND}; color: ${BRAND}; }
+  .qgtools-lora-chip.active { border-color: var(--qg-accent, ${BRAND}); color: var(--qg-accent, ${BRAND}); }
   .qgtools-lora-fetch { align-self: flex-start; }
   .qgtools-lora-custom { display: flex; gap: 6px; align-items: center; }
   .qgtools-lora-custom input { flex: 1 1 auto; min-width: 0; height: ${ACTIONS_HEIGHT}px;
     border: 1px solid #3a4047; box-sizing: border-box;
     border-radius: 5px; background: #23272c; color: inherit; padding: 0 8px; outline: none; }
-  .qgtools-lora-custom input:focus { border-color: ${BRAND}; }
+  .qgtools-lora-custom input:focus { border-color: var(--qg-accent, ${BRAND}); }
   `;
   document.head.append(style);
 }
@@ -489,6 +494,11 @@ function placeWidgetSlots(node) {
   let row = 0;
   let moved = false;
   for (const slot of inputs) {
+    // 行强度槽的 y 由 placeStrengthAnchors 按「行」定位，这里不要覆盖它。
+    if (/^strength_\d+$/.test(slot.name || "")) {
+      row += 1;
+      continue;
+    }
     const widget = slot._widget
       ?? (slot.widget ? node.widgets?.find((item) => item.name === slot.widget.name) : null);
     // +4: a widget's own y sits half a slot row above the dot it carries
@@ -501,6 +511,191 @@ function placeWidgetSlots(node) {
     row += 1;
   }
   return moved;
+}
+
+// ---------- 行强度外控 ----------
+// 每行的 model 强度可以从图里接线：第 N 行对应后端 strength_N 槽（与
+// QG_LoraSwitchStack 同口径，**CLIP 强度不跟着变**，与官方 LoraLoader 一致）。
+// 槽在定义里标了 hidden，不画圆点；这里给每个槽造一个**不序列化**的锚点
+// widget，把它的 y 定位到对应行 —— LiteGraph 每次布局都按 widget.y 重写槽的
+// pos，于是槽和连线都落在行上，拖线也落得准。widget 用 { serialize: false }，
+// widgets_values 不变，老工作流不会错位（与 LoraSwitchStack 的行 widget 同一
+// 手法）。超过 24 的行没有槽，仍用面板里自己的强度。
+
+function strengthSlotName(index) {
+  return `strength_${index + 1}`;
+}
+
+function strengthSlotInput(node, index) {
+  const name = strengthSlotName(index);
+  return node?.inputs?.find((item) => item.name === name) ?? null;
+}
+
+// 🔴 2026-11-24：行强度框要跟随外控源。strength_N 接了线时，后端 execute
+// 用上游值覆盖存档强度，但 DOM 强度框原来只读 state.rows（存档），于是
+// 拖上游滑条时框里纹丝不动（用户截图「让数值也能跟着滑条」）。
+// 这里沿 link 穿透虚拟节点（QG_SetPoint/GetPoint、KJ Set/Get Node）到真实
+// 源头，读它唯一的 value 数值 widget；读不到就返回 null，界面继续显示存档值。
+// 与 LoraSwitchStack 的 resolveWidgetSource / rowStrengthState 同一口径：
+// 有且只有一个名为 value 的有限数值才算，多个或运行时算出来的都不猜。
+function externalStrengthValue(node, index) {
+  const input = strengthSlotInput(node, index);
+  const id = input?.link;
+  if (id == null) return null;
+  const graph = node.graph;
+  let link = graph?.links?.[id] ?? null;
+  const seen = new Set();
+  for (let hop = 0; link && hop < 16; hop += 1) {
+    const origin = graph?.getNodeById?.(link.origin_id);
+    if (!origin) return null;
+    if (!origin.isVirtualNode) {
+      const numbers = (origin.widgets || []).filter(
+        (w) => w.name === "value" && typeof w.value === "number" && Number.isFinite(w.value));
+      return numbers.length === 1 ? numbers[0].value : null;
+    }
+    if (seen.has(origin.id)) return null;
+    seen.add(origin.id);
+    link = typeof origin.getInputLink === "function" ? origin.getInputLink(0) : null;
+  }
+  return null;
+}
+
+function ensureStrengthAnchors(state) {
+  const node = state?.node;
+  if (!node?.inputs?.length || typeof node.addWidget !== "function") return;
+  const anchors = (node.__qgStrengthAnchors ??= []);
+  for (let index = 0; index < STRENGTH_SLOT_COUNT; index += 1) {
+    const input = strengthSlotInput(node, index);
+    if (!input) continue;
+    let anchor = anchors[index];
+    if (!anchor || !node.widgets?.includes(anchor)) {
+      // 🔴 名字**不能**与 input 同名（别用 strength_N）：V3 前端按 input+widget
+      // 混合映射恢复 widgets_values，同名会让它把锚点当成该 input 的 widget，
+      // 前几项（loras）的恢复随之错位 —— 实测存档里 loras 被重置成 []。
+      anchor = node.addWidget("text", `__qg_sa_${index + 1}`, "", () => {}, { serialize: false });
+      anchor.__qgStrengthAnchor = true;
+      hideWidget(anchor);
+      anchors[index] = anchor;
+    }
+    if (input.widget !== anchor) input.widget = anchor;
+    // 零宽空格挡住 LiteGraph 在槽旁画的槽名，与 LoraSwitchStack 一致。
+    if (input.label !== "\u200b") input.label = "\u200b";
+  }
+}
+
+// 每行在节点内的 y（graph 单位）。DOM 行绝对定位在节点上，用屏幕坐标反算：
+// 节点顶边 = (pos.y + offset.y) * scale + canvasTop。行在滚动区里，取当帧的
+// 屏幕位置天然带上了 scrollTop，不必另算。
+function strengthRowPositions(state) {
+  const node = state?.node;
+  // 🔴 2026-11-23 用户截图「槽和行没有对齐」根因：`node.graph.canvas` 在 1.59
+  // 的经典模式下是个**没有 ds 的空壳**（offset/scale 都是 null），`?? app.canvas`
+  // 因为左边非空而不会兜底 → 按 scale=1/offset=[0,0] 算，整列槽偏掉几百像素。
+  // 必须优先用全局画布，且要求 ds 真的在。
+  const canvas = (app?.canvas?.ds ? app.canvas : null)
+    ?? (node?.graph?.canvas?.ds ? node.graph.canvas : null);
+  const rect = canvas?.canvas?.getBoundingClientRect?.();
+  const scale = canvas?.ds?.scale || 1;
+  const offset = canvas?.ds?.offset || [0, 0];
+  if (!rect || !node?.pos) return null;
+  const nodeTop = (node.pos[1] + offset[1]) * scale + rect.top;
+  const stack = state.panel?.querySelector(".qgtools-lora-stack");
+  const rowEls = stack ? [...stack.querySelectorAll(".qgtools-lora-row")] : [];
+  return rowEls.map((el) => {
+    const r = el.getBoundingClientRect();
+    return (r.top + r.height / 2 - nodeTop) / scale;
+  });
+}
+
+function placeStrengthAnchors(state) {
+  const node = state?.node;
+  const anchors = node?.__qgStrengthAnchors;
+  if (!anchors?.length) return;
+  const ys = strengthRowPositions(state);
+  if (!ys) return;
+  let moved = false;
+  for (let index = 0; index < anchors.length; index += 1) {
+    const anchor = anchors[index];
+    if (!anchor) continue;
+    // 行数不足时把锚点推到节点外，槽跟着离开可视区；已挂的连线不画在行上。
+    const center = index < ys.length ? ys[index] : -1000 - index;
+    // 🔴 widget.y 是**槽点上方半格**（前端按 `slot.pos.y = widget.y + 10` 重写），
+    // 所以锚点要停在行中心 - 10；槽点圆心才正好落在行中心。原来直接把行中心写进
+    // widget.y，整列槽比行低 10px。
+    const anchorY = center - SLOT_HEIGHT / 2;
+    if (Math.abs((anchor.y ?? 0) - anchorY) > 0.5) {
+      anchor.y = anchorY;
+      moved = true;
+    }
+    // 同帧把槽的 pos 也钉到行中心：LiteGraph 只在布局时按 widget.y 重写 pos，
+    // 行刚渲染出来那一拍若还没布局，拖线会落空（实测连接前 pos 停在节点外）。
+    const input = strengthSlotInput(node, index);
+    if (input) {
+      if (!input.pos) input.pos = [10, center];
+      else if (Math.abs(input.pos[1] - center) > 0.5) {
+        input.pos[0] = 10;
+        input.pos[1] = center;
+      }
+    }
+  }
+  if (moved) node.setDirtyCanvas?.(true, true);
+}
+
+// 行被删除 / 排序 / 插入后，把 strength 连线按**行 id**搬到新位置，否则线会
+// 悄悄控制到别的 LoRA 上（界面完全看不出来）。行 id 是稳定的，下标不是。
+function sameRowOrder(previous, next) {
+  if (previous === next) return true;
+  if (!Array.isArray(previous) || !Array.isArray(next) || previous.length !== next.length) return false;
+  for (let index = 0; index < previous.length; index += 1) {
+    if (previous[index]?.id !== next[index]?.id) return false;
+  }
+  return true;
+}
+
+function remapStrengthLinks(state, previous, next) {
+  const node = state?.node;
+  if (!node?.__qgStrengthAnchors?.length) return;
+  if (!Array.isArray(previous) || !Array.isArray(next)) return;
+  // 每帧 sync 都会调到这里：顺序没变就直接走，别白扫 24 个槽。
+  if (sameRowOrder(previous, next)) return;
+  const graph = node.graph;
+  // 记下每个有连线的行「从哪个源节点/输出槽来」——行 id 稳定，下标不稳定。
+  const source = new Map();
+  previous.forEach((row, index) => {
+    const input = strengthSlotInput(node, index);
+    if (input?.link == null || row?.id == null) return;
+    const entry = graph?.links?.[input.link];
+    if (!entry) return;
+    const srcNode = graph.getNodeById?.(entry.origin_id);
+    if (!srcNode) return;
+    source.set(row.id, { node: srcNode, slot: entry.origin_slot });
+  });
+  if (!source.size) return;
+  // 🔴 用官方断/连 API，别直接改 input.link：新版 LiteGraph 的连线是 Link 对象，
+  // 手动置 null 后孤链会被清理，重挂时 graph.links[id] 已经不在了（实测丢线）。
+  for (let index = 0; index < STRENGTH_SLOT_COUNT; index += 1) {
+    const input = strengthSlotInput(node, index);
+    if (input?.link == null) continue;
+    const at = node.inputs.indexOf(input);
+    try {
+      if (typeof node.disconnectInput === "function") node.disconnectInput(at);
+      else input.link = null;
+    } catch (e) {
+      input.link = null;
+    }
+  }
+  next.forEach((row, index) => {
+    if (index >= STRENGTH_SLOT_COUNT) return;
+    const src = row?.id != null ? source.get(row.id) : null;
+    if (!src) return;
+    // 🔴 目标槽必须按**名字**求 node.inputs 里的真实下标：隐藏的 input（loras 等）
+    // 不在 inputs 数组里，strength_1 的下标是 2 而不是 0，直接用行号会连到别的槽。
+    const input = strengthSlotInput(node, index);
+    const at = input ? node.inputs.indexOf(input) : -1;
+    if (at < 0) return;
+    try { src.node.connect?.(src.slot, node, at); } catch (e) { /* 源已删除等，跳过 */ }
+  });
+  node.setDirtyCanvas?.(true, true);
 }
 
 async function fetchLoraList() {
@@ -589,6 +784,275 @@ function hideHoverThumb() {
   hoverThumb.style.display = "none";
 }
 
+// 标题栏按钮的锚点：按钮 DOM 被挪到 Vue 的 .lg-node-header 后，自身 rect 就是
+// 新位置（菜单自然从标题栏弹出）；经典模式下按钮 DOM 藏在面板里、由画布上画的
+// 图标代理点击，这时按钮上挂了 __qgHeaderRect()，返回那个图标的屏幕矩形。
+function anchorRectOf(anchor) {
+  return (typeof anchor?.__qgHeaderRect === "function" ? anchor.__qgHeaderRect() : null)
+    || anchor?.getBoundingClientRect?.()
+    || { left: 0, top: 0, bottom: 0, right: 0, width: 0, height: 0 };
+}
+
+// ---------------------------------------------------------------- 标题栏三按钮
+//
+// 2026-11-23 按用户截图标注：▤模板 / ↻重检 / ⚙设置 从面板头部那行移到标题栏
+// 「?」徽章左边（顺序从左到右：▤ ↻ ⚙ ?），主开关留在原行最左，摘要不显示。
+//
+// 两种渲染模式各走一条路，但按钮 DOM 始终只有一份：
+//   * Vue：把三颗真按钮直接搬进 .lg-node-header 的 flex 行，安在「?」前面。
+//     click handler、菜单锚点（getBoundingClientRect）全都自动跟着新位置走。
+//   * 经典：标题栏是画布自绘、没有 DOM 可插。按钮 DOM 留在面板里但用 CSS 隐藏，
+//     在 onDrawForeground 里照 badgeCenter() 往左依次画三颗图标；onMouseDown
+//     命中后转发 click 到真按钮，并临时给按钮挂 __qgHeaderRect() 返回图标的
+//     屏幕矩形，菜单就从图标旁边弹出（见 anchorRectOf）。
+// 图标坐标全借 help_badge 的 badgeCenter()：「?」挪位置时三颗跟着一起挪。
+
+// 🔴 2026-11-23 二次调整（用户截图）：三颗图标画得比标题栏的「?」还大、还粗，
+// 🔴 2026-11-24 用户截图：三颗图标比旁边的「?」小一圈、不配，要求加大。
+// ? 徽章半径 7（直径 14，见 help_badge.mjs BADGE_RADIUS）；图标原来半边长 5
+// 且是空心线条，视觉更小。加大到 6.5（直径 13 的实心笔画，观感与 ? 相当），
+// 间距同步 16→19 让放大后的图标不相碰，命中半径 6→7 与 ? 齐平。改这里要连
+// drawHeaderButtons / headerIconHit 一起看，显示门槛由 STEP 自动重算。
+const HEAD_BTN_STEP = 19;      // 相邻图标中心间距（画布局部像素）
+const HEAD_BTN_RADIUS = 7;     // 命中半径，与 ? 徽章半径 7 齐平
+const HEAD_BTN_ICON = 6.5;     // 画布上画的图标半边长（原 5，偏小）
+// 从左到右：templates(▤) / recheck(↻) / gear(⚙)，offset 是相对 ? 中心往左几步。
+const HEAD_BTN_ORDER = [
+  ["templates", 3],
+  ["recheck", 2],
+  ["gear", 1],
+];
+const headerCssId = "qgtools-loader-headbtn-style";
+
+function ensureHeaderCss() {
+  if (document.getElementById(headerCssId)) return;
+  const style = document.createElement("style");
+  style.id = headerCssId;
+  // 经典模式下真按钮藏在面板里（画布代理点击）；Vue 下要让它们像标题栏原生
+  // 徽章一样站进 flex 行，尺寸压到 16px、去边框，跟「?」一般大。
+  style.textContent = `
+  .qgtools-lora-headmode .qgtools-lora-bargroup > .qgtools-lora-gear{display:none}
+  /* 🔴 2026-11-23 用户截图：三颗按钮搬去标题栏后，这一行只剩主开关，原来那个
+     带边框+背景的大框（40px 宽内只剩一颗开关在中间）就空得刺眼。去掉框和
+     居中，开关贴到面板最左。只在 headmode（独立节点）生效 —— 盒子里的加载器
+     还有摘要和重检按钮，原来的框是有用的，别一起改。
+     高度仍留 GROUP_HEIGHT（见 panelHeight 的预算），只把视觉的框去掉。 */
+  .qgtools-lora-headmode .qgtools-lora-bar{margin-top:${BAR_TOP_GAP}px;justify-content:flex-start}
+  .qgtools-lora-headmode .qgtools-lora-bargroup{flex:0 0 auto;max-width:none;
+    padding:0;border:0;border-radius:0;background:transparent}
+  /* 🔴 2026-11-24 加大：Vue 下「?」徽章 14px，图标从 13→16px 与之相称。 */
+  .qgtools-headbtn{width:18px;height:18px;box-sizing:border-box;flex:none;padding:0;
+    margin:0 1px;position:relative;z-index:2;display:inline-flex;align-items:center;
+    justify-content:center;border:0;border-radius:4px;background:transparent;
+    color:rgba(155,162,170,.8);cursor:pointer;opacity:.8;transition:opacity .12s,color .12s}
+  .qgtools-headbtn:hover{opacity:1;color:var(--qg-accent, ${BRAND})}
+  .qgtools-headbtn>*{width:16px;height:16px;display:block}
+  `;
+  document.head.append(style);
+}
+
+// 与 help_badge_dom.shellOf 同口径：整串比 id，子图前缀只认唯一后缀。
+function loaderShellOf(node) {
+  const id = node?.id;
+  if (id === undefined || id === null) return null;
+  const want = String(id);
+  const shells = document.querySelectorAll(".lg-node");
+  let suffix = null, hits = 0;
+  for (const el of shells) {
+    if (el.dataset?.ghost) continue;
+    const raw = el.dataset?.nodeId;
+    if (!raw) continue;
+    if (raw === want) return el;
+    if (raw.endsWith(":" + want)) { suffix = el; hits += 1; }
+  }
+  return hits === 1 ? suffix : null;
+}
+
+// 经典模式：第 step 颗图标在节点局部坐标里的中心。
+function headerIconCenter(node, step) {
+  const [bx, by] = badgeCenter(node.size?.[0] ?? 0);
+  return [bx - HEAD_BTN_STEP * step, by];
+}
+function headerIconShown(node) {
+  return !node.flags?.collapsed && (node.size?.[0] ?? 0) >= 140 + HEAD_BTN_STEP * 3;
+}
+function headerIconHit(node, pos, step) {
+  const [cx, cy] = headerIconCenter(node, step);
+  // 中心距 19、命中半宽 7+2=9，相邻命中区 18 < 19 仍不重叠；纵向略放宽到 11。
+  return pos && Math.abs(pos[0] - cx) <= HEAD_BTN_RADIUS + 2
+    && Math.abs(pos[1] - cy) <= HEAD_BTN_RADIUS + 4;
+}
+
+// 图标的屏幕矩形（给菜单锚点用）：local 中心 -> 屏幕。
+function headerIconRect(node, step) {
+  const canvas = app.canvas;
+  const [lx, ly] = headerIconCenter(node, step);
+  const box = canvas?.canvas?.getBoundingClientRect?.() ?? { left: 0, top: 0 };
+  const scale = canvas?.ds?.scale ?? 1;
+  const offset = canvas?.ds?.offset ?? [0, 0];
+  const cx = box.left + (node.pos[0] + lx + offset[0]) * scale;
+  const cy = box.top + (node.pos[1] + ly + offset[1]) * scale;
+  const half = HEAD_BTN_RADIUS * scale;
+  return { left: cx - half, right: cx + half, top: cy - half, bottom: cy + half,
+    width: half * 2, height: half * 2, x: cx - half, y: cy - half };
+}
+
+// 画布绘制三颗图标。全部用路径画（画布按缩放系数放大，位图会糊）。
+// 🔴 几何照 ICON_BASE（原来 8px 半边长）写死，再整体缩放到 HEAD_BTN_ICON：
+// 缩小时箭头、齿轮齿的比例自动跟着走，别逐个改坐标（改漏一个就画歪）。
+const ICON_BASE = 8;
+function drawHeaderButtons(node, ctx) {
+  if (!headerIconShown(node)) return;
+  const k = HEAD_BTN_ICON / ICON_BASE;
+  ctx.save();
+  ctx.strokeStyle = "rgba(155,162,170,.8)";
+  ctx.fillStyle = "rgba(155,162,170,.8)";
+  ctx.lineWidth = 1.2;
+  for (const [name, step] of HEAD_BTN_ORDER) {
+    const [cx, cy] = headerIconCenter(node, step);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(k, k);
+    if (name === "templates") {
+      // ▤ 列表/模板：三条横线 + 左侧小竖线
+      for (let i = -1; i <= 1; i += 1) ctx.strokeRect(-ICON_BASE, i * 4 - 1, ICON_BASE * 2, 2);
+    } else if (name === "recheck") {
+      // ↻ 重检：不闭合的圆弧 + 箭头尖
+      ctx.beginPath();
+      ctx.arc(0, 0, ICON_BASE - 1, Math.PI * 0.35, Math.PI * 1.85);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(ICON_BASE - 1, -2);
+      ctx.lineTo(ICON_BASE - 1, -6);
+      ctx.lineTo(ICON_BASE - 5, -4);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // ⚙ 齿轮：8 齿 + 内孔（照 settings_menu.gearIconSvg）
+      for (let i = 0; i < 8; i += 1) {
+        ctx.save();
+        ctx.rotate(i * Math.PI / 4);
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(-1.2, -ICON_BASE, 2.4, 3.8, 1);
+        else ctx.rect(-1.2, -ICON_BASE, 2.4, 3.8);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.beginPath();
+      ctx.arc(0, 0, 4.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.beginPath();
+      ctx.arc(0, 0, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// 点击标题栏代理按钮：转发给当前那一版真按钮（renderRows 每次重建会换新），
+// 并临时给它挂上锚点矩形，让菜单从标题栏图标旁边弹出而非面板里的隐藏位置。
+function invokeHeaderBtn(state, name, rect) {
+  const btn = state.headerBtns?.[name];
+  if (!btn) return;
+  if (rect) btn.__qgHeaderRect = () => rect;
+  try { btn.click(); } finally { btn.__qgHeaderRect = null; }
+}
+
+// Vue：把三颗持久代理按钮插进标题栏 flex 行，安在「?」左侧。
+// 它们不随 renderRows 重建（renderRows 只重建面板内部），所以一次挂载一直在。
+function syncHeaderDom(entry) {
+  const { node, proxy } = entry;
+  if (!node) return;
+  if (!vueNodesEnabled() || node.flags?.collapsed) {
+    for (const el of Object.values(proxy)) el.remove();
+    return;
+  }
+  if (proxy.gear.isConnected) return;
+  const shell = loaderShellOf(node);
+  const row = shell?.querySelector(".lg-node-header > div");
+  if (!row) return; // Vue 还没渲染这颗节点，下次巡检再挂
+  const badge = row.querySelector(".qgtools-help-badge");
+  for (const [name] of HEAD_BTN_ORDER) {
+    const el = proxy[name];
+    el.classList.add("qgtools-headbtn");
+    if (badge) row.insertBefore(el, badge);
+    else row.append(el);
+  }
+}
+
+const headerTracked = new Set();
+let headerSweep = null;
+function sweepHeaderDom() {
+  for (const entry of headerTracked) syncHeaderDom(entry);
+  if (!headerTracked.size && headerSweep) { clearInterval(headerSweep); headerSweep = null; }
+}
+
+// 每颗代理按钮的图标：用真按钮的内容克隆（▤ 文本 / svg），保证和原按钮一致。
+function makeProxyButton(name, state) {
+  const btn = el("button", "qgtools-headbtn");
+  btn.type = "button";
+  const real = state.headerBtns?.[name];
+  btn.title = real?.title || "";
+  if (name === "templates") btn.textContent = "▤";
+  else if (real?.innerHTML) btn.innerHTML = real.innerHTML;
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const r = btn.getBoundingClientRect();
+    invokeHeaderBtn(state, name, { left: r.left, right: r.right, top: r.top,
+      bottom: r.bottom, width: r.width, height: r.height });
+  });
+  // Vue 节点外壳是拖拽处理器：拦住指针，别让点图标变成拖节点
+  btn.addEventListener("pointerdown", (e) => { e.stopPropagation(); e.preventDefault(); });
+  btn.addEventListener("pointerup", (e) => e.stopPropagation());
+  btn.addEventListener("dblclick", (e) => e.stopPropagation());
+  return btn;
+}
+
+// renderRows 每次都会调用，但节点钩子与代理 DOM 只需挂一次（state.headerMounted）。
+function mountHeaderButtons(state, node) {
+  if (!node || state.box || state.headerMounted) return;
+  ensureHeaderCss();
+  state.headerMounted = true;
+  const proxy = {
+    templates: makeProxyButton("templates", state),
+    recheck: makeProxyButton("recheck", state),
+    gear: makeProxyButton("gear", state),
+  };
+  const entry = { node, proxy, state };
+  headerTracked.add(entry);
+  state.headerEntry = entry;
+  if (!headerSweep) headerSweep = setInterval(sweepHeaderDom, 800);
+
+  // 经典模式：画布代理绘制 + 命中转发。Vue 下这两个钩子根本不会被调，无副作用。
+  chainCallback(node, "onDrawForeground", function (ctx) {
+    if (vueNodesEnabled()) return;
+    drawHeaderButtons(this, ctx);
+  });
+  chainHandler(node, "onMouseDown", function (event, pos) {
+    if (vueNodesEnabled()) return false;
+    if (!headerIconShown(this) || !pos) return false;
+    for (const [name, step] of HEAD_BTN_ORDER) {
+      if (!headerIconHit(this, pos, step)) continue;
+      invokeHeaderBtn(state, name, headerIconRect(this, step));
+      return true; // 吃掉点击，别触发拖动
+    }
+    return false;
+  });
+  chainCallback(node, "onRemoved", () => unmountHeaderButtons(entry));
+  sweepHeaderDom();
+}
+
+function unmountHeaderButtons(entry) {
+  if (!entry) return;
+  for (const el of Object.values(entry.proxy)) el.remove();
+  entry.state.headerMounted = false;
+  headerTracked.delete(entry);
+  if (!headerTracked.size && headerSweep) { clearInterval(headerSweep); headerSweep = null; }
+}
+
 function openPopup(element, anchorRect, { width, onEscape, owner = null } = {}) {
   closePopup();
   const abort = new AbortController();
@@ -670,7 +1134,10 @@ function commitRows(state, rows, { structural = false, record = true } = {}) {
     renderRows(state);
     return;
   }
+  const previous = state.rows;
   state.rows = rows;
+  // 结构性变化（增删 / 排序）后，行强度连线按行 id 跟着走，别让它控制到别人。
+  if (structural) remapStrengthLinks(state, previous, rows);
   state.widget.value = serializeRows(rows);
   state.renderedValue = state.widget.value;
   // 写进去的是自己序列化出来的合法 JSON，那句「读不出来」自然不成立了。
@@ -762,7 +1229,9 @@ function panelHeight(state) {
   const actions = ROW_GAP + ACTIONS_HEIGHT;
   const note = state.note ? NOTE_HEIGHT + ROW_GAP : 0;
   const broken = state.parseError ? BROKEN_HEIGHT : 0;
-  return Math.min(PANEL_PADDING * 2 + GROUP_HEIGHT + ROW_GAP + note + broken + stack + actions, panelCap());
+  // 独立节点（headmode）的 bar 多了上边距；盒子里的加载器没有，别多算。
+  const topGap = state.box ? 0 : BAR_TOP_GAP;
+  return Math.min(PANEL_PADDING * 2 + topGap + GROUP_HEIGHT + ROW_GAP + note + broken + stack + actions, panelCap());
 }
 
 function panelMinWidth(state) {
@@ -776,6 +1245,38 @@ function fitNode(state) {
     : panelHeight(state) + WIDGET_FRAME + 80;
   state.node.setSize?.([width, height]);
   state.node.graph?.setDirtyCanvas(true, true);
+}
+
+// 24 个 strength 槽在锚点 widget 建好之前会被前端当成 24 个**普通**槽算进
+// computeSize（26 × 20 + widget 区 ≈ 662），layout 就照着它把节点钉高；
+// 前端 expandToFitContent 只增不减，之后 computeSize 回到 202 也再也缩不回去
+// —— 2026-11-22 用户报的「默认高度太大」就是这个。
+//
+// 锚点建好后按「节点真正需要的」定一次高，并在随后 ~360ms 里盯着：前端在
+// configure 之后还会再排几次 layout（_arrangeWidgets、expandToFitContent）。
+//
+// 存档节点要保住用户拉过的高度：configure 时记下的 size 是目标下限，只有
+// 「明显是那条错误路径写进去的」才不认 —— ≥ 600 且比需要的高出 200 以上，
+// 正好是 662/686 这种值，而用户真拉 500、700 中间档的情况不受影响。
+function settleHeight(state, frames = 6) {
+  const node = state?.node;
+  if (!node || state.disposed) return;
+  const need = node.computeSize?.()[1] ?? panelHeight(state) + WIDGET_FRAME;
+  const saved = Number.isFinite(state.savedHeight) ? state.savedHeight : 0;
+  const bloated = saved >= 600 && saved > need + 200;
+  const want = Math.max(need, bloated ? 0 : saved);
+  const now = Number(node.size?.[1] ?? 0);
+  if (!node.flags?.resizing && Math.abs(now - want) > 2) {
+    const width = Math.max(panelMinWidth(state), node.size?.[0] ?? PANEL_MIN_WIDTH);
+    node.__qgAutoSize = true;
+    try {
+      node.setSize?.([width, want]);
+    } finally {
+      node.__qgAutoSize = false;
+    }
+    node.graph?.setDirtyCanvas?.(true, true);
+  }
+  if (frames > 0) setTimeout(() => settleHeight(state, frames - 1), 60);
 }
 
 // ---------- suggested strength ranges ----------
@@ -850,8 +1351,15 @@ function strengthBox(state, index, key) {
   input.setAttribute("aria-label", zh(key === "strength" ? "Model strength" : "CLIP strength"));
   input.readOnly = true;
   input.__qgRead = () => {
-    const row = liveRow();
-    return row ? formatStrength(row[key]) : "";
+    const at = liveIndex();
+    const row = state.rows[at];
+    if (!row) return "";
+    // 外控线接在 strength_N 上时显示上游实时值；穿不透 / 非数值源时回退存档值。
+    if (key === "strength") {
+      const external = externalStrengthValue(state.node, at);
+      if (external !== null) return formatStrength(external);
+    }
+    return formatStrength(row[key]);
   };
   input.__qgTint = () => {
     const row = liveRow();
@@ -1615,7 +2123,7 @@ function openInfo(state, index, anchor) {
     const groups = triggerGroups(info);
     chipSection("From the file", groups.file);
     chipSection("From Civitai", groups.civitai);
-    chipSection("Your words", groups.custom);
+    chipSection(zhPair("Trigger words", "触发词"), groups.custom);
 
     if (state.settings?.civitai_lookup !== false) {
       const fetchButton = el(
@@ -1935,7 +2443,7 @@ function openTemplates(state, anchor) {
     }
   };
   rebuild();
-  openPopup(menu, anchor.getBoundingClientRect(), { width: 240, owner: state });
+  openPopup(menu, anchorRectOf(anchor), { width: 240, owner: state });
   menu.querySelector("input")?.focus();
 }
 
@@ -2111,6 +2619,39 @@ function takeRowOver(state, index) {
 // 🔴 行按 id 认，不按下标。DOM 顺序与 state.rows 平时一致，但面板是异步重建
 // 的 —— 一处按下标、一处按 id 的混合写法，只要有一次重建落在两句话之间，装饰
 // 就会落到别的行上（提示里写着另一行的文件名、着色也串）。
+// 强度条颜色跟随「滑条颜色」设置（与数值滑条共用一支取色器）。DOM 面板能直接
+// 继承 CSS 变量，但 strengthBarBackground 要的是具体颜色串，读进来缓存即可。
+let barColorsCache = null;
+
+function sliderBarColors() {
+  if (barColorsCache) return barColorsCache;
+  let colors = BAR_COLORS;
+  try {
+    const root = getComputedStyle(document.documentElement);
+    const fill = root.getPropertyValue("--qg-slider-fill").trim();
+    const cap = root.getPropertyValue("--qg-slider-cap").trim();
+    if (fill || cap) {
+      colors = { ...BAR_COLORS,
+        positiveFill: fill || BAR_COLORS.positiveFill,
+        positiveCap: cap || BAR_COLORS.positiveCap };
+    }
+  } catch (_) { /* 取不到就用默认品牌青强度条 */ }
+  barColorsCache = colors;
+  return colors;
+}
+
+function installBarColorSync() {
+  window.addEventListener("qg-accent-changed", () => {
+    barColorsCache = null;
+    for (const node of (app.graph?._nodes ?? [])) {
+      const states = [];
+      if (node.__qgLoraState) states.push(node.__qgLoraState);
+      if (node.__qgLoraCards) states.push(...node.__qgLoraCards.values());
+      for (const s of states) if (s?.panel) decorateRows(s);
+    }
+  });
+}
+
 function decorateRows(state) {
   const showBars = state.settings?.strength_bars !== false;
   const scale = strengthBarScale(state.rows);
@@ -2132,7 +2673,7 @@ function decorateRows(state) {
     // 停在采样前；这行重复了；这行指向的文件搬家了。
     const notes = [row.name];
     if (showBars) {
-      button.style.background = strengthBarBackground(row.strength, scale);
+      button.style.background = strengthBarBackground(row.strength, scale, sliderBarColors());
       const strengthText = row.strength.toFixed(2);
       const scaleText = scale.toFixed(2);
       notes.push(zhPair(
@@ -2437,7 +2978,7 @@ function openSettings(state, anchor) {
   openSettingsMenu({
     scope: LORA_SETTINGS_SCOPE,
     schema: menuSchema,
-    anchor: anchor.getBoundingClientRect(),
+    anchor: anchorRectOf(anchor),
     title: zh("LoRA Loader settings"),
     // The menu reflects THIS node's live state where the two overlap.
     initial: {
@@ -2583,14 +3124,22 @@ function renderRows(state) {
     openSettings(state, gear);
   });
   const group = el("div", "qgtools-lora-bargroup");
-  const summary = el("span", "qgtools-lora-summary", summarizeRows(state.rows));
-  const sumWord = el("span", "qgtools-lora-sumword", "enabled");
-  summary.append(sumWord);
-  sumWord.hidden = !state.rows.some((row) => row.name);
-  // On a box only the rows themselves: templates and the settings stay on
-  // the loader inside.
-  if (state.box) group.append(master, summary, recheck);
-  else group.append(templates, master, summary, recheck, gear);
+  // 🔴 2026-11-23 按用户要求重排头部（见截图标注）：
+  //   - ▤模板 / ↻重检 / ⚙设置 三颗按钮移到标题栏「?」左侧（mountHeaderButtons）；
+  //   - 「0/3 已启用」摘要不再显示；
+  //   - 这一行只剩主开关，落在最左。
+  // 盒子里的加载器（state.box）没有独立标题栏，按钮留在原位。
+  if (state.box) {
+    const summary = el("span", "qgtools-lora-summary", summarizeRows(state.rows));
+    group.append(master, summary, recheck);
+  } else {
+    group.append(master, templates, recheck, gear);
+    // renderRows 每次重建面板都会造出新按钮；存下当前这一组，标题栏的持久
+    // 代理按钮点击时转发给它们（见 mountHeaderButtons / invokeHeaderBtn）。
+    state.headerBtns = { templates, recheck, gear };
+    panel.classList.add("qgtools-lora-headmode"); // CSS 隐藏面板里的三颗真按钮
+    mountHeaderButtons(state, state.node);
+  }
   bar.append(group);
   body.append(bar);
   panel.classList.toggle("readonly", Boolean(state.readOnly));
@@ -2762,14 +3311,16 @@ function renderRows(state) {
       showHoverThumb(state, row.name, event.clientX, event.clientY));
     name.addEventListener("pointerleave", hideHoverThumb);
 
-    rowElement.append(grip, toggle, name, strengthBox(state, index, "strength"));
+    rowElement.append(toggle, name, strengthBox(state, index, "strength"));
     if (!linked(state)) rowElement.append(strengthBox(state, index, "strength_clip"));
 
     const info = el("button", "qgtools-lora-info", "i");
     info.type = "button";
     info.title = zh("Preview, base model, and trigger words");
     info.addEventListener("click", () => openInfo(state, index, info));
-    rowElement.append(info);
+    // 🔴 2026-11-23 用户截图：拖动把手从行首移到行尾 —— 行首左边那格留给节点
+    // 边缘的强度槽点，把手挪走后槽点与行首不再挤在一起。
+    rowElement.append(info, grip);
 
     rowElement.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -2807,6 +3358,10 @@ function renderRows(state) {
   });
   state.nameObserver.disconnect();
   state.nameObserver.observe(stack);
+  // 行区可滚动：滚动时行的屏幕位置变了，锚点要跟着走，槽和连线才不偏。
+  stack.addEventListener("scroll", () => placeStrengthAnchors(state), { passive: true });
+  // 面板刚重建，布局要到下一帧才有真实尺寸；等一帧再对位。
+  requestAnimationFrame(() => { if (!state.disposed) placeStrengthAnchors(state); });
 }
 
 // Rows cut a long name at the end (the label's CSS ellipsis) unless the
@@ -2887,6 +3442,10 @@ function syncRows(state) {
   // placeWidgetSlots); the frontend can re-lay-out the node at any time, so
   // this rides the same sync that already follows the card.
   if (placeWidgetSlots(state.node)) state.node.setDirtyCanvas?.(true, true);
+  // 🔴 2026-11-23：Vue 模式不画节点，onDrawForeground 的 sync 不会持续跑；加载工作流
+  // 那次 rAF 又可能早于面板真正布局（首次量到的行矩形还是 0/旧值），槽就停在错位置。
+  // 这里跟 250ms 的画布轮询一起重钉，任何路径（经典/Vue/加载/撤销）都会收敛。
+  placeStrengthAnchors(state);
   const source = rowsSource(state);
   const widget = source.widget;
   if (!widget) return false;
@@ -2902,6 +3461,8 @@ function syncRows(state) {
   state.note = source.note;
   if (!moved && widget.value === state.renderedValue) return false;
   const read = parseRowsDetailed(widget.value);
+  // 外部改写了 loras（另一节点、撤销、载入）时行顺序可能变了，强度连线要跟着行走。
+  remapStrengthLinks(state, state.rows, read.rows);
   state.rows = read.rows;
   state.parseError = read.error;
   state.renderedValue = widget.value;
@@ -2932,6 +3493,10 @@ function ensureRedrawHook() {
         if (state.node.graph !== shown) continue;
         syncRows(state);
         refreshLocks(state);
+        // 🔴 2026-11-24：外控值变化时存档 widget 没变，syncRows 会提前 return，
+        // 强度框就停在旧值。这里每次重绘轻刷一遍 DOM 值（__qgRead 会读上游实时值；
+        // 不重建 DOM、不改存档），让框里的数字跟上滑条。
+        updateRowValues(state);
       }
     }, 250);
   });
@@ -3091,6 +3656,12 @@ function mountCard(node, { box = null, separatorWidget = null, onMissingWidget =
   const reclaim = box ? 0 : BAND_RECLAIM;
   const state = { node, box, widget: null, owner: null, panel, rows: [], settings, renderedValue: null, reclaim,
     lockSignature: null, separatorWidget: null, onMissingWidget: null, domWidget: null, disposed: false,
+    // 🔴 新建节点的尺寸要等锚点建好再定一次（见 settleHeight）：createNode
+    // 那一刻 24 个 strength 槽还没绑到各自的隐藏锚点 widget，computeSize 会把
+    // 它们全算成普通槽（26 × 20 = 520），节点就被钉在 686 高。
+    // 存档里记的节点高度（configure 时从 info.size 读），settleHeight 拿它当
+    // 下限，用户自己拉过的高度不会被压回去。
+    savedHeight: 0,
     // 吸收是一次异步动作（要等取列表的请求），这个标记挡住同一时刻的第二次进入。
     importing: false, parseError: null };
   const source = rowsSource(state);
@@ -3177,6 +3748,25 @@ function mountCard(node, { box = null, separatorWidget = null, onMissingWidget =
   renderRows(state);
   refreshAvailable(state);
   placeWidgetSlots(node);
+  // 🔴 锚点 widget 推迟到 configure 之后再建：加载存档时 widgets_values 还没
+  // 恢复，此刻 addWidget 会让 V3 的按位恢复错位（实测 loras 被重置成 []）。
+  setTimeout(() => {
+    if (state.disposed) return;
+    ensureStrengthAnchors(state);
+    placeStrengthAnchors(state);
+    // 槽已经绑到锚点，computeSize 这才算对（只有 model/clip 两个真槽）。
+    settleHeight(state);
+  }, 0);
+  // 存档里的 size 要拿原值：configure 之后前端还会按错误的 computeSize 把节点
+  // 撑高，等 onConfigure 再读就只能读到被撑过的值。
+  const configureOf = node.configure;
+  if (typeof configureOf === "function") {
+    node.configure = function (info) {
+      const saved = Number(info?.size?.[1]);
+      if (Number.isFinite(saved) && saved > 40) state.savedHeight = saved;
+      return configureOf.apply(this, arguments);
+    };
+  }
   const initialWidth = PANEL_MIN_WIDTH + 16;  // 面板内边距 + 边框
   node.setSize?.([Math.max(initialWidth, node.size?.[0] || initialWidth), node.computeSize?.()[1] || 220]);
   liveCards.add(state);
@@ -3184,10 +3774,15 @@ function mountCard(node, { box = null, separatorWidget = null, onMissingWidget =
 
   // Workflow restore and undo may commit values after onConfigure. Reconcile
   // from the widget after that commit and before the next visible frame.
-  const sync = () => { if (!state.disposed) syncRows(state); };
+  const sync = () => {
+    if (state.disposed) return;
+    syncRows(state);
+    // 行被滚动 / 节点被移动时，锚点要跟着行走，槽和连线才不偏离。
+    placeStrengthAnchors(state);
+  };
   chainCallback(node, "onConfigure", function () {
     queueMicrotask(() => { sync(); if (!state.disposed) refreshAvailable(state); });
-    requestAnimationFrame(() => { sync(); if (!state.disposed) fitNode(state); });
+    requestAnimationFrame(() => { sync(); if (!state.disposed) settleHeight(state); });
   });
   chainCallback(node, "onDrawForeground", sync);
   // Another node may rewrite the rows (the Workflow Note's Use it, a
@@ -3243,12 +3838,17 @@ function installLoraNode(node) {
 app.registerExtension({
   name: "QG.LoraLoader",
   setup() {
+    // 「滑条颜色」设置变了就丢缓存、重画已打开面板的强度条。
+    installBarColorSync();
     watchEnteredBoxes();
     ensureRedrawHook();
   },
   beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData?.name !== NODE_CLASS) return;
-    hideInputsInDef(nodeData, ["loras", "trigger_separator", "on_missing"]);
+    // 行强度槽不画圆点（它们的 y 由锚点 widget 按行定位，见 placeStrengthAnchors）。
+    const strengthNames = Array.from(
+      { length: STRENGTH_SLOT_COUNT }, (_, index) => strengthSlotName(index));
+    hideInputsInDef(nodeData, ["loras", "trigger_separator", "on_missing", ...strengthNames]);
     chainCallback(nodeType.prototype, "onNodeCreated", function () {
       installLoraNode(this);
     });

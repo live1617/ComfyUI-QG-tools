@@ -1,17 +1,23 @@
-// Workflow Switches: the decisions behind js/workflow_switches/index.js.
+// Workflow Switches: the decisions behind web/workflow_switches/index.js.
+//
+// 两个前端共用这一份：开关卡片的行决策（哪些节点归哪个开关、此刻是开/关/混合、
+// 按下要写哪些值），以及 LoRA 堆 / LoRA 加载器读的「这一行归哪个开关」判定。
+// 状态存在节点 properties 的 SETTINGS_PROPERTY 键上，与后端无关，纯前端契约。
+//
 // Which nodes a switch holds, whether it reads on, off or mixed, which rows
 // the card lists and in what order, and which node modes a click changes. No
-// DOM and no app import, so tests/workflow_switches.test.mjs runs it under
-// node:test.
+// DOM and no app import, so the rules can be read on their own.
 //
 // A switch is either one the user made from picked nodes and groups (stored
 // in the node's properties, by id) or a group listed on its own. A made
-// switch can also change settings instead of turning nodes off: it keeps
-// what chosen nodes' controls held when "on" was saved and when "off" was
-// saved, and switches the values that differ. The truth lives in the nodes'
-// own modes and values. Nothing here remembers what a switch was; every
-// answer is read fresh from the graph, which is why a saved workflow, an
-// undo or a change made by hand elsewhere always shows right.
+// switch can also take LoRA stack rows: its saved sides hold the stack's
+// rows_data, so a click turns just the picked rows on or off. Cards saved by
+// the shipping node (whole-settings pairs from "save as on / off") still read
+// right - a pair whose two sides differ is written back as the value it
+// names. The truth lives in the nodes' own modes and values. Nothing here
+// remembers what a switch was; every answer is read fresh from the graph,
+// which is why a saved workflow, an undo or a change made by hand elsewhere
+// always shows right.
 //
 // A made switch may have two sides instead of one. Its ordinary side runs
 // while the row is on and stops while it is off; its other side (`nodes_off`
@@ -41,9 +47,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   match: "", // comma-separated title text, read when groups is "matching"
   order: "canvas", // group rows: "canvas" (the way the workflow reads) | "title"
   exclusive: false, // one at a time: switching a row on switches the other rows off
-  // with one at a time on, how the card shows its rows: "rows" (each with its
-  // own off | on) | "pill" (every row is a choice in one pill, one always picked)
-  show: "rows",
   hidden: Object.freeze([]), // group titles whose rows were removed with the row's delete button
   switches: Object.freeze([]), // the made switches: { id, title, nodes, groups, nodes_off?, groups_off?, on, off }
 });
@@ -52,7 +55,6 @@ const CHOICES = {
   off: ["bypass", "mute"],
   groups: ["all", "numbered", "matching", "none"],
   order: ["canvas", "title"],
-  show: ["rows", "pill"],
 };
 
 export function cleanTitle(title) {
@@ -393,23 +395,6 @@ export function partState(members, counts = () => true, pairs = [], offSide = []
 
 // ---------- switches that change settings ----------
 
-// What a node's own controls hold right now, by widget name: what "save as
-// on" remembers. A card or panel that is not saved with the workflow has no
-// value of its own and is left out.
-export function snapshotNode(node) {
-  const values = {};
-  let count = 0;
-  for (const widget of node?.widgets ?? []) {
-    if (!widget || widget.serialize === false || typeof widget.name !== "string" || !widget.name) continue;
-    const clean = cleanValue(widget.value);
-    if (clean === undefined) continue;
-    values[widget.name] = clean;
-    count += 1;
-    if (count >= VALUE_WIDGETS_MAX) break;
-  }
-  return values;
-}
-
 // A LoRA stack keeps every row in one text value: a list of rows, each with
 // a file name and whether it is on. Returns the rows, or null for any other
 // text.
@@ -431,10 +416,13 @@ export function stackRows(value) {
 // ("qwen/turbo.safetensors") on a refresh, and reads names the same way
 // (resolveLoraName in lora_stack.mjs). The exact name wins; otherwise the one
 // row with that file name. Two rows with one file name are never guessed at.
-const fileKey = (name) =>
+// 导出：LoRA 堆要把行名归一成同一个键建索引，不能再按行线性比。
+export const fileKey = (name) =>
   String(name).split("/").pop().split("\\").pop().toLowerCase().replace(/\.(safetensors|sft|ckpt|pt)$/, "");
 
-function findRow(rows, name) {
+// 导出：开关打开时要按行取「选行那一刻记下的强度」，两边用同一条找行规则
+// （精确名优先，否则按文件名唯一匹配）。
+export function findRow(rows, name) {
   const exact = rows.find((row) => row.name === name);
   if (exact) return exact;
   const wanted = fileKey(name);
@@ -510,12 +498,18 @@ function pairsOfControl(id, widget, onValue, offValue) {
 // Returns { node, widget, on, off } and, for a stack row, { ..., row }.
 export function valuePairs(entry) {
   const pairs = [];
+  // 每个 pair 记下它属于哪个开关：同一行可能被多个开关管着，下游要按开关
+  // 取自己的 on 快照（比如恢复强度），否则会读到别人的旧值。
+  const entryId = entry?.id;
   for (const [id, on] of Object.entries(entry?.on ?? {})) {
     const off = entry?.off?.[id];
     if (!off) continue;
     for (const [widget, onValue] of Object.entries(on)) {
       if (!(widget in off)) continue;
-      pairs.push(...pairsOfControl(id, widget, onValue, off[widget]));
+      for (const pair of pairsOfControl(id, widget, onValue, off[widget])) {
+        pair.entryId = entryId;
+        pairs.push(pair);
+      }
     }
   }
   return pairs;
@@ -870,93 +864,12 @@ export function valueAllPlan(rows, on) {
   return sidesChanged(sides);
 }
 
-// ---------- one pill for the whole card ----------
-
-// With One at a time on, a card can show its rows as one control: every row
-// is a choice, and exactly one is picked. Up to PILL_CHOICES_MAX choices sit
-// side by side in a segmented pill; more are a list to pick from, the widget
-// cards' rule.
-export const PILL_CHOICES_MAX = 4;
-// What lies between a node's edge and the names in its pill, both sides
-// together: the panel's frame (12 a side in Nodes 2.0, 10 in the classic
-// renderer), the card's border and padding (9) and the pill's own (3).
-export const PILL_FRAME = 48;
-// The room a segment keeps beside its name: 6 px a side, and 2 for rounding.
-export const PILL_SEGMENT_PAD = 14;
-// The widest a node is made for the sake of its pill. Names that need more
-// are a list too.
-export const PILL_NODE_WIDTH_MAX = 400;
-
-// What a choice is called: the row's own title, or a plain word for a row
-// nobody named.
+// 一行叫什么：行自己的标题，没起名就给个通用词。单选药丸（pill / list 两种
+// 形态）2026-11-22 已整个移除，但 rowLabel 还在到处用（描述行、行名、比较），
+// 别跟着删。
 export function rowLabel(row) {
   if (row?.title) return row.title;
   return row?.kind === "switch" ? "Switch" : "Group";
-}
-
-// A guess at a name's width where it cannot be measured - under node:test, or
-// on a card that has not been drawn yet: about 6.5 px a character, the middle
-// of the two card fonts.
-const guessWidth = (text) => [...String(text ?? "")].length * 6.5;
-
-// How wide a node must be for its pill to show every name in full. All the
-// segments are the same width, so the longest name decides for every one of
-// them; the frame and each segment's own padding are added on top, and the
-// result is rounded up so no name is cut by half a pixel.
-export function pillNodeWidth(labels, measure = guessWidth) {
-  const names = labels ?? [];
-  let longest = 0;
-  for (const label of names) longest = Math.max(longest, Number(measure(label)) || 0);
-  return Math.ceil(PILL_FRAME + names.length * (longest + PILL_SEGMENT_PAD));
-}
-
-// How a card shows its rows:
-//   rows - one row each, the look every card had before, and the default;
-//   pill - one segmented pill, every row a choice;
-//   list - one list to pick from.
-// The last two need One at a time on, Show as set to one pill, and at least
-// two rows: one row alone has nothing to be picked against. A pill also needs
-// its names to fit within PILL_NODE_WIDTH_MAX - past that the names would be
-// cut short, and a list reads better than four shortened names.
-// `width` is the node width the pill needs, which the card keeps as its floor;
-// it is 0 for the other two views, which the rows themselves size.
-export function cardView(settings, rows, measure = guessWidth) {
-  const names = (rows ?? []).map(rowLabel);
-  if (!settings?.exclusive || settings.show !== "pill" || names.length < 2) return { view: "rows", width: 0 };
-  if (names.length > PILL_CHOICES_MAX) return { view: "list", width: 0 };
-  const width = pillNodeWidth(names, measure);
-  return width <= PILL_NODE_WIDTH_MAX ? { view: "pill", width } : { view: "list", width: 0 };
-}
-
-// Where a pick-one card stands. A row counts as "on" when all of it runs and
-// "mixed" when only part of it does; a row with nothing in it counts as
-// neither, so an empty row never makes the card look decided. The card is
-// settled ("one") only when exactly one row is on and no other row is partly
-// on - anything else is told as it is, since a graph edited by hand, or saved
-// before the card was a pill, can be in any of them.
-export function choiceState(rows) {
-  const list = rows ?? [];
-  const on = list.filter((row) => row.state === "on");
-  const mixed = list.filter((row) => row.state === "mixed");
-  // How many rows are spoken for at all: on or partly on.
-  const live = on.length + mixed.length;
-  if (!live) return { kind: "none", picked: null, count: 0 };
-  if (on.length === 1 && !mixed.length) return { kind: "one", picked: on[0], count: 1 };
-  if (!on.length && mixed.length === 1) return { kind: "partly", picked: null, count: 1 };
-  return { kind: "several", picked: null, count: live };
-}
-
-// What a click on a choice changes: that row goes on and every other row off,
-// as one at a time does - which is why the settings are forced exclusive here,
-// whatever the card's own setting says: a choice with two picked is not a
-// choice. `modes` and `values` are switchPlan's and valuePlan's answers; both
-// are empty for the row that is already the only one on, so clicking it again
-// does nothing and one stays picked. A row with nothing in it cannot be picked
-// at all: it would only switch the others off.
-export function choosePlan(rows, target, settings) {
-  if (!target || target.state === "empty") return { modes: [], values: [] };
-  const one = { ...settings, exclusive: true };
-  return { modes: switchPlan(rows, target, true, one), values: valuePlan(rows, target, true, one) };
 }
 
 // ---------- making and changing switches ----------
@@ -1041,12 +954,6 @@ export function hideGroup(settings, { id, title } = {}) {
   });
   if (already) return current;
   return { ...current, hidden: [...current.hidden, record].slice(-HIDDEN_MAX) };
-}
-
-// Puts every removed group row back.
-export function restoreGroups(settings) {
-  const current = normalizeSettings(settings);
-  return current.hidden.length ? { ...current, hidden: [] } : current;
 }
 
 // One place up (-1) or down (+1) the list; the ends stay put.
@@ -1201,10 +1108,11 @@ export function offFreshCount(entry, picked) {
   return countOutside(pickedKeys(picked), takenNodes, new Set((entry?.groups_off ?? []).map(String)));
 }
 
-// Save what the picked nodes hold right now as one side of a switch ("on" or
-// "off"). `snapshots` is [{ id, values }], values from snapshotNode. From then
-// on the switch sets those nodes' settings instead of switching them, so they
-// leave both sides - the click that follows must not do both.
+// Save one side of a switch as the values it shows ("on" or "off").
+// `snapshots` is [{ id, values }], `values` being { widget name: value } -
+// the LoRA-row path fills it with the stack's rows_data. From then on the
+// switch sets those nodes' settings instead of switching them, so they leave
+// both sides - the click that follows must not do both.
 export function saveValues(settings, id, side, snapshots) {
   if (side !== "on" && side !== "off") return normalizeSettings(settings);
   const saved = {};
@@ -1220,6 +1128,25 @@ export function saveValues(settings, id, side, snapshots) {
     // Cleaned the way a saved file is, so a value the file cannot hold is
     // dropped now rather than at the next reload.
     [side]: cleanSnapshots({ ...entry[side], ...saved }),
+  }));
+}
+
+// Let go of the saved settings a switch holds for some nodes.
+//
+// Both sides at once, on purpose: a LoRA stack's rows live in on and off as a
+// pair, and dropping only one would leave the row "held" on one side while the
+// other said it is not - the card would keep its ⇄N and the switch would keep
+// flipping a row the user unticked.
+//
+// This is the missing half of saveValues: that one only writes what was
+// picked, so unticking every row of a stack changed nothing at all and ⇄N
+// stayed on the card forever (2026-11-23, reported as "cancel does not work").
+export function dropValues(settings, id, nodeIds) {
+  const drop = new Set((nodeIds ?? []).map(String));
+  if (!drop.size) return normalizeSettings(settings);
+  return changeSwitch(settings, id, (entry) => ({
+    on: withoutKeys(entry.on, drop),
+    off: withoutKeys(entry.off, drop),
   }));
 }
 
@@ -1292,9 +1219,19 @@ export function rowsSignature(rows, settings, keyOf = (row) => row.title) {
 
 // Whether two stack row names are the same LoRA: the same name, or the same
 // file in another folder (see fileKey).
-function sameFile(a, b) {
+// 导出：开关要按行名把「选中的行」和堆里此刻的行对上（堆会重写
+// 路径），用的是同一条判据，不能在各自那边另写一份。
+export function sameFile(a, b) {
   return a === b || (Boolean(a) && Boolean(b) && fileKey(a) === fileKey(b));
 }
+
+// ---------------------------------------------------------------- 行归属
+//
+// LoRA 加载器（web/lora_loader/index.js）读这两个：某个开关管着这一行时，
+// 行菜单里要标出「⇄ 哪个开关」并允许「从开关里放出来」。
+// 🔴 2026-11-23 转正测试节点时补回：测试副本是在这两个之前复制的，覆盖正式版后
+//    lora_loader 的 import 会指向不存在的导出（ESM 链接期直接报错，整个扩展不加载）。
+//    判定逻辑与正式版一致：同节点 + 同控件 + 同一行（sameFile），没有行的是整控件开关。
 
 // Whether a pair moves this row of this control on this node: the same node,
 // the same control, and a stack row naming the same file (see sameFile). A

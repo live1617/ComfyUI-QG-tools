@@ -12,29 +12,34 @@
 // 🔴 SLOT_COUNT 是行数 + on_N 槽数的唯一真相源，必须与后端
 // nodes/qg_lora_switch_stack.py 的 SLOT_COUNT、verify_i18n 的 dynamic names、
 // _check_lora_switch_stack.py、5 个探针、nodeDefs 的 on_N 词条一起改。
+//
+// 行归属（2026-11-22 起，2026-11-23 转正）：被某个「工作流开关」管着的行，
+// 行尾显示一个 ⇄ 小徽章 —— 悬停看是哪个开关，点一下跳到那张卡片。判据来自
+// web/shared/workflow_switches.mjs（normalizeSettings → valuePairs → 行名按
+// 文件归一），与 LoRA 加载器读的是同一份开关设置；这里一次扫描建索引
+// （refreshOwners），不必每帧每行重新解析整栈快照。
 
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611210910";
-import { zhPair } from "../shared/zh.mjs?v=202611210910";
-import { BRAND, showToast } from "../shared/index.mjs?v=202611210910";
-import { widthFor } from "../shared/node_width.mjs?v=202611210910";
-import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=202611210910";
+import { installModeWatcher, onRenderModeSwitch, vueNodesEnabled } from "../shared/vue_mode.mjs?v=202611251300";
+import { zhPair } from "../shared/zh.mjs?v=202611251300";
+import { BRAND, showToast } from "../shared/index.mjs?v=202611251300";
+import { badgeCenter, showBadge } from "../shared/help_badge.mjs?v=202611251300";
 import {
     closeSettingsMenu,
     gearIconSvg,
     loadSettings,
     openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=202611210910";
+} from "../shared/settings_menu.mjs?v=202611251300";
 // 与加载器共用同一份齿轮设置表（用户 11-20 确认），别在任一节点另写一份。
 import {
     LORA_SETTINGS_SCOPE,
     LORA_SETTINGS_SCHEMA,
-} from "../shared/lora_settings.mjs?v=202611210910";
+} from "../shared/lora_settings.mjs?v=202611251300";
 import {
     civitaiFailureText,
     pictureErrorText,
-} from "../shared/civitai_lookup.mjs?v=202611210910";
+} from "../shared/civitai_lookup.mjs?v=202611251300";
 // 强度手感 / 触发词 / 选择器过滤 / 读 LoRA 信息只有一份真相源：加载器也在用
 // 同一个 shared 模块，改一次两边同步。🔴 别在这里另写 ±10 / 0.05 或切词正则。
 import {
@@ -68,18 +73,19 @@ import {
     thumbPosition,
     toggleTrigger,
     triggerGroups,
-} from "../shared/lora_stack.mjs?v=202611210910";
+} from "../shared/lora_stack.mjs?v=202611251300";
 // Civitai 查询编排与加载器共用；卡片 note / 缩略图版本由回调注入。
-import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611210910";
+import { lookupCivitaiInfo } from "../shared/civitai_flow.mjs?v=202611251300";
 // 建议强度沿用加载器的可拖动数字框，手势与步长只有一份真相源。
-import { makeScrubInput } from "../shared/scrub_input.mjs?v=202611210910";
+import { makeScrubInput } from "../shared/scrub_input.mjs?v=202611251300";
+// ：行归属与「工作流开关」用同一套判据（normalizeSettings +
+// valuePairs），不在这里另写一份比较逻辑；SETTINGS_PROPERTY 也从那里取，
+// 免得存档键在两个文件里各写一遍。
+import { fileKey, normalizeSettings, SETTINGS_PROPERTY, valuePairs } from "../shared/workflow_switches.mjs?v=202611251300";
 
 const NODE_CLASS = "QG_LoraSwitchStack";
 const SLOT_COUNT = 24;
 const ROW_HEIGHT = 20;
-// 宽度从尺寸表取，别写死：verify_node_sizes 会盯这一条，两处各写一个数迟早对不上。
-const TABLE_WIDTH = widthFor(NODE_CLASS);
-const MIN_WIDTH = TABLE_WIDTH ?? 380;
 // 圆点由画布画在节点左边缘 x=0..14 上，行的底色从这儿往后画，别盖住它。
 const SLOT_BAND = 16;
 const SWITCH_W = 22;
@@ -93,6 +99,10 @@ const SEPARATE_BAND = 72;
 const SEPARATE_GAP = 4;
 const ARROW_W = 12;
 const CLEAR_W = 16;
+// 名字区最左端的一小条「≡」手柄：按住它拖 = 重排行。排序必须有一个**不带修饰键**
+// 的抓手 —— Alt 被 ComfyUI 的「拖拽克隆节点」吃掉、Ctrl 被多选框吃掉，Shift 又要
+// 留给「拖强度改 CLIP」，三条路都占着，只能让手势从「按住哪」来区分。
+const GRIP_W = 13;
 // 旧版三点按钮占的那一列已经作废（行菜单改成**在这一行上点右键**），
 // 空出来的 14 单位还给名字列：强度框与 T 图标整体右移，名字能多显示两三个字。
 // 🔴 clearX 仍只由 width 决定，× 的坐标一点没动，老探针按行尾坐标点删除照样有效。
@@ -101,6 +111,54 @@ const TRIGGER_END_GAP = 6;   // T 图标右边缘到 × 左边缘的距离
 const TRIGGER_W = 15;
 
 const FONT = '12px Inter, "Microsoft YaHei", "PingFang SC", Arial, sans-serif';
+
+// 「+ 添加 LoRA」按钮的强调色。appearance 把当前强调色写在 root 的
+// --qg-accent / --qg-on-accent 上；canvas 画不出 CSS 变量，只能读进来缓存
+// （和 snaplines 同一个套路）。切方案/改自定义色时 appearance 会发
+// qg-accent-changed，这里丢缓存 + 刷画布让按钮立刻换色。
+// 可点态把整块框填成实心强调色（和加载器的 +LoRA 按钮同款），字用 on-accent
+// 墨色（appearance 按强调色明暗自适应：青/紫底深字、很深的自选底浅字）。
+let addAccentCache = null;
+
+function addAccent() {
+    if (addAccentCache) return addAccentCache;
+    let solid = BRAND;
+    let ink = "#04201d";
+    let hover = "#19c9bf"; // 强调色提亮一档，鼠标悬停时填充这色
+    try {
+        const root = getComputedStyle(document.documentElement);
+        const s = root.getPropertyValue("--qg-accent").trim();
+        const k = root.getPropertyValue("--qg-on-accent").trim();
+        const h = root.getPropertyValue("--qg-accent-hover").trim();
+        if (/^#[0-9a-f]{6}$/i.test(s)) solid = s;
+        if (/^#[0-9a-f]{6}$/i.test(k)) ink = k;
+        if (/^#[0-9a-f]{6}$/i.test(h)) hover = h;
+    } catch (_) { /* 取不到就用回退色 */ }
+    addAccentCache = { solid, ink, hover };
+    return addAccentCache;
+}
+
+function installAddAccentSync() {
+    // 手型指针：LiteGraph 在 onMouseMove 之后还会把 canvas.style.cursor 重设成
+    // crosshair，直接 inline 赋值会被盖掉。用 CSS class + !important 压过它。
+    if (!document.getElementById("qg-add-hover-cursor-style")) {
+        const style = document.createElement("style");
+        style.id = "qg-add-hover-cursor-style";
+        style.textContent = ".qg-add-hover canvas{cursor:pointer !important}";
+        document.head.append(style);
+    }
+    window.addEventListener("qg-accent-changed", () => {
+        addAccentCache = null;
+        // 只刷当前画布即可：切进子图时那边会自己重画，按钮读的是同一份变量。
+        app.graph?.setDirtyCanvas?.(true, true);
+    });
+}
+
+// 切换画布的手型指针 class（与 LiteGraph 的 inline cursor 竞争，靠 !important 胜出）。
+function setAddHoverCursor(on) {
+    const el = app.canvas?.canvas?.parentElement;
+    if (el) el.classList.toggle("qg-add-hover", Boolean(on));
+}
 
 const COLOR = {
     rowA: "#2b3136",
@@ -134,6 +192,8 @@ function stateOf(node) {
             // 空行没有职责、还顶着绿色启用框看着像一条真 LoRA（用户截图圈出来的）。
             minRows: 0,
             hoverRow: -1,
+            // 「+ 添加 LoRA」按钮 hover：drawAddRow 据此换 hover 色，探针靠它断言。
+            hoverAdd: false,
             drag: null,
             repeat: null,
             // 每行最后一次算出来的开关状态（"linked|on|unknown"）。纯观测用：
@@ -142,7 +202,7 @@ function stateOf(node) {
             // 第二层：视图侧的文件夹筛选（只影响显示行名，不动 rows_data 顺序/槽位）。
             // folderFilter 是文件夹路径字符串，"" 表示不筛选。
             folderFilter: "",
-            // 第二层：Alt+拖名字区重排行。与 state.drag（强度拖动）分开，互不干扰。
+            // 第二层：拖行首「≡」手柄重排行。与 state.drag（强度拖动）分开，互不干扰。
             rowDrag: null,
             // 第二层：独奏前的整栈开关快照，取消独奏时逐行还原；非独奏时为 null。
             soloSnapshot: null,
@@ -335,7 +395,21 @@ function redrawVueRows(state) {
 // widget 才算。布尔开关的控件值是 boolean，不会被认成数值；多个 value 的复合
 // 节点也不敢猜。与 rowStrengthState 的判据保持完全一致。
 function numericSourceNode(fromNode) {
-    const values = (fromNode?.widgets || []).filter(
+    // 🔴 2026-11-24：来源可能是虚拟节点（QG_SetPoint/GetPoint、KJ Set/Get Node），
+    // 它们自己只有 Name 字符串控件，直接看 widget 会判成「非数值源」，于是
+    // onConnectInput 不改道、数值线接到 on_1 开关口（用户截图「连不到强度」）。
+    // 沿 getInputLink 穿透到真实上游再判断；16 跳 + seen 防环，与
+    // resolveWidgetSource 同源。穿不透（无同名设置点）就退回原节点，照旧不改道。
+    let source = fromNode;
+    const seen = new Set();
+    for (let hop = 0; source && hop < 16 && source.isVirtualNode; hop += 1) {
+        if (seen.has(source.id)) return null;
+        seen.add(source.id);
+        const link = typeof source.getInputLink === "function" ? source.getInputLink(0) : null;
+        if (!link) break;
+        source = source.graph?.getNodeById?.(link.origin_id) ?? null;
+    }
+    const values = (source?.widgets || []).filter(
         (w) => w.name === "value" && typeof w.value === "number" && Number.isFinite(w.value));
     return values.length === 1;
 }
@@ -360,7 +434,9 @@ function installEmptySlotGuard(state) {
         // 却连到了开关，红框数字纹丝不动（用户截图「没反馈」）。这里按**来源**
         // 改道：来源是数值控件（唯一 value 数值 widget）→ 拒绝连 on_N，下一拍
         // 自动接到同一行的 strength_N。布尔开关仍照常连 on_N。与 rowStrengthState
-        // 的判据同源，避免「改道了但显示读不到」。
+        // 的判据同源（唯一 value 数值 widget；含虚拟节点穿透），避免「改道了但显示读不到」。
+        // 🔴 注意：穿透只用来**判断来源类型**，真正补连仍用原 fromNode（虚拟节点），
+        //    保持虚拟转发链不丢。
         if (numericSourceNode(fromNode)) {
             const row = Number(match[1]);
             const strengthName = `strength_${row}`;
@@ -580,6 +656,30 @@ function paintStrengthBox(ctx, box, centerY, text, { dim, hovered, dragging, lin
     };
 }
 
+// 🔴 2026-11-24：连线经虚拟节点（QG_SetPoint/GetPoint、KJ 的 Set/Get Node）
+// 转发时，link.origin 是那个虚拟节点——它只有 Name 字符串控件，没有布尔/数值
+// widget，直接读会把外控误判成 unknown（画布永远显示「外控」、布尔开关切了
+// 没反应，用户以为「控制不了」）。虚拟节点都重写了 getInputLink() 把值穿透到
+// 真实上游（见 setget/index.js），沿它一路走到真正的源头再读 widget。
+// 不硬编码节点类型：认 isVirtualNode 标记，KJ 的虚拟节点同样适用。
+function resolveWidgetSource(graph, link) {
+    let cursor = link;
+    const seen = new Set();
+    for (let hop = 0; cursor && hop < 16; hop += 1) {
+        const origin = graph?.getNodeById?.(cursor.origin_id);
+        if (!origin) return null;
+        if (!origin.isVirtualNode) return origin;
+        if (seen.has(origin.id)) return null; // 环路兜底
+        seen.add(origin.id);
+        // 虚拟节点的 getInputLink(0) 返回穿透后的真实上游 link；
+        // 没有这个方法的（或其它形态的虚拟节点）就到此为止，交给 unknown 分支。
+        const next = typeof origin.getInputLink === "function" ? origin.getInputLink(0) : null;
+        if (!next || next === cursor) return origin;
+        cursor = next;
+    }
+    return null;
+}
+
 // 这一行到底开没开。接了线的行由连线决定：能读到来源的布尔 widget 就读真值
 // （QG_BoolToggle 的 `boolean`、原生 Primitive 的 `value`），读不到（比较节点、
 // 运行时算出来的布尔）就标记成「外控」，别硬画成开启骗人。
@@ -589,7 +689,7 @@ function rowSwitchState(node, index, row) {
     if (id == null) return { linked: false, on: row.enabled !== false, unknown: false };
     const graph = node.graph;
     const link = graph?.links?.[id];
-    const origin = link ? graph.getNodeById?.(link.origin_id) : null;
+    const origin = resolveWidgetSource(graph, link);
     const bools = origin?.widgets?.filter((widget) => typeof widget.value === "boolean") ?? [];
     // 零个或多个布尔控件都不敢猜：猜错了比「外控」这个诚实的状态更糟。
     if (bools.length !== 1) return { linked: true, on: true, unknown: true };
@@ -609,7 +709,7 @@ function rowStrengthState(node, index, row) {
     if (id == null) return { linked: false, value: stored, unknown: false };
     const graph = node.graph;
     const link = graph?.links?.[id];
-    const origin = link ? graph.getNodeById?.(link.origin_id) : null;
+    const origin = resolveWidgetSource(graph, link); // 虚拟节点转发时穿透到真实滑条
     const numbers = (origin?.widgets || []).filter(
         (widget) => widget.name === "value" && typeof widget.value === "number"
             && Number.isFinite(widget.value));
@@ -634,7 +734,301 @@ function duplicateNameSet(state) {
     return dup;
 }
 
-function drawRow(ctx, node, state, index, posY, width) {
+// ---------------------------------------------------------------- 行归属（）
+// 这一行由哪个「工作流开关」设定。判据仍是开关模块那一套（normalizeSettings
+// → valuePairs → 行名按文件归一），与 LoRA 加载器读正式开关同源，不另写比较逻辑。
+const BOARD_CLASS = "QG_WorkflowSwitches";
+// 存档键跟着开关模块走，不写死：两个文件各写一个字符串，改名时必然漏一处。
+const BOARD_SETTINGS = SETTINGS_PROPERTY;
+const OWNER_RECHECK_MS = 400;
+const OWNER_BADGE_W = 17;
+
+// 归属索引：`<节点id>\u0001<fileKey(行名)>` → [开关标题]。
+//
+// 缓存分两层，都是为了「每帧每行问一次」这个调用频率：
+//   * 时间层：各节点每 400ms 才算一次（state 上独立计时），拖动强度时不卡；
+//   * 内容层：模块级，键是各开关节点的设置原文。设置没动就直接复用上一份索引，
+//     一次 JSON.parse 都不做；图上有多个LoRA 堆时共用这一份。
+//
+// 旧写法是「每行调一次 stackRowOwners」—— 24 行 × 每个条目 × 每侧都要重新解析
+// 整栈快照，同一串 JSON 每分钟被解析上万次。现在一次扫描建表，之后只是 Map 查表。
+let ownerIndex = { key: null, map: new Map() };
+
+function ownerIndexOf(boards) {
+    // 键必须用序列化后的原文：properties 里放的是对象，直接插进模板串会全变成
+    // "[object Object]"，改了开关内容也认不出变化。
+    //
+    // properties 是前端可写的任意值，万一被塞进循环引用，JSON.stringify 会抛。
+    // 这里是 drawRow 的调用栈里，抛出去整个画布绘制就断了 —— 宁可放弃缓存。
+    let key = null;
+    try {
+        key = "";
+        for (const board of boards) {
+            key += `${board.node.id}\u0001${JSON.stringify(board.settings ?? null)}\u0002`;
+        }
+    } catch {
+        key = null;
+    }
+    if (key !== null && key === ownerIndex.key) return ownerIndex.map;
+    const map = new Map();
+    for (const { settings } of boards) {
+        for (const entry of normalizeSettings(settings).switches) {
+            for (const pair of valuePairs(entry)) {
+                if (pair.row === undefined || pair.widget !== "rows_data") continue;
+                const slot = `${pair.node}\u0001${fileKey(pair.row)}`;
+                const titles = map.get(slot);
+                if (!titles) map.set(slot, [entry.title]);
+                // 两个开关管同一行：都记下，行上仍是一个徽章（具体在开关卡片里看）。
+                else if (!titles.includes(entry.title)) titles.push(entry.title);
+            }
+        }
+    }
+    ownerIndex = { key, map };
+    return map;
+}
+
+// 图上的开关。node.graph 在子图重建早期会是空的，退回根图兜底；都没有就当作
+// 「没有开关」——徽章不画，也不报错。
+function ownerBoards(state) {
+    const graph = state.node.graph ?? app.rootGraph ?? app.graph;
+    return (graph?.nodes ?? graph?._nodes ?? [])
+        .filter((node) => String(node?.type ?? node?.comfyClass ?? "") === BOARD_CLASS)
+        .map((node) => ({ node, settings: node.properties?.[BOARD_SETTINGS] }));
+}
+
+function refreshOwners(state) {
+    const now = Date.now();
+    if (state.ownerByRow && now - (state.ownerCheckedAt || 0) < OWNER_RECHECK_MS) {
+        return state.ownerByRow;
+    }
+    state.ownerCheckedAt = now;
+    const boards = ownerBoards(state);
+    const owners = new Map();
+    if (boards.length) {
+        const index = ownerIndexOf(boards);
+        const prefix = `${state.node.id}\u0001`;
+        for (const row of state.rows || []) {
+            if (!row?.name) continue;
+            const titles = index.get(prefix + fileKey(row.name));
+            // 拷一份再存：索引本身是共享的，别让下游改到它。
+            if (titles?.length) owners.set(row.name, titles.slice());
+        }
+    }
+    const signature = JSON.stringify([...owners]);
+    if (signature !== state.ownerSignature) {
+        state.ownerSignature = signature;
+        // 先赋值再触发重画：redrawVueRows 可能同步回到 drawRow，靠上面这行
+        // ownerByRow 才不会又算一遍（也就不会来回递归）。
+        state.ownerByRow = owners;
+        // 徽章集变了，逐行的留档整体作废：行被删掉后旧的下标不该还留着。
+        state.ownerRows = {};
+        redrawVueRows(state);
+    }
+    return state.ownerByRow ?? owners;
+}
+
+// 行名右侧的小徽章：⇄ = 这一行由某个开关设定。名字为它让出一点宽度；没有
+// 归属的行宽度一点不变。具体是哪个开关在开关卡片里看得到（行勾选状态）。
+// 开关改了「谁管哪行」时，清掉 400ms 的归属缓存并重画：不然改完开关要等
+// 下一次重绘才看到徽章变化（徽章探针 2026-11-23 实测第一次是空的）。
+let ownerEventsInstalled = false;
+function installOwnerInvalidation() {
+    if (ownerEventsInstalled) return;
+    ownerEventsInstalled = true;
+    window.addEventListener("qg-owner-changed", () => {
+        for (const node of app.graph?._nodes ?? []) {
+            const state = node?.__qgSwitchStack;
+            if (!state || String(node?.type) !== NODE_CLASS) continue;
+            state.ownerCheckedAt = 0;
+            redrawVueRows(state);
+            node.setDirtyCanvas?.(true, true);
+        }
+    });
+}
+
+// ---------------------------------------------------------------- 徽章交互（）
+//
+// 徽章画在 canvas 上，DOM 里没有它 ——「悬停看归谁 / 点击跳到开关」只能靠指针
+// 坐标反算。矩形由 drawRow 留档在 state.badgeRects（节点局部坐标）。
+//
+// 两种渲染模式共用同一套换算：节点位置在同一份图坐标里，经典画布与 Nodes 2.0
+// 的独立行 canvas 只是显示位置不同。
+let badgeTip = null;
+let badgeInteractionInstalled = false;
+
+function ensureBadgeTipStyle() {
+    if (document.getElementById("qg-owner-tip-style")) return;
+    const style = document.createElement("style");
+    style.id = "qg-owner-tip-style";
+    style.textContent = `
+.qg-owner-tip {
+    position:fixed; z-index:10001; display:none; pointer-events:none;
+    max-width:260px; padding:5px 8px; border-radius:6px;
+    border:1px solid var(--border-color,#2a3437);
+    background:var(--comfy-menu-bg,#11181a);
+    color:var(--fg-color,#d8ecea);
+    font:12px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    box-shadow:0 6px 20px rgba(0,0,0,.45);
+}
+`;
+    document.head.append(style);
+}
+
+function badgeAt(clientX, clientY) {
+    const canvas = app.canvas;
+    const box = canvas?.canvas?.getBoundingClientRect?.();
+    if (!box) return null;
+    const scale = canvas.ds?.scale || 1;
+    const offset = canvas.ds?.offset ?? [0, 0];
+    const gx = (clientX - box.left) / scale - offset[0];
+    const gy = (clientY - box.top) / scale - offset[1];
+    const nodes = app.graph?._nodes ?? app.rootGraph?._nodes ?? [];
+    for (const node of nodes) {
+        if (String(node?.type) !== NODE_CLASS) continue;
+        const state = node.__qgSwitchStack;
+        const rects = state?.badgeRects;
+        if (!rects) continue;
+        const lx = gx - (node.pos?.[0] ?? 0);
+        const ly = gy - (node.pos?.[1] ?? 0);
+        if (lx < -4 || ly < -4 || lx > (node.size?.[0] ?? 0) + 4 || ly > (node.size?.[1] ?? 0) + 4) continue;
+        for (const key of Object.keys(rects)) {
+            const rect = rects[key];
+            // 横向放宽 2px：17px 宽的目标，鼠标很难精准停在里面。
+            if (lx >= rect.x - 2 && lx <= rect.x + rect.w + 2 && ly >= rect.y && ly <= rect.y + rect.h) {
+                return { node, state, index: Number(key), titles: rect.titles };
+            }
+        }
+    }
+    return null;
+}
+
+function showBadgeTip(hit, clientX, clientY) {
+    ensureBadgeTipStyle();
+    if (!badgeTip) {
+        badgeTip = document.createElement("div");
+        badgeTip.className = "qg-owner-tip";
+        document.body.append(badgeTip);
+    }
+    const names = hit.titles.join(zhPair(", ", "、"));
+    badgeTip.textContent = zhPair(
+        `Set by "${names}" - click to find it`,
+        `由「${names}」管着 · 点击定位`,
+    );
+    badgeTip.style.display = "block";
+    // 贴鼠标右下；靠近视口右/下边缘时翻到另一侧，别被切掉。
+    const rect = badgeTip.getBoundingClientRect();
+    const left = clientX + 12 + rect.width > window.innerWidth ? clientX - rect.width - 12 : clientX + 12;
+    const top = clientY + 16 + rect.height > window.innerHeight ? clientY - rect.height - 14 : clientY + 16;
+    badgeTip.style.left = `${Math.round(left)}px`;
+    badgeTip.style.top = `${Math.round(top)}px`;
+}
+
+function hideBadgeTip() {
+    if (badgeTip) badgeTip.style.display = "none";
+}
+
+// 点了徽章：跳到管这一行的开关卡片。徽章只记了开关标题，图上可能有多张
+// 开关卡片，所以先找「含有这个标题的 switch」的那张，找不到再退第一张。
+function frameOwningBoard(node, titles) {
+    const graph = node.graph ?? app.rootGraph ?? app.graph;
+    const boards = (graph?.nodes ?? graph?._nodes ?? [])
+        .filter((item) => String(item?.type) === BOARD_CLASS);
+    if (!boards.length) return false;
+    const named = (board) => normalizeSettings(board.properties?.[BOARD_SETTINGS]).switches
+        .some((entry) => titles.includes(entry.title));
+    const board = boards.find(named) ?? boards[0];
+    const canvas = app.canvas;
+    canvas?.centerOnNode?.(board);
+    canvas?.selectNode?.(board, false);
+    canvas?.setDirty?.(true, true);
+    return true;
+}
+
+function installBadgeInteraction() {
+    if (badgeInteractionInstalled) return;
+    badgeInteractionInstalled = true;
+    // 落在浮层上的指针不算命中徽章：菜单/选择器可能正好盖在徽章上面，按屏幕
+    // 坐标反算会误判，结果是「在菜单里点一下，画布突然跳走了」。
+    const overOverlay = (event) => Boolean(event.target?.closest?.(
+        ".qgtools-ws-menu, .litecontextmenu, .litemenu, .qgtools-set-pop, " +
+        ".qgtools-lora-picker, .qgtools-lora-popup, .qgtools-lora-card"
+    ));
+    // 悬停：显示「归谁管」。
+    window.addEventListener("pointermove", (event) => {
+        if (overOverlay(event)) {
+            hideBadgeTip();
+            return;
+        }
+        // 按住键时（拖节点 / 拖强度 / 框选）不弹提示，也不做命中计算。
+        if (event.buttons) {
+            hideBadgeTip();
+            return;
+        }
+        const hit = badgeAt(event.clientX, event.clientY);
+        if (!hit) {
+            hideBadgeTip();
+            return;
+        }
+        showBadgeTip(hit, event.clientX, event.clientY);
+    }, { passive: true });
+    // 点击：跳到开关卡片。捕获阶段，抢在画布「按在节点上 = 开始拖动」之前。
+    window.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0 || overOverlay(event)) return;
+        const hit = badgeAt(event.clientX, event.clientY);
+        if (!hit) return;
+        event.preventDefault();
+        event.stopPropagation();
+        hideBadgeTip();
+        frameOwningBoard(hit.node, hit.titles);
+    }, { capture: true });
+    // 滚轮 / 缩放后 tooltip 会留在原地，收掉。
+    window.addEventListener("wheel", hideBadgeTip, { passive: true });
+}
+
+function drawOwnerBadge(ctx, x, centerY) {
+    ctx.save();
+    roundRect(ctx, x, centerY - 7, OWNER_BADGE_W, 14, 3);
+    ctx.fillStyle = "rgba(0, 180, 170, .18)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0, 180, 170, .7)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    const left = x + 4;
+    const right = x + OWNER_BADGE_W - 4;
+    ctx.strokeStyle = "#7fe3d6";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    // 上箭头向右
+    ctx.moveTo(left, centerY - 2.5);
+    ctx.lineTo(right, centerY - 2.5);
+    ctx.moveTo(right, centerY - 2.5);
+    ctx.lineTo(right - 3, centerY - 5);
+    ctx.moveTo(right, centerY - 2.5);
+    ctx.lineTo(right - 3, centerY);
+    // 下箭头向左
+    ctx.moveTo(right, centerY + 2.5);
+    ctx.lineTo(left, centerY + 2.5);
+    ctx.moveTo(left, centerY + 2.5);
+    ctx.lineTo(left + 3, centerY + 5);
+    ctx.moveTo(left, centerY + 2.5);
+    ctx.lineTo(left + 3, centerY);
+    ctx.stroke();
+    ctx.restore();
+}
+
+// 行首「≡」拖动手柄：三条 1px 横线，只是提示「这里能抓着排顺序」。
+// 真正的排序手势是「按住这条拖上下」，不带任何修饰键 —— Alt 会被 ComfyUI 的
+// 拖拽克隆抢走、Ctrl 会被多选框抢走、Shift 留给「拖强度改 CLIP」，三条都占着。
+function drawRowGrip(ctx, x, posY, hovered, dim) {
+    const mid = posY + ROW_HEIGHT / 2;
+    ctx.fillStyle = dim ? "rgba(150, 165, 175, .20)"
+        : hovered ? "rgba(198, 216, 228, .78)" : "rgba(160, 178, 190, .46)";
+    for (const dy of [-4, 0, 4]) {
+        ctx.fillRect(x, mid + dy - 0.5, 6, 1);
+    }
+}
+
+function drawRow(ctx, node, state, index, posY, width, ownersIn) {
     // 隐藏的行 computeSize 变成 -4，但画布并不会因此跳过 draw —— 不拦一下，
     // 第 N 行会画在「+ 添加 LoRA」的位置上，两层叠着。
     if (index >= visibleRows(state)) return;
@@ -644,6 +1038,12 @@ function drawRow(ctx, node, state, index, posY, width) {
     // 352 右缘、外控行画 376，青框就比绿框宽 24 单位（用户截图实测 76px）。
     width = width || node.size[0];
     const row = state.rows[index];
+    // 归属表：这个节点被哪个开关管着（见 refreshOwners）。补画接线行的那条
+    // 循环会在外面算一次再传进来，别再逐行重复判断；单独一行的 widget.draw
+    // 没有可共享的上层，就自己问（内部 400ms 节流，函数本身很轻）。
+    const owners = ownersIn ?? refreshOwners(state);
+    const ownerTitles = row?.name ? owners.get(row.name) : null;
+    const owned = Boolean(ownerTitles && ownerTitles.length);
     const sw = rowSwitchState(node, index, row);
     const { linked, on, unknown } = sw;
     const off = !on && !unknown;        // 明确关闭（外控但值未知不算关）
@@ -671,15 +1071,15 @@ function drawRow(ctx, node, state, index, posY, width) {
     ctx.fill();
 
     // 整行状态框：一圈 1px 细描边把这一行框里头，替代原来那条顶线。
-    // 三态语义不变（绿=开、灰=关、青=由连线控制）。线只 1px，贴着行底色的内缘走，
-    // 不占额外高度、不动节点 SIZES。🔴 别把框画在行左缘：BOOLEAN 输入槽的圆点
-    // 由画布画在 x≈10（连上线还带高亮），框从 x=16 起才不会被它盖掉一角。
+    // 三态语义：开=全局强调色（11-24 用户「也跟随」，原绿 #57c281）、关=灰、
+    // 青=由连线控制。线只 1px，贴着行底色的内缘走，不占额外高度、不动节点 SIZES。
+    // 🔴 别把框画在行左缘：BOOLEAN 输入槽的圆点由画布画在 x≈10（连上线还带高亮），
+    // 框从 x=16 起才不会被它盖掉一角。
     // 🔴 重复 LoRA（同名出现 >1 次）时边框改**黄色**提醒：开/关/外控三态仍由
-    // 开关胶囊本体承载（下面照常画绿/灰/青），所以边框专用于「这行选重了」，
-    // 既不丢状态、又一眼能看到重复。用户 11-11 要求。
+    // 开关胶囊本体承载，所以边框专用于「这行选重了」，既不丢状态、又一眼能看到重复。
     const duplicate = Boolean(row.name) && duplicateNameSet(state).has(row.name.trim());
     const stateColor = duplicate ? DUPLICATE_BORDER
-        : (unknown ? "#6fd0f0" : (off ? "#85929b" : "#57c281"));
+        : (unknown ? "#6fd0f0" : (off ? "#85929b" : addAccent().solid));
     ctx.strokeStyle = stateColor;
     // 0.5px 偏移让 1px 描边正好落在像素中心，边缘不发虚。重复行加粗到 1.5px
     // 让黄框在绿/灰行之间更跳；不重复仍是 1px。
@@ -705,14 +1105,18 @@ function drawRow(ctx, node, state, index, posY, width) {
     ctx.lineWidth = 1.1;
     ctx.stroke();
 
-    // 开关：开=绿、关=灰；接了线但读不出布尔值时画青色胶囊 + 中间一个小方点，
-    // 表示「由外部决定」，不再一律假装成开启。
+    // 开关：开=全局强调色（11-24 用户「也跟随」，原绿 COLOR.switchOn）、关=灰；
+    // 接了线但读不出布尔值时画青色胶囊 + 中间一个小方点，表示「由外部决定」。
     const sx = SLOT_BAND + 4;
     const sy = posY + (ROW_HEIGHT - SWITCH_H) / 2;
-    ctx.fillStyle = unknown ? "rgba(111, 208, 240, .24)"
-        : (on ? COLOR.switchOn : COLOR.switchOff);
+    const switchColor = unknown ? "rgba(111, 208, 240, .24)"
+        : (on ? addAccent().solid : COLOR.switchOff);
+    ctx.fillStyle = switchColor;
     roundRect(ctx, sx, sy, SWITCH_W, SWITCH_H, SWITCH_H / 2);
     ctx.fill();
+    // 留档供探针断言「开态开关跟随强调色」（canvas 像素读不到闭包里的颜色）。
+    state.switchColorByRow = state.switchColorByRow || {};
+    state.switchColorByRow[index] = switchColor;
     if (unknown) {
         ctx.fillStyle = COLOR.linked;
         ctx.fillRect(sx + SWITCH_W / 2 - 2, sy + SWITCH_H / 2 - 2, 4, 4);
@@ -739,8 +1143,15 @@ function drawRow(ctx, node, state, index, posY, width) {
     // 探针读不到闭包里的列坐标，挂到 state 上：断言用的是同一套 x，
     // 前端改了布局也不会出现「探针点歪了却全绿」。
     state.cols = cols;
-    const nameX = sx + SWITCH_W + 7;
-    const nameWidth = cols.nameRight - nameX;
+    const gripX = sx + SWITCH_W + 7;
+    // 🔴 这里只能传 off（811 行就有），不能传 `dim` —— 它在 959 行才声明，
+    // 提前引用会炸 `Cannot access 'dim' before initialization`，整个 widget.draw
+    // 抛错 → Nodes 2.0 直接显示「节点组件错误」（2026-11-22 实机踩过）。
+    drawRowGrip(ctx, gripX, posY, hovered, off || !row.name);
+    const nameX = gripX + GRIP_W;
+    // 每一行都给徽章留出同样的位置。以前只给「有归属」的行让宽，同一节点里
+    // 各行名字的右端就参差不齐（用户 2026-11-23 指出），看着像排版坏了。
+    const nameWidth = cols.nameRight - nameX - (OWNER_BADGE_W + 4);
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
     ctx.font = FONT;
@@ -771,6 +1182,28 @@ function drawRow(ctx, node, state, index, posY, width) {
     if (off && row.name) {
         ctx.fillStyle = "rgba(190, 205, 214, .38)";
         ctx.fillRect(nameX, posY + ROW_HEIGHT / 2 - 0.5, ctx.measureText(shown).width, 1);
+    }
+    // 归属徽章画在名字区右端（名字已经为它让过宽度）。留档给探针：canvas 上的
+    // 图形读不到，但「哪几行有归属、归谁」必须可断言。
+    //
+    // 同时留一份命中矩形：徽章在 canvas 里没有 DOM，悬停提示与点击定位只能靠
+    // 指针坐标反算（见 badgeAt）。存的是**节点局部坐标**，随绘制一起更新。
+    const badgeX = cols.nameRight - OWNER_BADGE_W;
+    if (owned) {
+        drawOwnerBadge(ctx, badgeX, posY + ROW_HEIGHT / 2);
+        state.ownerRows = state.ownerRows || {};
+        state.ownerRows[index] = ownerTitles.join(", ");
+        state.badgeRects = state.badgeRects || {};
+        state.badgeRects[index] = {
+            x: badgeX,
+            y: posY + ROW_HEIGHT / 2 - 7,
+            w: OWNER_BADGE_W,
+            h: 14,
+            titles: ownerTitles.slice(),
+        };
+    } else {
+        if (state.ownerRows) delete state.ownerRows[index];
+        if (state.badgeRects) delete state.badgeRects[index];
     }
 
     // 强度控件：左箭头 −、中间数值、右箭头 +。数值居中而不是右对齐，左右才对称。
@@ -886,25 +1319,53 @@ function drawAddRow(ctx, node, state, posY, width) {
     width = width || node.size[0];
     const visible = visibleRows(state);
     const full = visible >= SLOT_COUNT;
-    ctx.save();
-    ctx.strokeStyle = full ? "rgba(255,255,255,.10)" : "rgba(255,255,255,.18)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    roundRect(ctx, SLOT_BAND + 4, posY + 3, width - SLOT_BAND - 14, ROW_HEIGHT - 6, 4);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // 「+ 添加 LoRA」是可点的主操作：整块框填成实心强调色、字用自适应墨色
+    // （和加载器的 +LoRA 按钮同款，用户 11-24 明确要「框里填充颜色」）。
+    // 满了才退化成灰白虚线提示「已显示全部」——禁用态不染色，免得误导还能点。
+    // 留档给探针断言（canvas 像素读不到闭包里的颜色）。
+    ctx.save(); // 🔴 11-24 误删过这行导致 restore 弹掉外层状态、界面错乱，务必保留配对。
+    const accent = addAccent();
+    // 🔴 11-24 加大按钮：原来实心框只有 ROW_HEIGHT-6=14px，用户嫌上下太窄。
+    // widget 本身占 ROW_HEIGHT+4=24px（见 addWidget.computeSize），在它内部把
+    // 框加高到 ROW_HEIGHT=20px、上下各留 2px —— 不动 widget 高度 / 节点总高 /
+    // 命中区，放大只发生在绘制层，布局与探针坐标都不受影响。
+    const boxX = SLOT_BAND + 4;
+    const boxY = posY + 2;
+    const boxW = width - SLOT_BAND - 14;
+    const boxH = ROW_HEIGHT;
+    if (full) {
+        // 禁用态：灰白虚线框 + 灰字。
+        ctx.strokeStyle = "rgba(255,255,255,.10)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        roundRect(ctx, boxX, boxY, boxW, boxH, 4);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    } else {
+        // 可点态：实心填充 + 自适应墨色字。鼠标悬停时填 hover 色（提亮一档），
+        // 给出明确的「可点」反馈；圆角矩形 fill，不留虚线。
+        ctx.fillStyle = state.hoverAdd ? accent.hover : accent.solid;
+        roundRect(ctx, boxX, boxY, boxW, boxH, 4);
+        ctx.fill();
+    }
     ctx.font = FONT;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = full ? "rgba(255,255,255,.22)" : "rgba(255,255,255,.55)";
+    ctx.fillStyle = full ? "rgba(255,255,255,.22)" : accent.ink;
+    // 🔴 11-24 用户「左右不居中」：文字要按**框**中心对齐，不是 width/2。
+    // 框从 boxX=20 到 width-10（左右留白不等），中心是 boxX+boxW/2 = width/2+5；
+    // 旧代码写在 width/2，字偏左 5px，实心填充后一眼就看出来。
+    const textX = boxX + boxW / 2;
     ctx.fillText(
         full
             ? zhPair(`all ${SLOT_COUNT} rows shown`, `已显示全部 ${SLOT_COUNT} 行`)
             : zhPair("+ add LoRA", "+ 添加 LoRA"),
-        width / 2,
-        posY + ROW_HEIGHT / 2,
+        textX,
+        boxY + boxH / 2,
     );
     ctx.restore();
+    state.addAccent = { solid: accent.solid, ink: accent.ink, hover: accent.hover,
+        hovered: Boolean(state.hoverAdd), full, boxY, boxH, boxX, boxW, textX };
 }
 
 // ---------------------------------------------------------------- 交互
@@ -989,9 +1450,13 @@ function rowHitZones(node, index, posY, drawWidth) {
     // 放在 canvas 外，点了没反应（用户报「添加的行删不掉」）。
     const width = drawWidth || node.size[0];
     const cols = columnsFor(node.__qgSwitchStack, width);
+    // 开关右边到名字区起点；最左 GRIP_W 那一条是排序手柄，剩下才是名字
+    // （点名字开选择器、拖名字调强度）。
+    const nameStart = SLOT_BAND + 4 + SWITCH_W + 6;
     return {
-        switch: { x0: SLOT_BAND, x1: SLOT_BAND + 4 + SWITCH_W + 6 },
-        name: { x0: SLOT_BAND + 4 + SWITCH_W + 6, x1: cols.nameRight },
+        switch: { x0: SLOT_BAND, x1: nameStart },
+        grip: { x0: nameStart, x1: nameStart + GRIP_W },
+        name: { x0: nameStart + GRIP_W, x1: cols.nameRight },
         // 强度：左右两个箭头各一档，中间数值区仍可拖 / 可点开输入框。
         // 三者都从 rowColumns 算，跟绘制共用一套坐标。
         strength: { x0: cols.strengthLeft, x1: cols.triggerX - 4 },
@@ -1070,26 +1535,43 @@ function shiftSlotLinks(node, fromRow) {
     }
 }
 
+// 🔴 1.58.5 起 `input.link` 是弃用访问器：赋非 null 直接被忽略。整组搬迁必须
+// 走官方接口（getInputLink 读 / disconnectInput 断 / 源节点.connect 接），
+// 与 swapSlotGroup 保持同一套写法。
+// 先按「搬迁前的状态」把整组线全读出来并全部断开，再按新槽号重连；边读边断
+// 会让 removeLink 按 target_slot 把刚搬过来的那条一起清掉。
+function readSlotLink(node, graph, slot) {
+    const link = node.getInputLink?.(slot) ?? graph.links?.[node.inputs[slot]?.link] ?? null;
+    return link ? { origin_id: link.origin_id, origin_slot: link.origin_slot } : null;
+}
+
+function remapSlotLinks(node, slots, rows, newRowOf) {
+    const graph = node.graph;
+    if (!graph || slots?.length !== SLOT_COUNT) return;
+    const infos = rows.map((row) => ({ row, info: readSlotLink(node, graph, slots[row]) }));
+    for (const { row, info } of infos) {
+        if (!info) continue;
+        if (typeof node.disconnectInput === "function") node.disconnectInput(slots[row]);
+        else if (node.inputs?.[slots[row]]) node.inputs[slots[row]].link = null;
+    }
+    for (const { row, info } of infos) {
+        if (!info) continue;
+        const newRow = newRowOf(row);
+        if (newRow < 0 || newRow >= SLOT_COUNT) continue;   // 被挤出栈的那条线，丢掉
+        const src = graph.getNodeById?.(info.origin_id)
+            ?? graph._nodes?.find?.((n) => String(n.id) === String(info.origin_id));
+        src?.connect?.(info.origin_slot, node, slots[newRow]);
+    }
+}
+
 // 单组槽的「删行 → 后面前移」。逻辑与原来完全相同，只是槽数组由 prefix 决定。
 function shiftSlotGroup(node, fromRow, prefix) {
     const slots = slotIndices(node, prefix);
     if (!slots) return;          // 槽还没建好（加载中 / 老存档），别动连线
-    const graph = node.graph;
-    const orphan = node.inputs[slots[fromRow]]?.link ?? null;
-    // 🔴 先删被删行自己那条线，再挪别人的。顺序反了的话 removeLink 会按
-    // target_slot 去清「此刻占着这个槽」的线，把刚挪过来的那条一起清掉。
-    if (orphan != null && graph?.removeLink && graph.links?.[orphan]) {
-        graph.removeLink(orphan);
-    } else if (orphan != null) {
-        node.inputs[slots[fromRow]].link = null;
-    }
-    for (let row = fromRow; row < SLOT_COUNT; row += 1) {
-        const target = node.inputs[slots[row]];
-        const source = row + 1 < SLOT_COUNT ? node.inputs[slots[row + 1]] : null;
-        const id = source?.link ?? null;
-        target.link = id;
-        if (id != null && graph?.links?.[id]) graph.links[id].target_slot = slots[row];
-    }
+    const rows = [];
+    for (let row = fromRow; row < SLOT_COUNT; row += 1) rows.push(row);
+    // 被删行自己那条线丢掉（-1），后面每行前移一位。
+    remapSlotLinks(node, slots, rows, (row) => (row === fromRow ? -1 : row - 1));
 }
 
 // × = 删除这一行，不是「把名字抹掉留个空行」。后面的行整体前移，末尾补一个空项
@@ -1156,21 +1638,10 @@ function shiftSlotLinksBack(node, atRow) {
 function shiftSlotGroupBack(node, atRow, prefix) {
     const slots = slotIndices(node, prefix);
     if (!slots) return;
-    const graph = node.graph;
-    const last = node.inputs[slots[SLOT_COUNT - 1]];
-    const orphan = last?.link ?? null;
-    if (orphan != null) {
-        if (graph?.removeLink && graph.links?.[orphan]) graph.removeLink(orphan);
-        else if (last) last.link = null;
-    }
-    for (let row = SLOT_COUNT - 2; row >= atRow; row -= 1) {
-        const target = node.inputs[slots[row + 1]];
-        const source = node.inputs[slots[row]];
-        const id = source?.link ?? null;
-        target.link = id;
-        if (id != null && graph?.links?.[id]) graph.links[id].target_slot = slots[row + 1];
-    }
-    node.inputs[slots[atRow]].link = null;
+    const rows = [];
+    for (let row = atRow; row < SLOT_COUNT; row += 1) rows.push(row);
+    // 末行被挤出栈（丢掉），其余后移一位；atRow 槽自然空出来。
+    remapSlotLinks(node, slots, rows, (row) => (row === SLOT_COUNT - 1 ? -1 : row + 1));
 }
 
 // 在 index 处插入一行。source 给了就是「复制此行」，否则插一个空行。
@@ -1319,19 +1790,27 @@ function onRowMouse(state, event, pos, index) {
         }
         return true;
     }
-    if (x < zone.name.x1) {
-        // 第二层：Alt + 名字区拖动 = 重排行；普通点击仍然开选择器。
-        // 修饰键可能来自 Pointer.eDown（onPointerDown）或 DOM MouseEvent
-        // （节点级 onMouseDown / 行右键转发），两处都认，与强度拖拽同口径。
-        const alt = Boolean(event?.eDown?.altKey ?? event?.altKey);
-        if (alt && row.name) {
+    if (x < zone.grip.x1) {
+        // 名字区最左边的 ≡ 手柄：按住它上下拖 = 重排行，不需要任何修饰键。
+        // 🔴 排序**不能**用修饰键：Alt 被 ComfyUI「拖拽克隆节点」抢走（按下即克隆，
+        //    行根本收不到 pointerdown），Ctrl 被多选框抢走，Shift 要留给
+        //    「拖强度改 CLIP」—— 之前拿 Shift 排序，用户立刻就报「clip 强度
+        //    滑动调不了」。手势只能靠「按在哪」区分。
+        if (row.name) {
             beginRowDrag(state, index, event);
             return true;
         }
-        // 与加载器同款：名字也是强度拖动面（只改模型强度）。Alt 排序优先；
+        // 空行没内容可排，落到选择器那条老路，行为与改版前一致。
+        openPicker(state, index);
+        return true;
+    }
+    if (x < zone.name.x1) {
+        // 名字区：点击开选择器、拖动改强度（只动模型强度）；按住 Shift 拖改 CLIP
+        // 强度 —— 与右边数值区同一套口径，两处都能滑 CLIP。
         // 没拖动的普通点击仍然开选择器，不弹数值输入框。
         if (row.name && state.settings?.name_scrub !== false) {
-            beginDrag(state, event, index, false, {
+            const shift = Boolean(event?.eDown?.shiftKey ?? event?.shiftKey);
+            beginDrag(state, event, index, shift, {
                 openOnClick: false,
                 onClick: () => openPicker(state, index),
             });
@@ -1410,6 +1889,9 @@ function endDrag(state) {
 
 function beginDrag(state, pointer, index, useClip, options = {}) {
     endDrag(state);
+    // 两个拖动手势互斥：排序拖到一半又落到强度上时，上一轮的 window 监听
+    // 会让同一次移动既挪行又改数值。
+    endRowDrag(state);
     hidePickerThumb();
     const row = state.rows[index];
     const downEvent = pointer?.eDown ?? pointer?.eMove ?? pointer;
@@ -1474,11 +1956,14 @@ function beginDrag(state, pointer, index, useClip, options = {}) {
     window.addEventListener("blur", up, true);
 }
 
-// ---------------------------------------------------------------- 第二层：Alt+拖名字区重排行
+// ---------------------------------------------------------------- 第二层：拖「≡」手柄重排行
 //
-// 行的名字区点击=开选择器、强度区拖=调数值、行右键=菜单，手势已占满。
-// 排序用「Alt + 左键按在名字上拖动」这一条空着的组合：普通点击行为一点不变，
-// 所以不会碰现有探针按坐标点名字/拖强度的路径。
+// 行的名字区点击=开选择器、拖名字=调强度（Shift=CLIP）、强度区拖=调数值、
+// 行右键=菜单，手势已占满。排序用「按住名字区最左边那个 ≡ 手柄上下拖」：
+// 位置区分而不是修饰键区分，普通点击/拖动行为一点不变。
+// 🔴 别改回修饰键：Alt 会被 ComfyUI 的「Alt+拖 = 复制节点」抢走（按下瞬间就克隆
+//    一个出来），Ctrl 会被画布多选框吃掉，Shift 又必须留给「拖强度改 CLIP」
+//    （2026-11-22 用户报「clip 强度滑动调不了」就是 Shift 被排序占用）。
 // 🔴 落地走 swapRows：它已经用官方 getInputLink / disconnectInput / connect
 //    把两条 on_N 连线连同 target_slot 一起换，符合 1.58.5+ 的弃用红线。
 //    这里绝不自己写 input.link = ...（会被核心静默忽略）。
@@ -2015,6 +2500,9 @@ function rowAtPointer(event) {
             || graph._nodes.find((item) => String(item.id) === String(rawId));
         // 折叠后行 canvas 不该还在，保险起见别让隐藏行收到右键。
         if (node?.flags?.collapsed) return null;
+        // 🔴 只认自己的节点：正式堆和LoRA 堆共用 `__qgSwitchStack` 这个属性名，
+        // 不判类型的话两个扩展都会响应同一次右键，各开一个行菜单（叠加）。
+        if (String(node?.type) !== NODE_CLASS) return null;
         const state = node?.__qgSwitchStack;
         const index = match ? Number(match[1]) - 1 : -1;
         if (state && index >= 0 && index < visibleRows(state)) return { state, index };
@@ -2032,6 +2520,8 @@ function rowAtPointer(event) {
     // 叠在一起时，右键必须落在眼睛看到的那个上，不能认到被盖住的那个。
     for (let n = graph._nodes.length - 1; n >= 0; n -= 1) {
         const node = graph._nodes[n];
+        // 同上：只认自己的节点类型，别把另一个堆的行当成自己的。
+        if (String(node?.type) !== NODE_CLASS) continue;
         const state = node.__qgSwitchStack;
         if (!state?.rowWidgets?.length || node.flags?.collapsed) continue;
         const lx = gx - node.pos[0];
@@ -3282,6 +3772,9 @@ function openStackGearMenu(node, anchor) {
 // 按钮塞进节点外壳的标题栏 flex 行，插在帮助徽章「?」之前。沿用帮助徽章同款
 // 的 shell 查找与定时巡检（Vue 重排会冲掉 DOM），但只服务这一个节点的齿轮。
 const GEAR_DOM_CLASS = "qgtools-stack-gear";
+// 🔴 必须用自己的 style id：正式堆也用 `qgtools-stack-gear-style` /
+// `qg-row-menu-theme`，而 ensureXxxStyle 见到 id 已存在就直接 return —— 共用 id 的话
+// 先加载的那份定死样式，改样式永远不生效（2026-11-23 排查发现）。
 const GEAR_STYLE_ID = "qgtools-stack-gear-style";
 const gearDomTracked = new Map();
 let gearDomTimer = null;
@@ -3382,7 +3875,7 @@ function uninstallGearDom(node) {
 }
 
 // 探针/控制台用的稳定入口：三项面板函数与删除二级菜单选项。真机探针原本靠
-// 右键菜单项触发，入口移到齿轮后改走这里，测试意图（面板功能本身）不变；
+// 右键菜单项触发，入口移到齿轮后改走这里，探针意图（面板功能本身）不变；
 // 齿轮入口本身由 gear 探针单独验。幂等，configure 重建节点也能重挂。
 function installStackApi(node) {
     node.__qgStackApi = {
@@ -3557,15 +4050,17 @@ function openTriggerEditor(state, index) {
     const sub = document.createElement("div");
     sub.style.cssText = "color: #78848b; margin-top: -4px;";
 
-    // 元信息行：底模徽标 + 推荐强度套用。后端 lora_info 早就返回 base_model
-    // 和 range（用户存过的 min/max），以前只在副标题里当文字显示、堆这边连
-    // 推荐强度都不显示。做成徽标一眼能看出这行是不是喂错底模，推荐强度给个
-    // 一键套用，省得用户对着数字猜。🔴 只在这里读 data，不改行数据除了点按钮。
+    // 元信息行：只放底模徽标。建议强度 11-24 起单独一行，挪到词表下面。
+    // 建议强度跟加载器信息卡一样可填：两端都能拖动 / 键入 / 清空，落定就写
+    // 侧车；没有值时显示「任意」。有区间时旁边多一个「套用」按钮。
+    // 🔴 按钮文案带 qg 标记，探针好认；套用只改这一行，不碰别的行。
     const metaRow = document.createElement("div");
-    // 纵向两行：第一行底模徽标，第二行「推荐强度 + 套用按钮」。挤在一行时
-    // 中英混排的字会挨成一团（真机截图确认过），手机上更看不清。
-    metaRow.style.cssText = "display: flex; flex-direction: column; align-items: flex-start; gap: 5px;";
+    metaRow.style.cssText = "display: flex; flex-wrap: wrap; align-items: center; gap: 5px;";
     metaRow.dataset.qgMeta = "1";
+
+    // 建议强度独占一行，排在词表下方（原手改输入框的位置）。
+    const suggestRow = document.createElement("div");
+    suggestRow.dataset.qgSuggestedHost = "1";
 
     const chipsHost = document.createElement("div");
     chipsHost.dataset.qgTriggerWords = "1";
@@ -3573,20 +4068,11 @@ function openTriggerEditor(state, index) {
         flex: 1; min-height: 70px; max-height: 240px;
         overflow-y: auto; padding-right: 2px;`;
 
-    const input = document.createElement("input");
-    input.type = "text";
-    // 卡片里有两个输入框（加词、整行手改），探针靠这个标记认准手改那个。
-    input.dataset.qgTriggerText = "1";
-    input.value = row.triggers || "";
-    input.placeholder = zhPair("comma separated", "用逗号分隔，留空表示不加词");
-    input.style.cssText = `
-        width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px;
-        border: 1px solid #3a4248; background: #1a1e21; color: #dbe3e7;
-        font: inherit; outline: none;`;
-
+    // 底部不再有「整行手改」输入框：点 chip 即时写回，加词有专门入口。
+    // 探针靠 qgTriggerWords 认词表、靠 qgCivitai 认按钮，别改这两个标记。
     const hint = document.createElement("div");
-    hint.textContent = zhPair("Click a word to add or remove it. Enter saves, Esc cancels.",
-        "点词就能加进这一行或去掉；回车保存，Esc 取消");
+    hint.textContent = zhPair("Click a word to add or remove it. Esc closes.",
+        "点词就能加进这一行或去掉；Esc 关闭");
     hint.style.cssText = "color: #78848b; line-height: 1.4;";
 
     // 底部动作区：Civitai 链接 + 「获取 Civitai 信息」。放在 chipsHost **外面** ——
@@ -3609,7 +4095,7 @@ function openTriggerEditor(state, index) {
     const note = document.createElement("div");
     note.style.cssText = "line-height: 1.4; display: none;";
 
-    details.append(header, sub, metaRow, chipsHost, footer, note, input, hint);
+    details.append(header, sub, metaRow, chipsHost, suggestRow, footer, note, hint);
     content.append(media, details);
     element.append(content);
     document.body.append(element);
@@ -3625,7 +4111,6 @@ function openTriggerEditor(state, index) {
     preview.addEventListener("load", fitToViewport);
     triggerEditor = { element, abort, row };
 
-    const current = () => splitTriggerWords(row.triggers);
     const active = (word) => hasTrigger(row.triggers, word);
 
     // 删除「我的词」时也要把它从当前行拿掉。复刻 shared 的整段匹配口径：
@@ -3643,15 +4128,10 @@ function openTriggerEditor(state, index) {
         return parts.join(", ");
     };
 
-    const syncInput = () => {
-        input.value = row.triggers || "";
-    };
-
     // 词直接写回行（不关卡片），每次改完重画一遍 chip 的选中状态。
     const commitWords = (next) => {
         row.triggers = next;
         writeRows(state);
-        syncInput();
         if (info) renderChips(info);
     };
 
@@ -3684,7 +4164,6 @@ function openTriggerEditor(state, index) {
             if (info) info.custom_triggers = Array.isArray(payload.words) ? payload.words : next;
             row.triggers = removeWordFromTriggers(row.triggers, word);
             writeRows(state);
-            syncInput();
             renderChips(info);
             setNote(zhPair("Deleted the custom trigger word.", "已删除自定义触发词。"), "info");
         } catch (error) {
@@ -3783,7 +4262,7 @@ function openTriggerEditor(state, index) {
         wrap.style.cssText = "display: flex; gap: 4px; margin: 2px 0 4px;";
         const addInput = document.createElement("input");
         addInput.type = "text";
-        addInput.placeholder = zhPair("add your own word", "加一个自己的词");
+        addInput.placeholder = zhPair("add a trigger word", "加一个触发词");
         addInput.style.cssText = `
             flex: 1; min-width: 0; padding: 3px 7px; border-radius: 6px; font: inherit;
             border: 1px solid #3a4248; background: #1a1e21; color: #dbe3e7; outline: none;`;
@@ -3825,16 +4304,18 @@ function openTriggerEditor(state, index) {
         return wrap;
     };
 
-    // 底模徽标 + 建议强度。建议强度跟加载器信息卡一样可填：两端都能拖动 /
-    // 键入 / 清空，落定就写侧车；没有值时显示「任意」。有区间时旁边多一个
-    // 「套用」按钮，把中值写回当前行。
+    // 底模徽标留在 metaRow；建议强度单独排在词表下面的 suggestRow。
+    // 建议强度跟加载器信息卡一样可填：两端都能拖动 / 键入 / 清空，落定就写
+    // 侧车；没有值时显示「任意」。有区间时旁边多一个「套用」按钮。
     // 🔴 按钮文案带 qg 标记，探针好认；套用只改这一行，不碰别的行。
     const renderMeta = (data) => {
         metaRow.replaceChildren();
+        suggestRow.replaceChildren();
         const range = data && typeof data.range === "object" ? data.range : null;
         const family = data && typeof data.base_model === "string" ? data.base_model.trim() : "";
-        // 建议强度那一行永远在，所以 metaRow 不再整体隐藏。
+        // 建议强度那一行永远在，所以 suggestRow 不再整体隐藏。
         metaRow.style.display = "";
+        suggestRow.style.display = "";
         if (family) {
             const badge = document.createElement("span");
             badge.textContent = family;
@@ -3888,7 +4369,6 @@ function openTriggerEditor(state, index) {
             row.strength = mid;
             row.strength_clip = mid;
             writeRows(state);
-            syncInput();
             apply.textContent = zhPair("Applied", "已套用");
             apply.dataset.qgRangeApplied = "1";
         }, { signal: abort.signal });
@@ -3919,27 +4399,14 @@ function openTriggerEditor(state, index) {
         dash.style.cssText = "color: #78848b;";
         rangeRow.append(label, bounds.min.root, dash, bounds.max.root, apply);
         updateApply();
-        metaRow.append(rangeRow);
+        suggestRow.append(rangeRow);
     };
 
     const renderChips = (data) => {
         chipsHost.replaceChildren();
-        const chosen = current();
-        const chosenWords = document.createElement("div");
-        chosenWords.style.cssText = "margin-bottom: 6px;";
-        const chosenTitle = document.createElement("div");
-        chosenTitle.textContent = chosen.length
-            ? zhPair(`On this row (${chosen.length})`, `这一行已选（${chosen.length}）`)
-            : zhPair("No trigger words on this row yet", "这一行还没有触发词");
-        chosenTitle.style.cssText = "color: #78848b; margin-bottom: 3px;";
-        chosenWords.append(chosenTitle);
-        if (chosen.length) {
-            const list = document.createElement("div");
-            for (const word of chosen) list.append(chip(word));
-            chosenWords.append(list);
-        }
-        chipsHost.append(chosenWords);
-
+        // 不再单列「这一行已选」：每个词表里的 chip 自己就有选中态（青色高亮），
+        // 顶部再重复一遍既占地方又会让人以为是两个不同的词。当前行选了哪些，
+        // 看下面词表的高亮即可。
         const groups = triggerGroups(data);
         const parts = [
             section(zhPair("From the file", "文件自带"), groups.file),
@@ -3950,7 +4417,7 @@ function openTriggerEditor(state, index) {
         const myWrap = document.createElement("div");
         myWrap.style.cssText = "margin-bottom: 6px;";
         const myTitle = document.createElement("div");
-        myTitle.textContent = zhPair("Your words", "我的词");
+        myTitle.textContent = zhPair("Trigger words", "触发词");
         myTitle.style.cssText = "color: #78848b; margin-bottom: 3px;";
         const myList = document.createElement("div");
         myList.style.cssText = "display: flex; flex-wrap: wrap;";
@@ -4055,29 +4522,21 @@ function openTriggerEditor(state, index) {
     };
     fetchButton.addEventListener("click", () => fetchCivitai(), { signal: abort.signal });
 
-    const save = () => {
-        row.triggers = input.value.trim();
-        writeRows(state);
+    // 没有手改输入框了：词在点 chip / 加词时就已写回（commitWords）。
+    // 点外面直接关卡片，只有一个总关闭入口，不再有「点外面保存」的分支。
+    const outside = (event) => {
+        if (element.contains(event.target)) return;
         closeTriggerEditor();
     };
-
-    input.addEventListener("keydown", (event) => {
+    window.addEventListener("pointerdown", outside, { capture: true, signal: abort.signal });
+    // Esc 关闭：原来挂在手改输入框上，输入框删掉后改挂 document。
+    // 加词框的 keydown 会 stopPropagation，不会和这里重复触发。
+    document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
             event.stopPropagation();
             closeTriggerEditor();
         }
-        if (event.key === "Enter") {
-            event.stopPropagation();
-            save();
-        }
-        event.stopPropagation();
     }, { signal: abort.signal });
-    // 点外面 = 保存（跟大多数内联编辑框一样，别让人以为点了就丢）
-    const outside = (event) => {
-        if (element.contains(event.target)) return;
-        save();
-    };
-    window.addEventListener("pointerdown", outside, { capture: true, signal: abort.signal });
 
     const load = async () => {
         if (!row.name) {
@@ -4090,6 +4549,8 @@ function openTriggerEditor(state, index) {
             sub.style.display = "none";
             metaRow.style.display = "none";
             metaRow.replaceChildren();
+            suggestRow.style.display = "none";
+            suggestRow.replaceChildren();
             linkSlot.replaceChildren();
             showPreview(null);
             return;
@@ -4122,12 +4583,6 @@ function openTriggerEditor(state, index) {
         requestAnimationFrame(() => { if (element.isConnected) fitToViewport(); });
     };
     load();
-
-    // 画布会在 pointerdown 之后抢一次焦点，等这一轮跑完再要回来。
-    requestAnimationFrame(() => {
-        if (!element.isConnected) return;
-        input.focus({ preventScroll: true });
-    });
 }
 
 // ---------------------------------------------------------------- 选择器
@@ -4488,13 +4943,15 @@ function drawLinkedRows(node) {
     const ctx = app.canvas?.ctx;
     if (!ctx) return;
     const visible = visibleRows(state);
+    // 归属表在循环外算一次传进去：接线行每行都会用到，逐行重复调用只是白跑。
+    const owners = refreshOwners(state);
     for (let index = 0; index < visible; index += 1) {
         const onInput = node.inputs?.find((item) => item.name === `on_${index + 1}`);
         const strengthInput = node.inputs?.find((item) => item.name === `strength_${index + 1}`);
         const widget = state.rowWidgets[index];
         // 任一组槽接了线，这一行就走前景补画（自带 widget.draw 看不到外控圆点）。
         if (!((onInput?.link || strengthInput?.link)) || !widget) continue;
-        drawRow(ctx, node, state, index, widget.y, rowDrawWidth(node, widget));
+        drawRow(ctx, node, state, index, widget.y, rowDrawWidth(node, widget), owners);
     }
 }
 
@@ -4730,6 +5187,20 @@ app.registerExtension({
                     this.setDirtyCanvas?.(true, true);
                 }
             }
+            // 「+ 添加 LoRA」按钮 hover：命中区与 drawAddRow 同口径
+            // （左 SLOT_BAND+4、右 width-10、上 addWidget.y+2、高 ROW_HEIGHT）。
+            // 满了（禁用态）不响应 hover。只在状态翻转时重绘 + 换手型指针。
+            if (s?.addWidget && pos) {
+                const w = s.addWidget;
+                const inX = pos[0] >= SLOT_BAND + 4 && pos[0] <= this.size[0] - 10;
+                const inY = pos[1] >= w.y + 2 && pos[1] <= w.y + 2 + ROW_HEIGHT;
+                const hoverAdd = Boolean(inX && inY && visibleRows(s) < SLOT_COUNT);
+                if (Boolean(s.hoverAdd) !== hoverAdd) {
+                    s.hoverAdd = hoverAdd;
+                    setAddHoverCursor(hoverAdd);
+                    this.setDirtyCanvas?.(true, false);
+                }
+            }
             // 行名悬停弹预览图：event 是 DOM MouseEvent，clientX/Y 是屏幕坐标。
             // 与加载器的行名 hover 对齐，且遵守「预览缩略图」设置。
             if (s && Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
@@ -4742,10 +5213,17 @@ app.registerExtension({
             const result = onMouseLeave?.apply(this, arguments);
             const s = this.__qgSwitchStack;
             hidePickerThumb();
+            let changed = false;
             if (s && s.hoverRow !== -1) {
                 s.hoverRow = -1;
-                this.setDirtyCanvas?.(true, true);
+                changed = true;
             }
+            if (s && s.hoverAdd) {
+                s.hoverAdd = false;
+                setAddHoverCursor(false);
+                changed = true;
+            }
+            if (changed) this.setDirtyCanvas?.(true, true);
             return result;
         };
 
@@ -4772,12 +5250,18 @@ app.registerExtension({
     },
 
     async setup() {
+        // 全局强调色变了（切配色方案 / 改自定义色）就丢掉按钮颜色缓存并重画。
+        installAddAccentSync();
         // 经典模式齿轮在负 y 标题栏上，节点级 onMouseDown 收不到，补全局命中。
         installGearHit();
         // 行操作菜单的入口是「在这一行上点右键」。钩子挂在 window 捕获阶段，
         // 经典画布和 Nodes 2.0 的独立行 canvas 都进得来；只认领命中行的右键，
         // 其余位置照旧走 ComfyUI 原生节点菜单。
         installRowContextMenu();
+        installOwnerInvalidation();
+        // 徽章悬停显示「归哪个开关管」、点击跳到那张开关卡片（canvas 里没有 DOM，
+        // 靠 drawRow 留档的命中矩形反算）。
+        installBadgeInteraction();
         // 切界面模式时把浮层全收掉：面板 / 选择器 / 触发词卡片 / 行菜单都是
         // 按当前模式算坐标的（画布坐标 vs Vue 独立 canvas 矩形），留着会在
         // 新模式里错位，甚至盖住节点。共享模块已经提供这个钩子，别再自己轮询。

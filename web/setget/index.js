@@ -40,8 +40,9 @@
  * 工作流 JSON 里保存的只有节点 type / 位置 / 名称（serialize_widgets）。
  */
 import { app } from "/scripts/app.js";
-import { zhPair } from "../shared/zh.mjs?v=202611210910";
-import { pinCategory } from "../shared/category_zh.mjs?v=202611210910";
+import { zhPair } from "../shared/zh.mjs?v=202611251300";
+import { pinCategory } from "../shared/category_zh.mjs?v=202611251300";
+import { showToast } from "../shared/index.mjs?v=202611251300";
 
 const SET_TYPE = "QG_SetPoint";
 const GET_TYPE = "QG_GetPoint";
@@ -204,7 +205,7 @@ function showAlert(message, nodes) {
             app.canvas?.setDirty?.(true, true);
         }, 100);
     }
-    app.extensionManager?.toast?.add?.({
+    showToast({
         severity: "warn",
         summary: zhPair("Set / Get Point", "设置/获取点"),
         detail: info ? `${message} — ${info}` : message,
@@ -322,9 +323,14 @@ function patchComboWidget(widget, node) {
 /** 粘贴一组 Set/Get 时，Set 因重名被自动改名，把新名字告诉同批的 Get。 */
 const pasteRenameMap = new Map();
 
+/** 选区读取兼容：1.58+ 用 selectedItems（节点与分组混排），老版用 selected_nodes。 */
+function selectedItems(canvas = app.canvas) {
+    return canvas?.selectedItems ? [...canvas.selectedItems] : Object.values(canvas?.selected_nodes ?? {});
+}
+
 /** 右键菜单打开那一刻的选区快照（含右键节点本身）。 */
 function snapshotSelected(node) {
-    const set = new Set(Object.values(app.canvas?.selected_nodes || {}));
+    const set = new Set(selectedItems());
     set.add(node);
     return [...set];
 }
@@ -450,6 +456,11 @@ class QGSetPoint extends LGraphNode {
                 this.outputs[0].name = type;
                 autoColor(this, type);
                 this.update();
+            } else if (type === WILDCARD) {
+                // 🔴 2026-11-24：上游是通配 `*` 是**合法连接**（数值滑条/数值节点
+                // 的输出口刻意是 `*`，这样才能同时接 INT 和 FLOAT：litegraph 里
+                // INT→FLOAT、FLOAT→INT 都静默失败，只有 `*` 两头都通）。通配不是
+                // 错误，端口保持 `*`，别弹「无法识别」告警、更别把节点标红。
             } else {
                 showAlert(zhPair(
                 `Cannot read the input type of ${this.title}.`,
@@ -1281,7 +1292,7 @@ const extension = {
                             content: zhPair("Convert the selected nodes' outputs to Set/Get",
                             "将选中节点的输出转换为 设置/获取"),
                             callback: () => {
-                                const selected = Object.values(app.canvas?.selected_nodes || {});
+                                const selected = selectedItems();
                                 if (selected.length === 0) return;
                                 const graph = currentGraph();
                                 for (const node of selected) convertOutputsToSetGet(graph, node);
@@ -1292,7 +1303,7 @@ const extension = {
                             "将选中的设置/获取转换成连线"),
                             callback: () => {
                                 const graph = currentGraph();
-                                const selected = Object.values(app.canvas?.selected_nodes || {});
+                                const selected = selectedItems();
                                 const setNodes = selected.filter(isSet);
                                 const getNodes = selected.filter(isGet);
                                 for (const node of setNodes) convertToLinks(graph, nameOf(node));
@@ -1319,7 +1330,7 @@ const extension = {
         // 折叠节点上抑制改名弹窗，让双击只负责跳转）
         document.addEventListener("dblclick", () => {
             if (document.querySelector(".litecontextmenu")) return;
-            const selected = Object.values(app.canvas?.selected_nodes || {});
+            const selected = selectedItems();
             if (selected.length !== 1 || !isGet(selected[0])) return;
             selected[0].goToSetter();
         });

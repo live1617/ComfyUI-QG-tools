@@ -15,9 +15,9 @@
 // （来自 Python 的 DESCRIPTION，这里是同一个信息源，不用再维护一份说明）。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611210910";
-import { chainCallback, zhPair } from "../shared/index.mjs?v=202611210910";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611210910";
+import { sizeFor } from "../shared/node_width.mjs?v=202611251300";
+import { chainCallback, zhPair } from "../shared/index.mjs?v=202611251300";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611251300";
 
 const NODE_CLASS = "QG_Math";
 // 卡片下限宽度：表达式那行要能一眼看下十来个字符。
@@ -111,7 +111,9 @@ function rebuildSlots(node, present, target) {
   for (let i = (node.inputs ?? []).length - 1; i >= 0; i -= 1) {
     if (VARIABLES.includes(node.inputs[i]?.name)) node.removeInput(i);
   }
-  for (const name of target) node.addInput(name, "INT,FLOAT,BOOLEAN");
+  // 🔴 四种类型都要列全：后端 schema 是 [Int, Float, Boolean, String]，
+  // 少了 STRING 会让第 4 个及以后的变量槽拒绝文本输出（dual_math 早已列全）。
+  for (const name of target) node.addInput(name, "INT,FLOAT,BOOLEAN,STRING");
   for (const item of saved) {
     if (!target.includes(item.name)) continue;
     const origin = node.graph?.getNodeById?.(item.origin);
@@ -220,7 +222,7 @@ function syncSlotCount(node) {
     } else if (isPrefix(present, target)) {
       // 正常情况：只补末尾缺的（addInput 就是追加到末尾，顺序天然对）
       for (let i = present.length; i < target.length; i += 1) {
-        node.addInput?.(target[i], "INT,FLOAT,BOOLEAN");
+        node.addInput?.(target[i], "INT,FLOAT,BOOLEAN,STRING");
         changed = true;
       }
     } else if (isPrefix(target, present)) {

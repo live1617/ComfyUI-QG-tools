@@ -10,7 +10,7 @@
 // separator 是节点的原生 widget，不归这块管。
 
 import { app } from "/scripts/app.js";
-import { chainCallback } from "../shared/index.mjs?v=202611210910";
+import { chainCallback } from "../shared/index.mjs?v=202611251300";
 
 const NODE_CLASS = "QG_TextConcat";
 // 必须与后端 nodes/qg_text_concat.py 的输入名完全一致（顺序也要一致）。
@@ -185,7 +185,11 @@ function fitHeight(node, retry) {
   } catch {
     measured = null;
   }
-  const h = Math.max(measured?.[1] || 0, minH);
+  // 🔴 2026-11-24：以前无条件 Math.max(measured, minH)，而 minH 的估算
+  //   (30 + 行*20 + 12) 比 LiteGraph 的 computeSize 高 24px —— 只有 2 个文本槽时
+  //   算出 102、computeSize 实给 78，节点底部就空一大截（用户测量插件实测 102 vs 78）。
+  //   computeSize 已经把标题栏和槽都算进去了，以它为准；估算只在它拿不到时兜底。
+  const h = Number.isFinite(measured?.[1]) && measured[1] > 0 ? measured[1] : minH;
   if (Math.abs((node.size?.[1] || 0) - h) > 2) {
     node.setSize?.([node.size[0], h]);
     node.arrange?.();

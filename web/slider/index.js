@@ -13,45 +13,50 @@
 //     不跑，卡片走 WidgetDOM 才在。
 // 切模式时 installModeWatcher 调 __qgSyncMode 就地迁移，不重载图。
 //
+// 🔴 2026-11-24：本节点固定浮点输出，齿轮里的「整数 / 浮点」切换已移除。
+// 后端仍保留 kind 输入位（老存档 widgets_values 有它，删掉会整体错位），
+// 但前端不再提供切换、kindOf() 恒为 float，后端 execute 也只走浮点分支。
+// 老图纸里存着 kind="integer" 会在加载时被这里归一成浮点，输出小数。
+//
 // 范围（最小 / 最大）收进齿轮菜单：它们一次设好就不常动，摆在卡片上白占一行。
 // 齿轮在行的最右端、跟读数同一水平线。
 //
-// 切整数 / 浮点（applyKind）只动三件事：
-//   1. 滑条的步长（step 控件，整数模式固定 1）
-//   2. value 控件的 precision（原生控件是藏起来的，但前端按它取整）
-//   3. 切到整数时把挂着的小数四舍五入
+// applyKind 只做浮点该做的事：
+//   1. 按步长给 value 控件设 precision（读数显示几位小数）
+//   2. 把越界的值夹回 [最小, 最大]
 //
-// 🔴 **输出槽的类型永远是 `*`，不跟着模式改**。后端 RETURN_TYPES 是类级静态
+// 🔴 **输出槽的类型永远是 `*`，不跟着值改**。后端 RETURN_TYPES 是类级静态
 //    声明（`*`），真正的类型由 execute 的返回值决定；前端那层只是显示 + 连线
 //    校验，改成 `INT` 会**直接挡住接不出去**：litegraph 的 connect() 遇到
 //    INT → FLOAT 不抛错、也不建线（静默失败），而 LoRA 的 strength 正是 FLOAT
 //    —— 用户「输出连不上 LoRA 强度」就是这么来的（2026-10-23 实测四种类型：
 //    `*` / `FLOAT` / `INT,FLOAT` 都通，只有 `INT` 失败）。
-//    当前是整数还是小数，看右端的读数就知道（小数模式带小数位）。
+// 当前是小数，看右端的读数就知道（带小数位）。
 //
 // 范围改变时会把 value 夹回来：不然把最大值从 100 改到 50，值还停在 80，
 // 滑条顶在右端、输出却是 80，看着就像坏了。
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611210910";
-import { roundHalfAway } from "../shared/scrub_input.mjs?v=202611210910";
-import { BRAND, chainCallback, chainHandler, notifyQgChange, zhPair } from "../shared/index.mjs?v=202611210910";
-import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611210910";
-import { hideWidget } from "../shared/widget_visibility.mjs?v=202611210910";
+import { sizeFor } from "../shared/node_width.mjs?v=202611251300";
+import { roundHalfAway } from "../shared/scrub_input.mjs?v=202611251300";
+import { BRAND, chainCallback, chainHandler, notifyQgChange, zhPair } from "../shared/index.mjs?v=202611251300";
+import { mountWidgetCard } from "../shared/widget_card.mjs?v=202611251300";
+import { hideWidget } from "../shared/widget_visibility.mjs?v=202611251300";
 import {
   detachDomWidget,
   installModeWatcher,
   onRenderModeSwitch,
   vueNodesEnabled,
-} from "../shared/vue_mode.mjs?v=202611210910";
+} from "../shared/vue_mode.mjs?v=202611251300";
 import {
   closeSettingsMenu,
   gearIconSvg,
   openSettingsMenu,
-} from "../shared/settings_menu.mjs?v=202611210910";
+} from "../shared/settings_menu.mjs?v=202611251300";
 
 const NODE_CLASS = "QG_Slider";
-// kind 的取值，必须和 nodes/qg_slider.py 的 KINDS 逐字一致。
+// kind 的历史取值，必须和 nodes/qg_slider.py 的 KINDS 逐字一致。
+// 2026-11-24 起前端固定 KIND_FLOAT；KIND_INT 仅用于识别/忽略老存档里的旧值。
 const KIND_INT = "integer";
 const KIND_FLOAT = "float";
 // 节点宽（也是拖拽下限）。320 = 布尔开关的默认宽（那边 BASE_WIDTH 320）。
@@ -110,7 +115,7 @@ function valueLinked(node) {
 const linkedText = () => zhPair("linked", "连线");
 
 function kindOf(node) {
-  return widgetOf(node, "kind")?.value === KIND_FLOAT ? KIND_FLOAT : KIND_INT;
+  return KIND_FLOAT; // 固定浮点（2026-11-24 移除整数切换）；老存档的 integer 在这里被无视
 }
 
 const numOf = (node, name, fallback) => {
@@ -148,8 +153,8 @@ function rangeOf(node) {
   return { low, high };
 }
 
-// 把值夹进 [最小, 最大]。round 是在整数模式下调用的：先取整再夹，免得
-// 范围是 0.5–3.7 时四舍五入跑到 4 去。
+// 把值夹进 [最小, 最大]。round 参数保留给可能的外部调用：固定浮点后本文件
+// 内部一律传 false，不会再走到取整分支。
 function clampValue(node, { round = false } = {}) {
   const widget = widgetOf(node, "value");
   if (!widget) return;
@@ -173,20 +178,15 @@ function clampValue(node, { round = false } = {}) {
   }
 }
 
-// 拖到某个位置后该落哪一格。浮点按 **low** 对齐 —— 后端是
+// 拖到某个位置后该落哪一格。按 **low** 对齐 —— 后端是
 // `low + round((value - low) / size) * size`；按 0 对齐时 min=0.5、step=0.2
 // 的滑条经典模式给 1.0、DOM 卡片（原生 range，按 min 对齐）给 1.1、后端又
-// 给另一个数，三处各不相同。整数模式先按 .5 取整再夹到 [ceil(low), floor(high)]。
+// 给另一个数，三处各不相同。固定浮点，不再有整数取整分支。
 function gridValue(node, raw) {
   const { low, high } = rangeOf(node);
-  if (kindOf(node) === KIND_FLOAT) {
-    const step = modeOf(node).step;
-    const snapped = low + Math.round((raw - low) / step) * step;
-    return Number(Math.min(high, Math.max(low, snapped)).toFixed(MAX_DECIMALS));
-  }
-  const lo = Math.ceil(low), hi = Math.floor(high);
-  const value = roundHalfAway(raw);
-  return hi >= lo ? Math.min(hi, Math.max(lo, value)) : roundHalfAway((low + high) / 2);
+  const step = modeOf(node).step;
+  const snapped = low + Math.round((raw - low) / step) * step;
+  return Number(Math.min(high, Math.max(low, snapped)).toFixed(MAX_DECIMALS));
 }
 
 // 卡片的刷新入口。经典模式没有卡片，用一个短路对象顶上：applyKind / setStep /
@@ -200,7 +200,7 @@ function refreshView(node) {
   node.setDirtyCanvas?.(true, true);
 }
 
-function applyKind(node, kind) {
+function applyKind(node, kind = KIND_FLOAT) {
   const isFloat = kind === KIND_FLOAT;
   const value = widgetOf(node, "value");
   const mode = modeOf(node, kind);
@@ -217,19 +217,18 @@ function applyKind(node, kind) {
 }
 
 function setKind(node, kind) {
-  if (kind !== KIND_INT && kind !== KIND_FLOAT) return;
+  void kind; // 不再切换：固定浮点。保留函数签名兼容可能的外部调用。
   const kindWidget = widgetOf(node, "kind");
-  if (kindWidget && kindWidget.value !== kind) {
-    kindWidget.value = kind;
-    // 控件上挂着 applyKind（installKindHook）和卡片的 refresh，走一遍
-    kindWidget.callback?.(kind);
+  if (kindWidget && kindWidget.value !== KIND_FLOAT) {
+    kindWidget.value = KIND_FLOAT;
+    kindWidget.callback?.(KIND_FLOAT);
   }
-  applyKind(node, kind);
+  applyKind(node, KIND_FLOAT);
   notifyQgChange();
 }
 
-// 兜一道：不管是谁改的 kind（齿轮菜单、右键把下拉转成输入再连线、扩展、脚本），
-// 只要走了控件的 callback，外观就跟上。齿轮菜单的 setKind 也走这条。
+// 兜一道：不管是谁改的 kind（老存档 configure、右键把下拉转成输入再连线、扩展、脚本），
+// 都按浮点归一 —— 老图纸里的 "integer" 不再把值四舍五入。
 function installKindHook(node) {
   const kindWidget = widgetOf(node, "kind");
   if (!kindWidget || node.__qgKindHooked) return;
@@ -237,7 +236,10 @@ function installKindHook(node) {
   const original = kindWidget.callback;
   kindWidget.callback = function (value, ...rest) {
     const result = original?.apply(this, [value, ...rest]);
-    applyKind(node, value === KIND_FLOAT ? KIND_FLOAT : KIND_INT);
+    // 🔴 一旦有外部把归一化后的 kind 写回，这里同步回浮点，
+    //    保证存档里也不会留下 integer（下一次打开还是浮点）。
+    if (this.value !== KIND_FLOAT) this.value = KIND_FLOAT;
+    applyKind(node, KIND_FLOAT);
     return result;
   };
 }
@@ -283,7 +285,7 @@ function installRangeHooks(node) {
       if (name === "step") {
         applyKind(node, kindOf(node));
       } else {
-        clampValue(node, { round: kindOf(node) === KIND_INT });
+        clampValue(node, { round: false });
         refreshView(node);
       }
       notifyQgChange();
@@ -338,29 +340,6 @@ const MENU_SCOPE = "slider";
 // app.i18n 可能还没挂上，只能退到 <html lang> 猜 —— 猜错就是英文界面露中文。
 const slideMenuSchema = () => [
   {
-    key: "kind",
-    label: zhPair("Type", "类型"),
-    hint: zhPair("Whether this node outputs a whole number or a decimal", "输出的数是整数还是小数"),
-    type: "choice",
-    options: [KIND_INT, KIND_FLOAT],
-    // 同 QG_Number：取值不动，只把按钮显示做成双语（见 settings_menu.mjs 的注释）
-    optionLabels: {
-      [KIND_INT]: zhPair("integer", "整数"),
-      [KIND_FLOAT]: zhPair("float", "浮点"),
-    },
-    optionHints: {
-      [KIND_INT]: zhPair(
-        "Whole numbers, one notch per 1, decimals get rounded away",
-        "输出整数，滑条一格走 1，小数会被四舍五入掉",
-      ),
-      [KIND_FLOAT]: zhPair(
-        "Decimals, one notch per step, the readout follows the step's decimals",
-        "输出小数，滑条一格走「步长」，读数按步长给几位小数",
-      ),
-    },
-    persist: false,
-  },
-  {
     key: "min_value",
     label: zhPair("Min", "最小"),
     hint: zhPair("Left end of the slider; swaps with the maximum if it is larger", "滑条左端；比最大值大时会自动对调"),
@@ -370,7 +349,7 @@ const slideMenuSchema = () => [
     step: 1,
     fineStep: 0.1,
     decimals: 4,
-    // 范围多半是整数（0 / 100），但也可以是 0.25；去尾零让两种都不难看。
+    // 范围多半是整百整千（0 / 100），但也可以是 0.25；去尾零让两种都不难看。
     trimZeros: true,
     scrub: true,
     persist: false,
@@ -393,8 +372,8 @@ const slideMenuSchema = () => [
     key: "step",
     label: zhPair("Step", "步长"),
     hint: zhPair(
-      "How much one notch moves in decimal mode (whole-number mode is fixed at 1)",
-      "浮点模式下每格多少（整数模式固定 1，不受这里影响）",
+      "How much one notch moves; the readout follows the step's decimals",
+      "滑条每格走多少，读数按步长给几位小数",
     ),
     type: "number",
     min: 0.000001,
@@ -422,15 +401,13 @@ function toggleSliderMenu(node) {
     anchor: gearAnchor(node),
     title: zhPair("Slider settings", "滑条设置"),
     initial: {
-      kind: kindOf(node),
       min_value: numOf(node, "min_value", 0),
       max_value: numOf(node, "max_value", 1),
       step: numOf(node, "step", STEP_FALLBACK),
     },
     onChange: (values, key) => {
       // key 为 null 是「Reset」按的，persist:false 的项保持不动
-      if (key === "kind") setKind(node, values.kind);
-      else if (key === "step") setStep(node, values.step);
+      if (key === "step") setStep(node, values.step);
       else if (key === "min_value" || key === "max_value") setBound(node, key, values[key]);
     },
   });
@@ -571,6 +548,29 @@ function drawGear(ctx, cx, cy, r) {
   ctx.restore();
 }
 
+// 滑条轨道填充色：读外观设置里「滑条颜色」（--qg-slider，数值滑条与 LoRA
+// 强度条共用）。canvas 画不出 CSS 变量，读进来缓存；appearance 改色时发
+// qg-accent-changed，丢缓存 + 刷画布立刻换色。没设置时回退品牌青。
+let sliderColorCache = null;
+
+function sliderFillColor() {
+    if (sliderColorCache) return sliderColorCache;
+    let color = BRAND;
+    try {
+        const value = getComputedStyle(document.documentElement).getPropertyValue("--qg-slider").trim();
+        if (/^#[0-9a-f]{6}$/i.test(value)) color = value;
+    } catch (_) { /* 取不到就用品牌青 */ }
+    sliderColorCache = color;
+    return color;
+}
+
+function installSliderColorSync() {
+    window.addEventListener("qg-accent-changed", () => {
+        sliderColorCache = null;
+        app.graph?.setDirtyCanvas?.(true, true);
+    });
+}
+
 function drawCanvasSlider(node, ctx) {
   const view = node.__qgSliderView;
   if (!view || view.mode !== "canvas") return;
@@ -606,11 +606,14 @@ function drawCanvasSlider(node, ctx) {
 
   // 已填充段：至少一个圆头宽度，否则滑块很靠左时看着像没有填充
   const fillW = Math.max(0, knobX - trackX);
+  const fillColor = linked ? "#3a4a48" : sliderFillColor();
   if (fillW > 0.5) {
     roundRect(ctx, trackX, trackY, Math.max(TRACK_H, fillW), TRACK_H, TRACK_H / 2);
-    ctx.fillStyle = linked ? "#3a4a48" : BRAND;
+    ctx.fillStyle = fillColor;
     ctx.fill();
   }
+  // 留档给探针：canvas 像素读不到闭包状态，暴露轨道几何 + 当前填充色。
+  view.track = { x: trackX, y: trackY, w: trackW, h: TRACK_H, fillW, fillColor, linked };
 
   // 滑块
   ctx.beginPath();
@@ -704,7 +707,12 @@ function commitValue(node, next) {
   if (Number(widget.value) === value) return;
   widget.value = value;
   widget.callback?.(value);
-  node.setDirtyCanvas?.(true, false);
+  // 🔴 2026-11-24：整图重绘，不只刷自己。数值滑条常被 SetPoint/GetPoint、
+  // KJ Set/Get Node 转发去外控别的节点（LoRA堆 strength_N 等），那些节点在
+  // draw 里读上游 widget 值。只 dirty 本节点（第二参 false）时，画布上的
+  // 下游仍画着上一次的存档值——用户拖滑条看到数字纹丝不动，以为外控没生效。
+  // QG_Number / QG_BoolToggle 早就用 (true,true)，这里对齐同一口径。
+  node.setDirtyCanvas?.(true, true);
 }
 
 // 按 x 定位：先算比例，再对齐步长（浮点）/ 四舍五入（整数），最后夹进范围。
@@ -1015,14 +1023,13 @@ function installDom(node) {
           value: "value",
           min: "min_value",
           max: "max_value",
-          step: (vals) => {
-            if (String(vals.kind) !== KIND_FLOAT) return 1;
-            return Math.max(1e-6, Number(vals.step) || STEP_FALLBACK);
-          },
+          // widget_card.mjs 调用 step(vals)，必须收参数（11-24 固定浮点时误删过，
+          // 导致 ReferenceError: vals is not defined，滑条整卡渲染崩）。
+          step: (vals) => Math.max(1e-6, Number(vals.step) || STEP_FALLBACK),
           format: (raw) => formatValue(node, raw),
           // 读数只占「范围里最长的那个数」那么宽，剩下的全给轨道。
           readoutWidth: (vals) => {
-            const mode = modeOf(node, String(vals.kind) === KIND_FLOAT ? KIND_FLOAT : KIND_INT);
+            const mode = modeOf(node, KIND_FLOAT);
             const low = Number(vals.min_value);
             const high = Number(vals.max_value);
             return readoutWidthFor(
@@ -1073,8 +1080,14 @@ function install(node) {
   if (!view) return null;
   node.__qgSliderView = view;
   node.__qgSyncMode = () => syncMode(node);
-  // 换了一套画法，当前类型 / 范围要重新套一遍（顺带夹值）。
-  applyKind(node, kindOf(node));
+  // 🔴 2026-11-24：老存档的 kind="integer" 必须在这里主动归一。configure()
+  // 直接写 widget.value 不走 callback，单靠 installKindHook 接不住；留着它
+  // 下次保存又会写回存档，看着就像没改。归一后再套浮点口径（precision / 夹值）。
+  const kindWidget = widgetOf(node, "kind");
+  if (kindWidget && kindWidget.value !== KIND_FLOAT) {
+    kindWidget.value = KIND_FLOAT;
+  }
+  applyKind(node, KIND_FLOAT);
   return view;
 }
 
@@ -1122,6 +1135,11 @@ function mount(node) {
     queueMicrotask(() => {
       // 读档时 inputs 由 nodeData 重建，槽会跟着回来，所以这里得再摘一次。
       stripInputs(this);
+      // 🔴 2026-11-24：老存档的 kind="integer" 在这一刻才落地（configure 先
+      //    建节点、后填 widgets_values），install() 那时还看不见。这里归一，
+      //    下次保存就不会再把 integer 写回存档。
+      const kindWidget = widgetOf(this, "kind");
+      if (kindWidget && kindWidget.value !== KIND_FLOAT) kindWidget.value = KIND_FLOAT;
       // 存档里的尺寸也在这一刻落地：经典模式要按回 320×58。
       // 🔴 syncMode 只在模式变了才重装；老存档（存的是 320×90）会原样留着，
       //    所以这里必须再 keepSize 一次，不然「高度没变」的老节点刷完还是 90。
@@ -1144,6 +1162,8 @@ app.registerExtension({
   },
 
   async setup() {
+    // 滑条颜色设置变了就丢缓存重画（与 LoRA 强度条共用这个设置项）。
+    installSliderColorSync();
     // 切模式前先收掉菜单：它是 position:fixed、按旧模式的位置摆的，切完必然错位。
     onRenderModeSwitch(() => {
       try {

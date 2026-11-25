@@ -64,11 +64,17 @@
 import { app } from "/scripts/app.js";
 // 界面文案：本包规范是 zhPair(英文, 中文)，按 ComfyUI 当前语言取值。
 // 源插件只做了中文，搬进来后英文界面会看到中文按钮 —— scan_frontend_zh.py 会拦。
-import { zhPair } from "../shared/zh.mjs?v=202611210910";
+import { zhPair } from "../shared/zh.mjs?v=202611251300";
+import { showToast } from "../shared/index.mjs?v=202611251300";
 
 // ================== 可调参数（两个模块共用） ==================
-const LINE_COLOR = "#fb923c"; // 参考线/强调色（橙色），两个模块同一套视觉
-const BRAND = LINE_COLOR;     // 排列模块的别名
+// 参考线的颜色不再是写死的橙色：appearance 扩展把当前该用的颜色写进
+// --qg-guide（「QG custom guide color」开着 = 自定义色推导，关着 = 当前配色
+// 方案的强调色），这里读它。本常量只剩两个用途 —— appearance 没加载时的
+// 回退色，以及排列面板图标在没有变量时的兜底。
+const LINE_COLOR = "#fb923c";
+const GUIDE_VAR = "--qg-guide";
+const BRAND = `var(--qg-accent, ${LINE_COLOR})`; // 排列面板图标跟随面板强调色
 const SNAP_PX = 8;            // 吸附触发距离（屏幕像素，随缩放自适应）
 const OVERHANG_PX = 6;        // 参考线两端超出对象的延长量（屏幕像素）
 const MARK_PX = 2.5;          // 共线交点圆点半径（屏幕像素）
@@ -88,8 +94,13 @@ const LEGACY_SETTING_IDS = [
   ["QYH.Align.ToolboxButton", SETTING_TOOLBOX],
 ];
 const ICON_CLASS = "qyh-align-tb-icon";
-// 其他扩展的吸附开启时本扩展让位，避免两套吸附打架
-const OTHER_SNAPPERS = ["AusBoss.Canvas.SnapLines", "Pixaroma.Align.Enabled"];
+// 其他扩展的吸附开启时本扩展让位，避免两套吸附打架。
+// `setting` 是对方开吸附的设置键，`ns` 是对方扩展名的命名空间前缀 ——
+// 两个条件都成立（装且开着）才让位，见 extensionLoaded 的注释。
+const OTHER_SNAPPERS = [
+  { setting: "AusBoss.Canvas.SnapLines", ns: "ausboss" },
+  { setting: "Pixaroma.Align.Enabled", ns: "pixaroma" },
+];
 // ==============================================================
 
 // ---------- 共享基础工具 ----------
@@ -245,8 +256,20 @@ function settingOn(id) {
   }
 }
 
+// 那个插件真的在跑吗？只看设置值的做法有个坑：插件被禁用/卸载后，它留在
+// 设置库里的值还是 true（AusBoss 本机就是这样 —— 目录改名成 .disabled 之后
+// AusBoss.Canvas.SnapLines 还是 True），于是 QG 参考线永远让位、怎么拖都不画
+// （2026-11-22 实测踩到）。所以「装且开着」才算别人接手了拖动。
+function extensionLoaded(ns) {
+  const list = app?.extensions;
+  if (!Array.isArray(list)) return true; // 拿不到扩展列表就按「装着」处理，保持旧行为
+  return list.some(
+    (ext) => typeof ext?.name === "string" && ext.name.toLowerCase().startsWith(ns),
+  );
+}
+
 function otherSnapperOn() {
-  return OTHER_SNAPPERS.some(settingOn);
+  return OTHER_SNAPPERS.some(({ setting, ns }) => settingOn(setting) && extensionLoaded(ns));
 }
 
 function overlapsRect(a, b) {
@@ -674,6 +697,36 @@ function onPointerUp() {
 
 // ---------- 绘制（经典外观画前景层；Vue 模式画 overlay，位于节点上层） ----------
 
+// 参考线该用的颜色。appearance 扩展负责算（它知道「自定义参考线色」开关与
+// 当前配色方案），结果写在根元素的 --qg-guide 上；这里只读。
+// 缓存一份：拖动时每帧 getComputedStyle 会逼浏览器重新解析样式，60fps 下
+// 能看出卡顿。缓存靠 qg-accent-changed 事件失效。
+let guideColorCache = null;
+
+function guideColor() {
+  if (guideColorCache) return guideColorCache;
+  let value = "";
+  try {
+    value = getComputedStyle(document.documentElement).getPropertyValue(GUIDE_VAR).trim();
+  } catch (_) {
+    /* 取不到就用回退色 */
+  }
+  guideColorCache = /^#[0-9a-f]{6}$/i.test(value) ? value : LINE_COLOR;
+  return guideColorCache;
+}
+
+// 强调色或参考线色变了（切配色方案、改自定义色、拨那两个开关）：
+// 丢掉缓存，并让画布重画一次 —— 参考线只在拖动时出现，重画是为了
+// 正好停在拖动中时也能立刻换色。
+function installAccentSync() {
+  window.addEventListener("qg-accent-changed", () => {
+    guideColorCache = null;
+    app.graph?.setDirtyCanvas?.(true, true);
+  });
+}
+
+installAccentSync();
+
 function drawGuides(canvas, ctx) {
   if (!guides.length || !canvas?.ds) return;
   let pen = ctx;
@@ -689,8 +742,9 @@ function drawGuides(canvas, ctx) {
   }
   const unit = 1 / (canvas.ds.scale || 1);
   const overhang = OVERHANG_PX * unit;
-  pen.strokeStyle = LINE_COLOR;
-  pen.fillStyle = LINE_COLOR;
+  const lineColor = guideColor();
+  pen.strokeStyle = lineColor;
+  pen.fillStyle = lineColor;
   pen.lineWidth = unit;
   for (const g of guides) {
     pen.setLineDash(g.middle ? [4 * unit, 3 * unit] : []);   // 中线用虚线区分
@@ -883,7 +937,7 @@ function runTool(tool) {
   if (!canvas?.graph) return;
   const units = selectionUnits();
   if (!enoughFor(tool.kind, units.length)) {
-    app.extensionManager?.toast?.add?.({
+    showToast({
       severity: "info",
       summary: zhPair("QG Align", "QG 对齐"),
       detail: tool.kind === "spacing"
@@ -1017,7 +1071,9 @@ function iconSvg(how, size = 18) {
   const heads = p.heads
     .map((h) => `<path d="${headPath(h)}" fill="none"/>`)
     .join("");
-  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${rects}<g stroke="${BRAND}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${lines}${heads}</g></svg>`;
+  // var() 只能走 style 属性：SVG 的 presentation attribute（stroke="…"）里
+  // 写 var() 在 Chromium 下不生效，会整条线变黑。
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${rects}<g style="stroke:${BRAND}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${lines}${heads}</g></svg>`;
 }
 
 // 工具栏按钮是 <i class="qyh-align-tb-icon">，图标用 CSS mask 画：
@@ -1256,11 +1312,13 @@ app.registerExtension({
       category: ["QG-tools", "Canvas", "Snap into line"],
       name: zhPair("Snap into line while dragging (QG)", "拖动时对齐参考线（QG）"),
       tooltip: zhPair(
-        "Show orange alignment guides while dragging or resizing nodes and groups, " +
-          "and snap to them (centre lines are dashed). Hold Shift to disable it for one " +
-          "drag; Alt-dragged copies take part as well.",
-        "拖动或缩放节点/分组时显示橙色对齐参考线并自动吸附（中线为虚线）；" +
-          "按住 Shift 拖动可临时关闭；Alt 拖动复制出的副本同样参与吸附。",
+        "Show alignment guides while dragging or resizing nodes and groups, and " +
+          "snap to them (centre lines are dashed). The line color follows the QG " +
+          "custom guide color setting. Hold Shift to disable it for one drag; " +
+          "Alt-dragged copies take part as well.",
+        "拖动或缩放节点/分组时显示对齐参考线并自动吸附（中线为虚线）；" +
+          "线色跟随外观设置里的参考线颜色项；按住 Shift 拖动可临时关闭；" +
+          "Alt 拖动复制出的副本同样参与吸附。",
       ),
       type: "boolean",
       defaultValue: true,
@@ -1343,7 +1401,7 @@ app.registerExtension({
       name: zhPair("Show QG arrange button in the selection toolbar", "选区工具栏显示 QG 排列按钮"),
       type: "boolean",
       defaultValue: true,
-      category: ["QG-tools", "Canvas", "排列按钮"],
+      category: ["QG-tools", "Canvas", "Arrange"],
       tooltip: zhPair(
         "With two or more nodes or groups selected, an arrange button appears in the " +
           "toolbar above the selection (align / match size / distribute). Turning it off " +

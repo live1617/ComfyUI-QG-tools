@@ -17,7 +17,7 @@ import os
 import sys
 import traceback
 
-__version__ = "0.9.21"
+__version__ = "0.9.22"
 
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 _NODES_DIR = os.path.join(_PKG_DIR, "nodes")
@@ -133,10 +133,24 @@ def _pyproject_version():
     return None
 
 
+def _public_nodes():
+    """对外披露的节点：排除 ``QG-tools/Test`` 下的试验副本。
+
+    测试分类只放正在改造、还没定型的节点（目前一个都没有 —— 2026-11-23 那两个
+    副本转正后已删除）。保留这条过滤是为了以后再放新副本时，它们不会自动进
+    README / pyproject 的节点数、横幅与分类数，免得出现「文档说 76、装了 77」
+    两套数字。`tools/_check_declarations.py` 用同一口径。
+    """
+    return {
+        k: v for k, v in NODE_CLASS_MAPPINGS.items()
+        if not str(getattr(v, "CATEGORY", "")).endswith("/Test")
+    }
+
+
 def _count_categories():
-    """子分类数量（CATEGORY 形如 QG-tools/遮罩）。"""
+    """子分类数量（CATEGORY 形如 QG-tools/Mask），只数对外披露的节点。"""
     subs = set()
-    for cls in NODE_CLASS_MAPPINGS.values():
+    for cls in _public_nodes().values():
         cat = getattr(cls, "CATEGORY", "") or ""
         subs.add(cat.split("/", 1)[1] if "/" in cat else cat)
     subs.discard("")
@@ -149,7 +163,7 @@ def _print_banner():
     ⚠️ 横幅内只用 ASCII：Windows 控制台编码可能是 cp1252，
     import 阶段抛 UnicodeEncodeError 会让整个插件静默加载失败。
     """
-    nodes = len(NODE_CLASS_MAPPINGS)
+    nodes = len(_public_nodes())
     cats = _count_categories()
     head = "  %s v%s  |  %d nodes loaded" % (_paint(_TEAL, "QG-tools"), __version__, nodes)
     if cats:

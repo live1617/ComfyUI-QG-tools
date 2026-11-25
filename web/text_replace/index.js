@@ -20,7 +20,7 @@
  */
 
 import { app } from "/scripts/app.js";
-import { chainCallback, zhPair } from "../shared/index.mjs?v=202611210910";
+import { chainCallback, showToast, zhPair } from "../shared/index.mjs?v=202611251300";
 
 const NODE_CLASS = "QG_TextReplace";
 const TEXT_SOURCE = "PrimitiveStringMultiline"; // comfy_extras 内置的多行文本
@@ -32,7 +32,15 @@ app.registerExtension({
     if (nodeData?.name !== NODE_CLASS) return;
 
     const modeSpec = nodeData?.input?.required?.mode ?? nodeData?.input?.optional?.mode;
-    const modeOptions = Array.isArray(modeSpec?.[0]) ? modeSpec[0] : ["字面", "正则"];
+    // 🔴 2026-11-24：V3 迁移后 object_info 里 mode 是 ["COMBO", {options, default}]
+    // 双形态，modeSpec[0] 是字符串 "COMBO" 不是数组。旧代码只认 V1 的 [options, dict]，
+    // 认不出就回退到中文 ["字面","正则"]，而实际存的值是英文 "literal" —— 于是
+    // !modeOptions.includes(saved[0]) 永远为真，每次加载都误判成老存档、每次都补一个
+    // 多行文本节点（用户删掉保存、刷新又回来）。两种形态都认，兜底也用后端英文真值。
+    const modeOptions =
+      Array.isArray(modeSpec?.[0]) ? modeSpec[0]                     // V1: [options, dict]
+        : Array.isArray(modeSpec?.[1]?.options) ? modeSpec[1].options  // V3: ["COMBO", {options}]
+          : ["literal", "regex"];
     const defaultMode = modeSpec?.[1]?.default ?? modeOptions[0];
 
     chainCallback(nodeType.prototype, "onConfigure", function (info) {
@@ -109,7 +117,7 @@ function rescueLegacyText(node, text) {
   node.setDirtyCanvas?.(true, true);
   app.graph.setDirtyCanvas?.(true, true);
 
-  app.extensionManager?.toast?.add?.({
+  showToast({
     severity: "warn",
     summary: zhPair(
       "Text Replace: the old node's text is connected again",

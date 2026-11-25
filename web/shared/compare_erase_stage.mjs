@@ -8,13 +8,13 @@
 // 移植自 ComfyUI-AusBoss（MIT，js/shared/compare_erase_stage.mjs）。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=202611210910";
-import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=202611210910";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=202611210910";
-import { makeScrubInput } from "./scrub_input.mjs?v=202611210910";
-import { makeSlideSwitch } from "./slide_switch.mjs?v=202611210910";
-import { zhPair } from "./zh.mjs?v=202611210910";
-import { extendStroke } from "./compare_erase.mjs?v=202611210910";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=202611251300";
+import { brushAdjusts, brushFlips, brushKey, brushWords, toolKey } from "./brush.mjs?v=202611251300";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=202611251300";
+import { makeScrubInput } from "./scrub_input.mjs?v=202611251300";
+import { makeSlideSwitch } from "./slide_switch.mjs?v=202611251300";
+import { zhPair } from "./zh.mjs?v=202611251300";
+import { extendStroke } from "./compare_erase.mjs?v=202611251300";
 import {
   CHECKER,
   ERASE_OUTSIDE,
@@ -41,7 +41,7 @@ import {
   steppedSoft,
   strokeFits,
   typedName,
-} from "./compare_erase.mjs?v=202611210910";
+} from "./compare_erase.mjs?v=202611251300";
 
 // 图上面那行工具、图下面那行保存，各有多高。节点窄的时候这两行会折成两行，
 // 而不是把节点撑宽——地方从图上出。

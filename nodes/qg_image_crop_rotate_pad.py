@@ -165,7 +165,7 @@ class QGImageCropRotatePad(io.ComfyNode):
         return True
 
     @classmethod
-    def IS_CHANGED(cls, image, **values):
+    def fingerprint_inputs(cls, image, **values):
         try:
             path = resolve_input_path(image)
         except Exception:

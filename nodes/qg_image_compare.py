@@ -245,10 +245,11 @@ class QGImageCompare(io.ComfyNode):
         "对比", "对比图", "图像对比", "橡皮擦", "擦除", "qg",
     ]
 
-    def __init__(self):
-        # 按实例区分的 temp 前缀：一个工作流里两个对比节点不会互相覆盖预览。
-        self._prefix = temp_prefix()
-
+    # 🔴 2026-11-24 全量体检发现并修复：V3 执行器会把节点类 shallow_clone +
+    # lock_class（comfy_api/internal/__init__.py 的 lock_class），实例属性赋值直接
+    # 抛 `Cannot set attribute ... on immutable instance`。原来 __init__ 设
+    # self._prefix、execute 里 inst = cls()，导致这个节点**一执行就崩**。
+    # 改成执行期局部变量：前缀本来就只需在本次 execute 内区分两个预览。
     @classmethod
     def define_schema(cls):
         # is_output_node=True 承担 V1 OUTPUT_NODE；filename 是 forceInput 槽。
@@ -273,12 +274,12 @@ class QGImageCompare(io.ComfyNode):
 
     @classmethod
     def execute(cls, image_a, image_b, filename=None):
-        # 原 compare 实例方法体逐字不动（用 self._prefix / self._preview_file），
-        # V3 execute 是 classmethod，这里实例化取 per-instance 前缀。
-        inst = cls()
+        # V3 execute 是 classmethod：前缀用局部变量，_preview_file 是 staticmethod。
+        # 两个预览一次执行内共享同一个前缀，工作流里多个对比节点也互不覆盖。
+        prefix = temp_prefix()
         # 透明部分要留着：面板在它们底下铺棋盘格，橡皮擦也得能把它们混回来。
-        preview_a = save_temp_preview(image_a, inst._prefix, keep_alpha=True)
-        preview_b = save_temp_preview(image_b, inst._prefix, keep_alpha=True)
+        preview_a = save_temp_preview(image_a, prefix, keep_alpha=True)
+        preview_b = save_temp_preview(image_b, prefix, keep_alpha=True)
         wired = tidy_save_name(filename)
         # V1 {"ui":..., "result":...} → V3 io.NodeOutput(*result, ui=...)。
         return io.NodeOutput(
@@ -287,7 +288,7 @@ class QGImageCompare(io.ComfyNode):
                 "a_images": [preview_a],
                 "b_images": [preview_b],
                 # 橡皮擦保存时回传的键，所以它从不指名要读哪个文件。
-                "pair": [remember_pair(inst._preview_file(preview_a), inst._preview_file(preview_b), wired)],
+                "pair": [remember_pair(cls._preview_file(preview_a), cls._preview_file(preview_b), wired)],
                 # 连线时文件会叫什么名字。
                 "save_name": [wired],
             },

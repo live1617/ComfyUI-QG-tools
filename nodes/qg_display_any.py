@@ -77,7 +77,7 @@ from server import PromptServer
 
 from comfy_api.latest import io
 
-from ._qg_any_type import ANY, WILDCARD_NAMES
+from ._qg_any_type import WILDCARD_NAMES
 
 NODE_TYPE = "QG_DisplayAny"
 
@@ -358,6 +358,13 @@ class QGDisplayAny(io.ComfyNode):
 
     @classmethod
     def execute(cls, Any=None, prompt=None, unique_id=None, extra_pnginfo=None):
+        # 🔴 V3 的 hidden 不进 execute 形参：核心把它挂到 cls.hidden（HiddenHolder）。
+        # 旧形参永远收到 None，仅保留给按 V1 风格手工调用的兼容路径兜底。
+        hidden = getattr(cls, "hidden", None)
+        if hidden is not None:
+            prompt = getattr(hidden, "prompt", None)
+            unique_id = getattr(hidden, "unique_id", None)
+            extra_pnginfo = getattr(hidden, "extra_pnginfo", None)
         wired = False
         if prompt and unique_id in prompt:
             wired = is_link(prompt[unique_id].get("inputs", {}).get("Any"))

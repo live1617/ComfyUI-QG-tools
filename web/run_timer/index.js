@@ -11,12 +11,13 @@
 //        web/run_timer/ 子目录，仍要解析到站点根 /qg/timer/font）；
 //     4) 控制台日志前缀 [QG-Timer] -> [QG-tools]；
 //     5) 文件名 web/timer.js -> web/run_timer/index.js（ComfyUI 自动加载）。
-//   保持不变：DEFAULT_SIZE [510,140]、MIN_WIDTH 510、主题中文名、右键菜单、
+//   保持不变：主题中文名、右键菜单、
 //   VUE_LAYER_ID "qg-timer-vue-layer"、window.__QG_VUE_LAYER__ 调试钩子、
 //   status 广播 + /queue 轮询兜底、/prompt 之外的所有事件判定。
+//   2026-11-23 按用户要求把 DEFAULT_SIZE 改 270x90、MIN_WIDTH 270（原 510x140）。
 //
-//   ⚠️ 面板宽度 510 必须同步写进 web/shared/node_width.mjs 的 SIZES，
-//   否则 pinNodeWidth 会在 onNodeCreated 把节点钉成旧版的 176。
+//   ⚠️ 面板尺寸必须同步写进 web/shared/node_width.mjs 的 SIZES（own 节点），
+//   否则 pinned 宽度与节点自己的常量不一致。
 // ============================================================
 
 /**
@@ -52,9 +53,10 @@ const noTitleMode = () => globalThis.LiteGraph?.NO_TITLE ?? 1;
 // 这里如实写本包路径 —— 徽章会显示成自定义节点，这是应该的。
 const MODULE_NAME = "custom_nodes.ComfyUI-QG-tools";
 
-/* 面板尺寸：按最长读数 "000.0s" 预留宽度，避免位数增加时被压缩或抖动 */
-const DEFAULT_SIZE = [510, 140];
-const MIN_WIDTH = 510; // 老工作流里的窄节点在加载时补到这个宽度
+/* 面板尺寸：2026-11-23 按用户要求改 270x90（原 510x140）。
+   绘制里按可用宽度 avail=w-72 自适应缩字号，窄面板也能放下 "000.0s"。 */
+const DEFAULT_SIZE = [270, 90];
+const MIN_WIDTH = 270; // 老工作流里的窄节点在加载时补到这个宽度
 
 const THEMES = {
     "暗夜": {

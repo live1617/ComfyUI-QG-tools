@@ -73,6 +73,35 @@ const FOLDED_INPUTS = {
   // strength_N 是第二组「只差行号」的外控槽（每行模型强度），与 on_N 语义
   // 不同，不能并进上面那条折叠文案里，否则「开关」的说明会说错强度。
   // 故本节点的折叠入口改成数组，两组各折各的；其它节点仍是单个对象。
+  // 11-25 从 Multipack 迁来的 ImageBatchBuilder 有 image_01…image_24 共 24 个
+  // 图像输入，24 条说明一字不差 —— 帮助卡会刷出 24 行，折成一条。
+  QG_ImageBatchBuilder: {
+    match: /^image_\d+$/,
+    term: "第 1–24 张图像",
+    termEn: "images 1–24",
+    detail:
+      "最多接 24 张图合成一个批次，按编号顺序拼，空槽自动跳过；" +
+      "给最后一个槽接上图会自动多出一个空槽。每槽可接单张，也可接一个 batch。",
+    detailEn:
+      "Up to 24 images are combined into one batch in slot order; empty slots " +
+      "are skipped. Wiring the last slot grows a new empty one. Each slot takes " +
+      "a single image or a batch.",
+  },
+  // QG_LoraLoader 也有 strength_1…24 共 24 个「只差行号」的外控槽（每行模型
+  // 强度），语义与上面的 SwitchStack strength 完全一致。后加槽时漏登记这张表，
+  // 帮助卡就刷出 24 条同款说明（2026-11-23 全表防漏检查实测 29 条）。
+  QG_LoraLoader: {
+    match: /^strength_\d+$/,
+    term: "行 1–24 强度",
+    termEn: "row 1–24 strengths",
+    detail:
+      "每一行的模型强度也能从图上接线控制：接上线由滑条等数值节点决定，不接线就沿用行自己的强度。" +
+      "只改模型强度，不改 CLIP 强度；只有实际存在的行才生效。",
+    detailEn:
+      "One model-strength input per row: a connected numeric link overrides the " +
+      "row's own strength, otherwise the row keeps it. Only the model strength " +
+      "changes, not the CLIP strength; only rows that actually exist are active.",
+  },
   QG_LoraSwitchStack: [
     {
       match: /^on_\d+$/,

@@ -30,21 +30,21 @@
 // Pure decisions (which rows show, how tall the card is, how a number
 // scrubs, where a socket sits) live in widget_card_math.mjs for node:test;
 // this file is the DOM.
-import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, zhPair } from "./index.mjs?v=202611210910";
-import { zh } from "./zh.mjs?v=202611210910";
-import { keepKeyInField } from "./canvas_passthrough.mjs?v=202611210910";
-import { createMediaPicker } from "./media_picker.mjs?v=202611210910";
-import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=202611210910";
-import { makeScrubInput, roundHalfAway } from "./scrub_input.mjs?v=202611210910";
-import { hideWidget } from "./widget_visibility.mjs?v=202611210910";
-import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "./vue_panel_fit.mjs?v=202611210910";
+import { BRAND, chainCallback, keepDomWidgetWidthAuto, notifyQgChange, zhPair } from "./index.mjs?v=202611251300";
+import { zh } from "./zh.mjs?v=202611251300";
+import { keepKeyInField } from "./canvas_passthrough.mjs?v=202611251300";
+import { createMediaPicker } from "./media_picker.mjs?v=202611251300";
+import { ensureNodeMinHeight, fillNodeHeight, holdNodeMinWidth, nodeHeightAfterCardChange, pinVuePanelHeight } from "./panel_layout.mjs?v=202611251300";
+import { makeScrubInput, roundHalfAway } from "./scrub_input.mjs?v=202611251300";
+import { hideWidget } from "./widget_visibility.mjs?v=202611251300";
+import { fitNodeToPanelHeight, pinPanelToNodeHeight, unwatchVueShell, watchVueShell } from "./vue_panel_fit.mjs?v=202611251300";
 import {
   CARD_PADDING, GROUP_HEIGHT, ROW_GAP, ROW_HEIGHT, SECTION_HEIGHT, SLOT_OFFSET, UNIT_SLOT_WIDTH,
   cardHeight, commitWidgetValue, comboValues, rowHeight, rowKind, rowMuted, rowTops, scrubSteps, socketWidgetY, visibleRows,
   widgetTooltip,
-} from "./widget_card_math.mjs?v=202611210910";
+} from "./widget_card_math.mjs?v=202611251300";
 
-export * from "./widget_card_math.mjs?v=202611210910";
+export * from "./widget_card_math.mjs?v=202611251300";
 
 const CSS_ID = "qgtools-widget-card-css";
 export const CARD_WIDGET = "qg_widget_card";
@@ -83,8 +83,8 @@ export function ensureCardCss() {
 .qgtools-card.has-corner .qgtools-card-row.slider{padding-right:6px}
 .qgtools-card-corner{position:absolute;top:${CARD_PADDING}px;right:8px;height:${ROW_HEIGHT}px;display:flex;align-items:center;justify-content:flex-end;gap:5px;pointer-events:auto}
 .qgtools-card-gear{width:24px;height:24px;flex:none;display:grid;place-items:center;padding:0;border:1px solid #2a3437;border-radius:6px;background:#0f1516;color:#8ba3a1;cursor:pointer}
-.qgtools-card-gear:hover{border-color:${BRAND};color:${BRAND}}
-.qgtools-card-chip{height:20px;flex:none;padding:0 8px;border:1px solid rgba(0,180,170,.5);border-radius:10px;background:rgba(0,180,170,.14);color:${BRAND};font:600 10px/1 ${FONT};letter-spacing:.02em;white-space:nowrap;cursor:pointer}
+.qgtools-card-gear:hover{border-color:var(--qg-accent, ${BRAND});color:var(--qg-accent, ${BRAND})}
+.qgtools-card-chip{height:20px;flex:none;padding:0 8px;border:1px solid var(--qg-accent-soft, rgba(0,180,170,.5));border-radius:10px;background:var(--qg-accent-fade, rgba(0,180,170,.14));color:var(--qg-accent, ${BRAND});font:600 10px/1 ${FONT};letter-spacing:.02em;white-space:nowrap;cursor:pointer}
 .qgtools-card-chip:hover{background:rgba(0,180,170,.24);color:#fff}
 .qgtools-card-chip[hidden]{display:none}
 .qgtools-card-row.area{display:block}
@@ -106,21 +106,21 @@ export function ensureCardCss() {
 .qgtools-card-seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;width:100%;height:${ROW_HEIGHT}px;padding:2px;box-sizing:border-box;border:1px solid #2a3437;border-radius:6px;background:#0f1516}
 .qgtools-card-seg button{min-width:0;border:none;border-radius:4px;padding:0 2px;background:transparent;color:#8ba3a1;font:600 10.5px/1 ${FONT};cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qgtools-card-seg button:hover{color:#fff}
-.qgtools-card-seg button.on{background:${BRAND};color:#04201d}
+.qgtools-card-seg button.on{background:var(--qg-accent, ${BRAND});color:var(--qg-on-accent, #04201d)}
 .qgtools-card-select{width:100%;height:${ROW_HEIGHT}px;padding:0 24px 0 8px;box-sizing:border-box;border:1px solid #2a3437;border-radius:6px;background:#0b0f10 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238ba3a1' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 8px center;color:#d8ecea;font:600 11.5px ${FONT};appearance:none;-webkit-appearance:none;cursor:pointer;overflow:hidden;text-overflow:ellipsis}
-.qgtools-card-select:hover{border-color:${BRAND}}
-.qgtools-card-select:focus-visible{outline:2px solid ${BRAND};outline-offset:1px}
+.qgtools-card-select:hover{border-color:var(--qg-accent, ${BRAND})}
+.qgtools-card-select:focus-visible{outline:2px solid var(--qg-accent, ${BRAND});outline-offset:1px}
 .qgtools-card-text{width:100%;height:${ROW_HEIGHT}px;padding:0 8px;box-sizing:border-box;border:1px solid #2a3437;border-radius:6px;background:#0b0f10;color:#d8ecea;font:12px ${FONT};min-width:0}
-.qgtools-card-text:focus{outline:none;border-color:${BRAND}}
+.qgtools-card-text:focus{outline:none;border-color:var(--qg-accent, ${BRAND})}
 .qgtools-card-text::placeholder{color:#4f6462}
 .qgtools-card-area{display:block;width:100%;height:100%;padding:5px 8px;box-sizing:border-box;border:1px solid #2a3437;border-radius:6px;background:#0b0f10;color:#d8ecea;font:12px/1.4 ${FONT};resize:none;overflow:auto;min-width:0}
-.qgtools-card-area:focus{outline:none;border-color:${BRAND}}
+.qgtools-card-area:focus{outline:none;border-color:var(--qg-accent, ${BRAND})}
 .qgtools-card-area::placeholder{color:#4f6462}
 .qgtools-card-swatch{flex:none;width:${ROW_HEIGHT}px;height:${ROW_HEIGHT}px;padding:0;border:1px solid #2a3437;border-radius:6px;background:#0b0f10;cursor:pointer}
 .qgtools-card-swatch::-webkit-color-swatch-wrapper{padding:3px}
 .qgtools-card-swatch::-webkit-color-swatch{border:none;border-radius:3px}
 .qgtools-card-btn{flex:none;height:${ROW_HEIGHT}px;padding:0 10px;border:1px solid #2a3437;border-radius:6px;background:#16201f;color:#d8ecea;font:600 11px/1 ${FONT};cursor:pointer;white-space:nowrap}
-.qgtools-card-btn:hover{border-color:${BRAND};color:#fff}
+.qgtools-card-btn:hover{border-color:var(--qg-accent, ${BRAND});color:#fff}
 .qgtools-card-row.slider{grid-template-columns:1fr}
 .qgtools-slider{flex:1 1 0;display:flex;align-items:center;gap:6px;min-width:0;width:100%;height:100%}
 .qgtools-slider.disabled{opacity:.35;pointer-events:none}
@@ -129,11 +129,11 @@ export function ensureCardCss() {
    inside a 22px row overflows by 1px and breaks the card's height. */
 .qgtools-slider input{-webkit-appearance:none;appearance:none;flex:1 1 0;min-width:0;height:100%;margin:0;background:transparent;cursor:pointer}
 .qgtools-slider input:focus-visible{outline:none}
-.qgtools-slider input::-webkit-slider-runnable-track{height:12px;border-radius:6px;background:linear-gradient(90deg,${BRAND} var(--qgtools-slider-fill,0%),#2e3d3c var(--qgtools-slider-fill,0%))}
+.qgtools-slider input::-webkit-slider-runnable-track{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--qg-accent, ${BRAND}) var(--qgtools-slider-fill,0%),#2e3d3c var(--qgtools-slider-fill,0%))}
 .qgtools-slider input::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;margin-top:-4px;border:1px solid #0b0f10;border-radius:50%;background:#d8ecea;box-shadow:0 0 0 1px rgba(0,180,170,.45)}
 .qgtools-slider input:hover::-webkit-slider-thumb{background:#fff}
 .qgtools-slider input::-moz-range-track{height:12px;border-radius:6px;background:#2e3d3c}
-.qgtools-slider input::-moz-range-progress{height:12px;border-radius:6px;background:${BRAND}}
+.qgtools-slider input::-moz-range-progress{height:12px;border-radius:6px;background:var(--qg-accent, ${BRAND})}
 .qgtools-slider input::-moz-range-thumb{width:20px;height:20px;border:1px solid #0b0f10;border-radius:50%;background:#d8ecea}
 /* The readout is as wide as the range's widest number and no more (the caller
    passes readoutWidth; 22px is the floor). Width follows the range, never the

@@ -72,7 +72,7 @@ def _merge_slots(rows_data: Any, wired: dict[str, Any]) -> str:
             strength_key = "strength_%d" % position
             changes: dict[str, Any] = {}
             # 🔴 用 truthy 而不是 bool：bool("false") is True，会把本该关掉的
-            # 行静默打开。另外 IS_CHANGED 里核心对连线输入只给 None（拿不到
+            # 行静默打开。另外 fingerprint_inputs 里核心对连线输入只给 None（拿不到
             # 上游值），None 不该把这一行的存档开关强行改写成 False —— 那种
             # 情况下保留行自身的 enabled 更接近真实执行结果。
             if on_key in wired and wired[on_key] is not None:
@@ -188,15 +188,15 @@ class QGLoraSwitchStack(io.ComfyNode):
         return True
 
     @classmethod
-    def IS_CHANGED(cls, rows_data, trigger_separator=", ", clip=None, **on_slots):
-        # Defining IS_CHANGED makes the core ignore every other input when
+    def fingerprint_inputs(cls, rows_data, trigger_separator=", ", clip=None, **on_slots):
+        # Defining fingerprint_inputs makes the core ignore every other input when
         # deciding on the cache, so everything that changes the outputs is
         # folded in here: the merged stack (which already carries the wired
         # switches), the separator, and whether a CLIP is wired at all - a row
         # with model strength 0 and a non-zero CLIP strength only counts as
         # loaded when CLIP is connected.
         #
-        # 🔴 实测限制（ComfyUI 1.58.5 execution.py）：调 IS_CHANGED 时核心对
+        # 🔴 实测限制（ComfyUI 1.58.5 execution.py）：调 fingerprint_inputs 时核心对
         # **连线**输入只传 None，拿不到上游的布尔 / CLIP 值。所以 has_clip 与
         # on_slots 主要覆盖常量输入；连线变化由核心缓存键里的拓扑与祖先签名兜住。
         # 别在这里假装有上游真值 —— _merge_slots 已让 None 保留行自身开关，

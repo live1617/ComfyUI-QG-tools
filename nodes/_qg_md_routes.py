@@ -69,6 +69,10 @@ def register_md_routes() -> None:
             data = await request.json()
         except Exception:
             data = {}
+        # 🔴 合法 JSON 也可能是非对象（[] / "abc" / null），那时 .get 会抛
+        # AttributeError —— 这一行在 try 之外，aiohttp 直接回 500 带 traceback。
+        if not isinstance(data, dict):
+            data = {}
         key = (data.get("custom_path") or "").strip() or (data.get("path") or "").strip()
         # allow_absolute=False：这个接口收的是请求体里的字符串。没有理由让它
         # 成为「读这台机器上任意文件」的入口（填 C:/Windows/win.ini 或

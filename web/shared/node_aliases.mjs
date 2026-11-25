@@ -28,9 +28,6 @@ export const NODE_ALIASES = {
     QG_MDReader: [
         "md reader", "mdreader", "markdown", "markdown reader", "read markdown", "document reader", "load markdown", "document", "doc", "加载文档", "文档阅读", "读文档", "Markdown阅读",
     ],
-    QG_GoogleTranslateText: [
-        "google translate", "googletranslate", "translate", "translation", "translate text", "prompt translate", "Google翻译", "翻译", "翻译文本", "谷歌翻译",
-    ],
     QG_TextEditOutput: [
         "text", "text box", "textbox", "text edit", "prompt box", "文本", "文本框", "编辑文本", "输入框",
     ],
@@ -300,6 +297,34 @@ export const NODE_ALIASES = {
     ],
     QG_ForLoopEnd: [
         "for loop end", "forloop", "循环结束", "for循环", "qg",
+    ],
+    // ---- 2026-11-25 从 Multipack v2.22.13 搬入的 9 个节点 ----
+    QG_ColorPicker: [
+        "color picker", "colour picker", "swatch", "color", "colour", "hex", "取色器", "取色", "颜色", "色板", "qg",
+    ],
+    QG_DualColorPicker: [
+        "dual color picker", "dual colour", "two colors", "color pair", "gradient colors", "双色取色器", "双色", "主色辅色", "两个颜色", "qg",
+    ],
+    QG_ColorConvert: [
+        "color convert", "colour convert", "color converter", "hex to rgb", "rgb to hsl", "颜色转换", "色值转换", "转颜色", "hex转rgb", "qg",
+    ],
+    QG_CustomColor: [
+        "custom color", "custom colour", "solid color", "gradient background", "color canvas", "自定义颜色", "纯色", "渐变", "底图", "qg",
+    ],
+    QG_DominantColor: [
+        "dominant color", "dominant colour", "main color", "average color", "color extract", "主色提取", "主色", "取主色", "平均色", "qg",
+    ],
+    QG_ImageBatchBuilder: [
+        "image batch builder", "batch builder", "combine images", "gather images", "merge images", "图像批次组合", "批次组合", "多图合并", "合批", "qg",
+    ],
+    QG_ImageComposite: [
+        "image composite", "composite", "paste image", "overlay image", "place image", "图像合成", "合成", "贴图", "叠加", "qg",
+    ],
+    QG_MaskOrderFilter: [
+        "mask order filter", "mask sort", "seg filter", "segs filter", "mask order", "遮罩次序过滤", "次序过滤", "遮罩排序", "过滤遮罩", "qg",
+    ],
+    QG_ImageMaskPreview: [
+        "image mask preview", "mask preview", "mask overlay", "mask tint", "mask index", "图像与遮罩预览", "遮罩预览", "遮罩上色", "遮罩序号", "qg",
     ],
 };
 

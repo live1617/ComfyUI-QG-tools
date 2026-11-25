@@ -9,14 +9,11 @@
 // round-trip to the same frames. No DOM, no ComfyUI imports: tested in
 // tests/timeline_math.test.mjs.
 
-import { snapFrameCount } from "../load_video/trim_preview.mjs?v=202611210910";
+import { snapFrameCount } from "../load_video/trim_preview.mjs?v=202611251300";
+import { clamp } from "./math_utils.mjs?v=202611251300";
 
 // nodes/_video_load_helpers._TIME_EPSILON
 export const TRIM_EPSILON = 1e-4;
-
-function clamp(value, minimum, maximum) {
-  return Math.max(minimum, Math.min(maximum, value));
-}
 
 function finite(value, fallback = 0) {
   const number = Number(value);

@@ -453,7 +453,7 @@ class QGExportImage(io.ComfyNode):
         })
 
     @classmethod
-    def IS_CHANGED(cls, **kwargs):
+    def fingerprint_inputs(cls, **kwargs):
         # 保存节点每次都该真的写盘，不能被输入未变时的缓存跳过
         return time.time()
 

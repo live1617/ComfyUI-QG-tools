@@ -168,7 +168,12 @@ def _concat(left, right):
 
 
 def _repeat(text, count):
-    times = int(_number(count, "repetition"))
+    times_f = _number(count, "repetition")
+    # 🔴 inf / nan 的 int() 会抛裸 OverflowError（"a" * inf 走 BinOp→_repeat，
+    # 不经过 Call 分支的 OverflowError 兜底），转成人话 MathError。
+    if not math.isfinite(times_f):
+        raise MathError("repetition() got a number too large to use")
+    times = int(times_f)
     if times <= 0:
         return ""
     if len(text) * times > MAX_TEXT:
@@ -489,20 +494,19 @@ def _eval(node, scope):
         raise MathError("Unsupported operator")
 
     if isinstance(node, ast.BoolOp):
-        values = [_eval(item, scope) for item in node.values]
-        if isinstance(node.op, ast.And):
-            result = values[0]
-            for item in values[1:]:
-                if not result:
-                    return result
-                result = item
-            return result
-        result = values[0]
-        for item in values[1:]:
-            if result:
-                return result
-            result = item
-        return result
+        # 🔴 惰性求值：and/or 必须短路，否则 `b != 0 and a/b` 这类防除零写法会
+        # 因为先算完所有项而抛除零（2026-11-23 排查实测）。标准 Python 的 and/or
+        # 返回操作数本身，这里保留同一语义，只是逐项计算、该停就停。
+        last = None
+        for item in node.values:
+            last = _eval(item, scope)
+            if isinstance(node.op, ast.And):
+                if not last:
+                    return last
+            else:  # Or
+                if last:
+                    return last
+        return last
 
     if isinstance(node, ast.Compare):
         left = _eval(node.left, scope)
@@ -592,6 +596,13 @@ def _eval(node, scope):
             raise MathError("%s() got invalid arguments: %s" % (name, exc))
         except ZeroDivisionError:
             raise MathError("%s(): division by zero" % name)
+        # 🔴 inf 是白名单常量：gcd(inf,2)/factorial(inf)/round(1,inf)/repeat(s,inf)
+        # 在各自 int() 处抛裸 OverflowError，穿透 MathError 兜底变成英文 traceback
+        # 红框（2026-11-23 排查实测）。统一在这里转成人话提示，口径与其它错误一致。
+        # 不在 _number 入口拦 inf —— 那会把 `-inf` / `inf - inf` / `0 * inf` 这类
+        # 纯表达式的报错文案改掉（它们的正确归口是出口的非有限数判定）。
+        except OverflowError:
+            raise MathError("%s() got a number too large to use" % name)
 
     if isinstance(node, ast.Attribute):
         raise MathError("Attribute access is not supported (%s....); call functions by name" % getattr(node.value, "id", "?"))
@@ -620,7 +631,12 @@ def evaluate(expression, variables=None):
         raise MathError("Expression is too complex (limit %d syntax nodes)" % MAX_NODES)
     scope = dict(CONSTANTS)
     scope.update(variables or {})
-    result = _eval(tree.body, scope)
+    try:
+        result = _eval(tree.body, scope)
+    except OverflowError:
+        # 总兜底：位运算 / 位移等直写 int(_number(x)) 的地方，喂 inf 会在 int()
+        # 抛裸 OverflowError（2026-11-23 排查）。统一转成可读的 MathError。
+        raise MathError("The expression uses a number too large to evaluate")
     if isinstance(result, str):
         if len(result) > MAX_TEXT:
             raise MathError("The resulting text is too long (limit %d characters)" % MAX_TEXT)
@@ -633,4 +649,15 @@ def evaluate(expression, variables=None):
             "The result is not a finite number (%s): check for a literal inf, or an intermediate overflow"
             % ("infinity" if math.isinf(result) else "NaN")
         )
+    # int 不走上面的 float 分支：lcm(1e308, 3) 这类会算出几百位的超大整数，
+    # 节点层 float(result) 会抛 OverflowError。用「能否转成有限 float」这条
+    # 与节点层完全一致的判据兜底 —— 不能用 MAX_ABS(1e15)，那会把 factorial(170)
+    # (~7e306，合法且在 float 范围内) 也误拦。
+    if isinstance(result, int) and not isinstance(result, bool):
+        try:
+            as_float = float(result)
+        except OverflowError:
+            raise MathError("The result is too large to represent as a number")
+        if not math.isfinite(as_float):
+            raise MathError("The result is too large to represent as a number")
     return result

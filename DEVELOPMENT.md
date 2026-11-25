@@ -50,7 +50,7 @@ ComfyUI-QG-tools/
 
 ComfyUI 的节点默认宽度**不在 Python 里**，是前端按控件类型算的（带多行文本框的会被撑到
 400，普通节点 270，只有两个控件的甚至算成 159），`INPUT_TYPES` 里没法声明，grep 也 grep 不到。
-所以全部 76 个节点在一张表里登记，**改尺寸只改这一处**：
+所以全部 84 个节点在一张表里登记，**改尺寸只改这一处**：
 
 ```js
 export const SIZES = {
@@ -163,6 +163,210 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "My Node"}
 > （两种写法都认：映射块里的字面量键，以及 `{NODE_TYPE: "显示名"}` 这种常量做键）。
 > 之前写死 28，加节点忘了改就会误报「数量不符」，反而盖住真正的缺口。
 
+### 测试分类 `QG-tools/Test`（试验田）
+
+> 🔴 **2026-11-23 更新**：两个住户（`QG_WorkflowSwitchesTest` / `QG_LoraSwitchStackTest`）
+> 已**转正并删除** —— 正式「工作流开关」与「LoRA 堆」现在就是那套实现（选 LoRA 行、
+> 行归属 ⇄ 徽章、≡ 手柄排序）。这一节与后面几节关于「测试副本」的描述都成了历史，
+> 保留是为了解释当时的取舍（尤其是「为什么正式堆现在会画徽章」）。试验田现在是空的；
+> 过滤逻辑（`_public_nodes()` 按 `/Test` 结尾排除）仍然有效，以后再放副本时照旧不计入
+> 对外数字。迁移细节见本章末尾「测试节点转正（2026-11-23）」。
+
+`QG-tools/Test` 只放**正在改造、还没定型**的节点副本。2026-11-22 建，第一个住户是
+`QG_WorkflowSwitchesTest`（从「工作流开关」整份复制，用户要拿它试改造）。
+
+四条约定：
+
+1. **不计入对外数字**。README 首段表格、`pyproject.toml` 的 description、启动横幅
+   的 `N nodes loaded` / `N categories` 都只数正式节点。实现：`__init__.py` 的
+   `_public_nodes()` 与 `tools/_check_declarations.py` 的 `real_node_count()` 都按
+   `CATEGORY.endswith("/Test")` 排除。别只改一处 —— 两套数字对不上比数字本身更糟。
+2. **不进 `ORIGINS.json`**。副本不单独声明来源（与母节点同源），
+   `tools/verify_origin.py` 比对注册表时同样排除该分类；回归里的 `--check`
+   本来就走 `--no-load`，但手动全量跑也不该误报。
+3. **必须自成一套**。后端类/节点 ID/显示名、前端面板（`web/<name>_test/index.js`）、
+   决策模块（`web/shared/<name>_test.mjs`）、`SETTINGS_PROPERTY`、`CSS_ID`、
+   `WIDGET_NAME`、extension 名全部独立 —— 尤其 `SETTINGS_PROPERTY`：正式开关的
+   `qg_workflow_switches` 被 LoRA 加载器读，共用会把两边状态搅在一起。
+4. 分类名按「新开子分类」的流程登记四处中文映射 + `verify_categories.py` 的
+   `ALLOWED_SUBS`（本分类已加 `Test → 测试`）。
+
+试验满意后要么把改动并回正式节点（删掉副本），要么把副本提成正式节点并同步
+README / pyproject / ORIGINS / 表格，再删掉这一节的豁免。
+
+### 测试开关直接管 LoRA 堆的行（2026-11-22，只在测试副本里）
+
+`QG_WorkflowSwitchesTest` 多了一个入口：开关的三-dot 菜单 →「选择 LoRA 行」，
+勾几行，这个开关就管这几行，点开/关把它们切开或合上。一个开关一组行，不同
+开关可以管不同行。正式节点 `QG_WorkflowSwitches` **没有**这个入口。
+
+实现上**没有新增存档字段**：选行时按当前整栈生成两份快照（选中行 on / 选中行
+off），写进 `entry.on / entry.off` 的 `rows_data`。于是按行比较、只改有差异的
+行、行名按文件匹配（`sameFile`）、`releaseStackRow` 摘行、加载器的归属查询全部
+沿用现成逻辑 —— 新代码只有「选行界面」和「写回桥」两块。
+快照只留 `name/enabled/strength/strength_clip`：写回用的是**当前**整栈
+（`pairValue`），不需要 triggers 这类长文本，也就不会撞上 `VALUE_TEXT_MAX`。
+
+🔴 **「改为改设置 / 保存为开 / 保存为关」已整个移除**（2026-11-22 用户决定）。
+那一组（值型开关）的主要用途是绕出「只管一行」—— 手工保存两次、只让一行不同
+—— 而选行现在直接做到。删掉的是 `saveSide()` 和它的三个菜单分组；`valuePairs`
+/ `pairsOfControl` / `applyPlan` 的普通控件分支**都还在**，因为选行本身就靠
+`valuePairs` 拆行，而且**老存档里已经存下的 on/off 快照仍会被读取并生效**，
+只是界面上不能再新建或修改。
+
+🔴 **「显示为：分行 / 单个胶囊」也已移除**（2026-11-22，同一次精简）。删掉的是
+整个「单选药丸」形态 —— 前端 `buildPick()` / `chooseRow()` / `standText()` /
+`viewOf()` / `nameWidth()`，shared 里的 `cardView` / `choiceState` / `choosePlan` /
+`PILL_*` / `pillNodeWidth` / `guessWidth`，以及 `.qgtools-ws-choices`、`.qgtools-ws-pick`、
+`.qgtools-ws.pick` 那几组 CSS。
+
+**「一次一个」保留**：它是独立行为（开一个就把其他行关掉），只是以后只有「每行一个
+关|开」这一种表现。**行内那颗关|开（`qgtools-ws-pill`）跟它毫无关系，别跟着删** ——
+两处都叫 pill，是这次最容易误伤的地方。老存档里的 `show` 字段由 `CHOICES` 白名单丢弃，
+静默失效，不报错。
+
+顺带删掉了 15 条只服务于药丸的词条（`Show as`、`one pill`、`Pick one`、
+`Nothing is picked` 等），CT 主档 ui 从 158 条降到 135 条。
+
+🔴 **强度并进了选行：只在「打开」时恢复，关闭不动**。三处配合，缺一处就会
+要么恢复不了、要么把手调的值覆盖掉：
+
+- 选行时 `applyRowPick` 把每行**此刻**的 `strength` 写进 on/off 两份快照，两侧
+  相同 —— 所以 `rowSides` 不会把强度当成差异，行的开/关判定完全不受影响；
+- 点「开」且这一行确实由关变开时，`writeStackRow` 用 `presetStrength()` 从
+  `entry.on` 快照里取出那个值写回 `state.rows[i].strength`；点「关」完全不碰；
+- 已经开着的行点「开」不会重设强度（`valuePlan` 的 `sidesChanged` 跳过「已在
+  这一侧」的 pair），所以手调过的强度不会被误覆盖。
+
+为此 `findRow` / `stackRows` 从测试版 shared 导出，两边用同一条找行规则。
+`snapshotNode` 不再被测试版引用（只剩正式版用），留着没删，免得与正式版多一处
+分叉。
+
+🔴 **写回必须走堆自己的 state**。`QG_LoraSwitchStack` 的行状态在它的
+`__qgSwitchStack.rows` 里，`rows_data` 只是镜像，而且它的 `onDrawForeground`
+明确**不读** `widgets_values`。只改 widget 值既不显示、还会在下一次
+`writeRows` 时被 state 覆盖。`writeStackRow()` 直接改 `state.rows`，再照
+`writeRows` 的顺序走值 / callback / `graph.change` / 重画（含 Nodes 2.0 的
+`triggerDraw`）。堆那边改了 `writeRows`，这里要同步。
+
+🔴 **没有 `__qgSwitchStack` 的节点走回原路径**（例如 `QG_LoraLoader` 的
+`rows_data`）：`writeStackRow()` 返回 false，`applyPlan` 继续用
+`commitWidgetValue`，不要因为这条专线把别的节点弄失效。
+
+🔴 **接了线的行勾不上**。`on_N` 有连线时后端 `_merge_slots` 用线值覆盖
+`enabled`，写 `rows_data` 无效。选行界面把这种行置灰并说明原因
+（判定：`inputs` 里 `on_<行号>` 的 `link` 非空；行号是 `state.rows` 下标 +1，
+与后端按原始下标 1-based 的约定一致）。
+
+### 点行标题定位到它管的节点（2026-11-22，只在测试副本里）
+
+开关每一行的**名字可以点**：把画布视野移到这一行管的节点（普通行到它的节点外框，
+分组行到组边界，空行没反应）。底层就是行尾准星按钮用的 `frameRow()`，两个入口
+共用，没有第二套定位逻辑。
+
+🔴 **单击必须延迟 300ms 再定位**。双击名字是「进编辑 / 改名」，而双击的第一下
+也会先发一个 click。立刻定位会把卡片甩出视野 —— 用户正要在输入框里打字，卡片
+却跑没了。所以：单击先挂定时器，300ms 内来了第二下就 `return`（不重设定时器），
+`dblclick` 里 `clearTimeout` 取消。拖动不会触发 click（浏览器要求 pointerdown
+和 pointerup 在同一位置）。探针里两条断言夹住这个行为：「点标题把视野移到它管的
+节点」和「双击标题不拽走视野」。
+
+空行（`state === "empty"`）不显示手型光标，悬停提示里也不加「可以点」那句。
+
+### LoRA 堆副本与行归属徽章（2026-11-22，只在测试分类）
+
+`QG_LoraSwitchStackTest`（`nodes/qg_lora_switch_stack_test.py` +
+`web/lora_switch_stack_test/index.js`）是从 `QG_LoraSwitchStack` 整份复制的，
+**唯一实质差异是行上的归属徽章**：被 `QG_WorkflowSwitchesTest` 的某个开关管着的
+行，名字右边画一个 ⇄ 小徽章（品牌青）。正式「LoRA 堆」没有这个标记。
+
+- 归属判据来自 `web/shared/workflow_switches_test.mjs`：`normalizeSettings` →
+  `valuePairs`，行名按 `fileKey` 归一；存档键取该模块导出的 `SETTINGS_PROPERTY`，
+  **不要在堆里写死字符串**（改名时两个文件各写一遍必然漏一处）。判据与 LoRA
+  加载器读正式开关同源，别在堆里另写一套比较。
+- 刷新：`refreshOwners()` 两层缓存。**时间层** —— 各节点每 400ms 才算一次；
+  **内容层** —— 模块级 `ownerIndex`，键是各开关 `properties` 的 `JSON.stringify`
+  原文，没变就直接复用，一次 `JSON.parse` 都不做，图上多个测试堆共用一份。
+  实现是「一次扫描建 `节点id+fileKey → 标题[]` 表」，不是「每行调一次
+  `stackRowOwners`」：后者是 24 行 × 每条目 × 每侧重新解析整栈快照，同一串
+  JSON 每分钟被解析上万次。`drawRow` 每帧都会问，所以这层索引不能去掉。
+- 索引键的 `JSON.stringify` 包了 try：`properties` 前端可写，万一塞进循环引用
+  会抛，而调用栈在 `drawRow` 里，抛出去整个画布绘制就断了 —— 抛错时放弃缓存重算。
+- 徽章占用 `OWNER_BADGE_W`(17) + 4 的名字区宽度，**不改行高、不加行**，所以
+  `node_width.mjs` 里两个堆登记同一组尺寸（430/430/678/120，与 LoRA 加载器同宽）。
+- `rows_data` / `on_N` / `strength_N` 契约与原节点完全一致，**存档互通**：工作流
+  里的节点 id 决定打开后是哪一个。齿轮设置 `scope` 仍共用
+  `lora_switch_stack_gear`（两个堆同一套行高/截断/分强度设置），若将来要分开，
+  改 scope 的同时要确认 `lora_settings.mjs` 的注册表。
+- 复制带来的必然重复：`web/lora_switch_stack_test/` 与原件 200 KB 级重复，
+  改动要**两边同时改**（除标记相关代码）。试验定稿后要么并回正式节点、要么
+  删掉副本，别长期留两套。
+- `tools/scan_violations.py` 的 URL 豁免表要跟着复制加一条（行尾 Civitai 链接）。
+
+**测试开关的 `STACK_CLASSES` 必须同时含两个堆类**（`QG_LoraSwitchStack` 与
+`QG_LoraSwitchStackTest`）。2026-11-22 复制堆之后才发现：选行界面只认正式堆，
+测试堆的行根本列不出来，徽章在界面上永远出不来 —— 当时探针直接写 `properties`
+造快照，只证明了「画得出来」，没证明「点得到」。改这类枚举（`isStackNode`、
+`stackNodesOf`）时，两边都要认。凡「测试节点要跟正式节点配合」的地方都有同一个
+陷阱：枚举里只留了一个类名。
+
+### 测试版的交互层（2026-11-23）：徽章可悬停/点击、选行菜单可筛可看
+
+用户要求「1–9 全部做」后加的一层，只动测试版两个入口文件（`web/lora_switch_stack_test/index.js`、
+`web/workflow_switches_test/index.js`）+ 汉化词条。
+
+- **徽章命中矩形**：`drawRow` 画徽章时把 `{x, y, w, h, titles}` 写进
+  `state.badgeRects[index]`，坐标是**节点局部**。徽章在 canvas 里没有 DOM，
+  悬停与点击只能靠指针坐标反算（`badgeAt()`：`(clientX - rect.left) / ds.scale -
+  ds.offset - node.pos`）。经典画布与 Nodes 2.0 的独立行 canvas 共用这一套换算 ——
+  节点位置在同一份图坐标里。
+- **悬停提示**是页面级 DOM（`.qg-owner-tip-test`，`position:fixed`，
+  `pointer-events:none`，z-index 10001），不是画在 canvas 上：Nodes 2.0 每个
+  widget 的 canvas 会裁掉超出部分，画在里面会被切。文案「由「A、B」管着 · 点击定位」。
+- **点击定位**走 `frameOwningBoard()`：按徽章标题找「含这个 switch 的测试卡片」，
+  找不到退第一张，`centerOnNode` + `selectNode`。
+- 🔴 **浮层守卫**：`pointermove` / `pointerdown` 命中前先看
+  `event.target.closest(".qgtools-wst-menu, .litecontextmenu, ...")`。菜单可能正好
+  盖在徽章上，不挡的话「在菜单里点一下」会按屏幕坐标反算成徽章、把画布跳走。
+- **统一让宽**：`nameWidth` 无条件减 `OWNER_BADGE_W + 4`。以前只给有徽章的行让宽，
+  同一节点里各行名字右端参差不齐（用户截图指出）。
+- **`refreshOwners` 传参**：`drawRow(..., ownersIn)`。补画接线行的 `drawLinkedRows`
+  在循环外算一次传进去；普通行的 `widget.draw` 没有可共享的上层，仍自己问
+  （内部 400ms 节流，函数本身很轻）。**不是**把 400ms 缓存去掉。
+- **选行菜单**（`openRowPicker`）新增三样，都在同一个 DOM 菜单里：
+  - 顶部 `input.qgtools-wst-menu-filter`（`type=search`）按文件名实时过滤；
+    一个都不剩的分组连标题一起隐藏。
+  - 每行 `.st` 显示「开/关 + 强度」，勾之前就知道会切成什么。
+  - `.own` 标「⇄ 别的开关名」—— 已被其它开关管着时提示「后按的赢」。
+    归属表在打开菜单时算一次（`others = switches.filter(id !== 当前)`），逐行只查表。
+- **卡片行数** `.qgtools-wst-rowcount`：`⇄N`，紧挨节点数；`title` 里写明
+  「其中几个在正式版 LoRA 堆里」（那些行在画布上没有徽章，见上文单向可见）。
+- **菜单配色接主题**：`.qgtools-wst-menu*` 的背景/边框/文字/次要文字/输入框
+  全部改 `var(--comfy-menu-bg, 原值)` 这类带兜底的变量。以前是一整套写死的深色，
+  浅色主题下就是一块黑方块。`.own` 的文字用 `color:inherit`（浅色白底上浅青字看不见）。
+- **词条**：新增 `On` / `Off` / `Filter rows` / 一句冲突提示 / 两句「Sets {n} LoRA rows」。
+  「按完成会重拍强度」是在原来那句说明后面续写的，所以**整句是一个新键**：
+  旧键已从 `zh-CN/Nodes/ComfyUI-QG-tools.json` 的 `QG_WorkflowSwitchesTest.ui`
+  里删掉。`zh()` 是整串查字典，改一个字就是换键，源码与字典必须同时改。
+- **验证**：`tmp/_verify_test_polish.cjs` 16 项，经典 / Nodes 2.0 两种模式各跑一遍
+  全过（含「鼠标在菜单上不弹徽章提示」这条守卫断言）。🔴 探针建堆必须走
+  `node.configure()` 塞 `rows_data`：直接改 `state.rows` 不会让行进入布局，
+  `visibleRows` 仍是 0、`drawRow` 全提前 return，徽章看起来「没生效」。
+
+### 测试开关不是正式版的镜像，别按「正式版删了什么这里也删」。 2026-11-22 起
+两边的差异（改测试版时看这里，别去对照正式版猜）：
+
+- 没有「保存为开 / 保存为关」（值型开关入口），取而代之的是行菜单里的
+  **「选择 LoRA 行」**：选行时把整栈快照写进 `entry.on / entry.off`，
+  点击只改勾选的行，且**只在「打开」时恢复强度**。
+- 因此 `snapshotNode`（按控件读一整份快照）、`stackRowOwners` / `releaseStackRow`
+  （LoRA 加载器读正式开关的归属与「收回这行」）在测试版**没有调用方**，已删除；
+  以后再从正式版拷贝代码时，先 grep 有没有人用。
+- `restoreGroups` 也没了（「恢复隐藏分组」走 `patchSettings({ hidden: [] })`）。
+- 节点描述不再提「保存开与关的设置」，改说 LoRA 行与强度：改 `DESCRIPTION`
+  要同步 `locales/zh/nodeDefs.json` 与汉化主档的 `description`（两处都是中文
+  整句），并跑 `gen_zh_node_defs.py --apply`。
+
 ## 硬性约定（踩过的坑）
 
 - **只用相对导入**。`from ._helper import x` ✅，`import helper` ❌ —— 后者会让整个插件
@@ -178,6 +382,22 @@ NODE_DISPLAY_NAME_MAPPINGS = {"QG_MyNode": "My Node"}
   `data-qg-full`；代码里若还有 `querySelector('[data-ausboss-full]')` 就永远匹配不到
   （改名的第一次尝试就踩了这个坑，靠改名脚本的「命中计数校验」抓出来）。
 - **批量改名一律用带「命中计数断言」的脚本**，别用裸 `sed`。
+- 🔴 **只有槽、没有 widget 的输入（`force_input=True`）会让默认高度多出 20px × 槽数**。
+  前端 `LGraphNode.computeSize` 的槽区按「非 widget 槽」计数，而这类槽在绑上隐藏锚点
+  widget 之前全被算成普通槽：LoRA 加载器 24 个 `strength_N` + model/clip → 26 × 20 = 520，
+  新建节点被钉在 **686** 高（2026-11-22 用户报「默认高度太大」）。`expandToFitContent`
+  只增不减，之后 computeSize 回到 202 也缩不回去。修法两条一起：
+  ① 锚点建好后 `settleHeight()` 按 `computeSize()` 重设，并在 ~360ms 内盯几次
+  （前端 configure 之后还会再排 `_arrangeWidgets` / `expandToFitContent`）；
+  ② `node.configure` 包一层记下存档 `info.size[1]` 当下限，用户拉过的高度才保得住 ——
+  只有 ≥600 且比需要高 200 以上的值（正是错误路径写出来的 662/686）不认。
+  探针：`_probe_lora_loader_heights.cjs`、`_probe_lora_loader_restore_rows.cjs`。
+- **查「没用到的导入」时，`...X` 展开算使用**。用 `(?<![\w$.])name` 这类正则会把
+  `{ ...DEFAULT_SETTINGS, switches: [] }` 判成未使用（点号被当成成员访问），
+  2026-11-22 就这么删错过一次导入，真机 `onNodeCreated` 直接
+  `ReferenceError: DEFAULT_SETTINGS is not defined`。正确做法：总数减去
+  `(?<!\.)\.name`（单点成员访问）再加上 `\.\.\.name`（展开）。静态判死只作候选，
+  删完必须起实例跑一次建节点。
 - 备份 / 临时文件**不要放进插件目录内被扫描的子目录**（如 `web/`），否则外部 `grep -r` 会连备份一起数进去。
 - **改了 `web/shared/*.mjs` 必须跑 `tools/bump_module_versions.py <新版本串> --apply`（工作区脚本）**。
   原因：ComfyUI 只给**扩展入口文件**（`web/<node>/index.js`、`web/qg_init.js`，
@@ -320,11 +540,7 @@ min/max 之类校验一起关掉。
 
 - `LEGACY` 从 17 节点 / 92 条 → **23 节点 / 347 条**。新增的 6 个都是「从没中文化
   过、纯补显示名」：`QG_ImageResize`、`QG_MDReader`、`QG_MaskAlign`、`QG_MaskBlend`、
-  `QG_MaskCrop`、`QG_GoogleTranslateText`。`coerce` 对它们是空操作（老存档本来就是英文）。
-- 翻译节点单列：`_LANG_ZH` 是 **106 条语言码 → 中文名**（`af` 南非荷兰语 … `zu` 祖鲁语），
-  `from_translate` 多一个 `auto`。🔴 `iw` / `he` 都是希伯来语，中文名必须区分
-  （「希伯来语（旧码）」/「希伯来语」），否则迁移反查二义、`verify_combo_i18n` ⑤ 直接红。
-  🔴 巽他语仍然不在表里（`LANGUAGES` 本身没有它，Registry 的 YARA 把那个语言码判成提权）。
+  `QG_MaskCrop`。`coerce` 对它们是空操作（老存档本来就是英文）。
 - 新增三件工具：
   | 工具 | 作用 |
   |---|---|
@@ -467,7 +683,6 @@ python tools/verify_origin.py          # 校验：与注册节点 / README / 文
 | ComfyUI_Comfyroll_CustomNodes（MIT，**只借思路，算原创**） | 文本合并 | `QG_TextConcat` | v0.9.4 搬的是 `CR_TextConcatenate`，10-30 整段重写成原创（ID / 输入名 / 分隔符是控件 / 不做 trim 全不变，老工作流照开）。🔴 **真改进是把「没接线」和「接了但是空」分开**：搬运版两路 `default` 都是 `""`，判不出某一路是不是根本没接，分隔符照样吐 —— 只接 text1 得 `A-`、只接 text2 得 `-B`、两路都不接得一个孤零零的 `-`（实测见提交说明）。现在两路签名默认值是 `_MISSING` 哨兵，没接的那一路连同分隔符一起省掉；**接了线但是空串仍算参与**（`"" + "-" + "X"` 还是 `-X`，别把这个也「修」掉）。🔴 这个区分依赖「ComfyUI 用函数签名默认值补未接线的参数」—— `execution.get_input_data` 只返回 prompt 里真有的输入，没出现的交给 Python 补；哪天上游改成拿 `INPUT_TYPES` 的 `default` 填，判据会静默失效，`tools/_check_text_concat.py` 里「签名默认值与模块级哨兵是同一个对象」那条就是盯这个的。输出类型同时从 `*` 改成 `STRING`（原来 `RETURN_NAMES` 写 STRING、`RETURN_TYPES` 是任意，自相矛盾；`*` 接 STRING 输入和 STRING 接 STRING 输入是同一条边，老图不断）。断言 `tools/_check_text_concat.py`（59 项）+ 真机 `_check_text_concat_live.py`（16 项，含「只接一路」「两路都不接」「空文本参与」「两级串联」）。11-17 增加动态槽：后端声明 `text1`–`text8`、前端 `web/text_concat/index.js` 默认露 2 个、接满长一个、8 封顶；`separator` 是控件型输入且必须排在文本槽之后，所以增长走「摘下 separator → 追加文本槽 → 挂回 separator 并还原 widget 关联与连线」（`addInput` 只能追加到末尾，直接追加会让新槽落到 separator 下面）；前端断言 `tools/_probe_text_concat_slots.cjs`（12 项，含 2→8 逐级、封顶、断开回收、存档往返、老存档仅两槽） |
 | rgthree-comfy（MIT，**只借思路，算原创**） | 图像缩放 | `QG_ImageResize` | 10-30 整段重写成原创（ID / 六个控件顺序 / 三路输出与槽名全不变，仍走核心 `common_upscale`，零新增依赖）。保留了原版的四条正确设计：`common_upscale` 而非私有重采样、0 = 该维没填并由另一维锁比例、`crop`/`pad`/`contain` 三选、宽高从**结果**读而不是从请求读。🔴 **修掉三处**：① **percentage 的「没填」被四舍五入吃掉** —— 搬运版先换算再判 0（`width = round(width * W / 100)` 之后才 `if width == 0`），50 像素宽的图上填 1% 换算成 0 像素，正好撞上「没填」的哨兵，于是按高度推出整宽（实测 1% → 宽 50，应为 1）；现在「没填」在**换算前**按百分比判，换算结果一律抬到 1 像素。② **推导可能得到 0 像素** —— 1000×1 的图按宽推高得 0，`common_upscale` 直接抛 `Input and output sizes should be greater than 0`；推导与换算两侧都钳 `MIN_SIDE = 1`。③ **无操作分支返回输入张量本身**，而其余分支都返回新张量，于是「输出是否与上游共 storage」取决于走哪条分支（下游就地写就会改到缓存里的图）；现在所有路径都返回自己的张量。另：裁剪出来的是 `narrow` 的 view，返回前 `contiguous()`；pad 由逐张 Python 循环改成一次切片赋值；`FUNCTION` 改 `execute`。`nodes.ImageScale.upscale_methods` 读不到时退到 `common_upscale` 认得的那五个，不让核心一改名就整个节点消失。断言 `tools/_check_image_resize.py`（34 项，comfy/nodes 用桩，因此不依赖 ComfyUI 环境；桩的 `common_upscale` 只换尺寸，像素断言全部用常量图 + 位置，不比插值细节） |
 | rgthree-comfy（MIT，**只借思路，算原创**） | 图像或 Latent 尺寸 | `QG_ImageOrLatentSize` | 10-30 整段重写成原创。ID / 通配 `*` 输入 / 前两路 `INT` 与 `WIDTH`·`HEIGHT` 槽名全不变。🔴 **核心缺陷：只认四维张量** —— 原实现 `if len(shp) == 4` 之外一律 `return (0, 0)`，而 ComfyUI 的 MASK 主流是**三维**：`ImageToMask` 给 `image[:, :, :, channel]`、`LoadImage` 给 `mask.unsqueeze(0)`，都是 `(B,H,W)`。于是接最常见的遮罩得到 0×0，且不报错、不提示（真机实测同一张图：IMAGE 读 2560×3413、MASK 读 0×0）。现在 2/3/4 维都认：三维 `(B,H,W)`、二维 `(H,W)`、四维 `(B,1,H,W)`。🔴 四维歧义不能只看第二维（`(B,H,W,C)` 与 `(B,1,H,W)` 都是四维，高度为 1 的图会被当遮罩），判据是「第二维为 1 **且** 末维不是通道数 1/3/4」。另修：通配 `*` 输入漏了 `forceInput`，前端会在画布上多画一个填了也没用的文本框（`QG_Exists` / `QG_RouteBlocker` 同款）。LATENT 取最后两维（支持五维视频 latent）×8。🔴 **11-08 又并入自有插件 `QG_GetImageSize` 的三项优点**（该节点与本节点几乎完全重叠，所以没有另搬一个同类节点进来）：① 新增第三路 `COUNT` = batch 维（帧数），前两路顺序不动；② numpy / 嵌套 list 按 shape 读，不转张量不拷贝；③ **不再静默给 0** —— 接了但读不出宽高（一维 / 零维 / 五维张量、字符串、无 `samples` 的字典、`samples` 不足 4 维）改为报错并说出拿到了什么形状，旧版一律 `(0,0)` 最后在 `EmptyLatentImage` 炸「width must be > 0」；**未接线仍是 `(0,0,0)`**（契约）。五维视频 latent 的时间维不猜，`COUNT` 只报 `samples` 第 0 维。断言 `tools/_check_image_or_latent_size.py`（68 项，含与源包 `QG_GetImageSize` 的 108 + 27 + 9 组三路对照）+ 真机 `_check_image_or_latent_size_live.py` |
-| ComfyUI_Custom_Nodes_AlekPet（MIT，**只借思路，算原创**） | Google 翻译 | `QG_GoogleTranslateText` | 10-30 整段重写成原创（ID / 四个控件顺序 / `STRING`·`text` 槽全不变，老工作流照开）。上游用 `googletrans`（驱动未公开的 Google 网页端点，隔几个月坏一次：缺模块、TKK 令牌 `AttributeError`），这里直接用 `requests` 打同一批端点，**零新增依赖**，代码里没有一行上游实现。🔴 **修掉五处**：① **长文本整段发** —— 免费端点约 5000 字符上限、还是 GET，超了直接 400 `Text too long`（搬运版没有分片）；现在按换行切片、超长行退到句末标点、再退到硬切，译完用 `\n` 拼回，单片失败就整段退回原文（不半译半原文）。② **官方接口没传 `format`** —— 该参数默认是 **html**，于是多行提示词被挤成一行、引号和 `&` 变成 `&#39;`／`&amp;`；现在显式 `format=text`。③ **`/qg/translate/manual` 在事件循环里做同步网络调用** —— 两跳各带 20s 读取超时，一次失败能把 aiohttp 卡住几十秒，期间整个 ComfyUI 的进度推送和所有接口都不响应（真机实测：黑洞代理下搬运版探测 `/system_stats` 等了 **5.12 秒**，现在 **0.01 秒**）；改用 `run_in_executor`。④ **`text` 非字符串会崩**（`value.strip()`）、官方接口空 `translations` 返回空串而不重试 —— 都归一/改抛。另：前端「手动翻译」按钮的文字从 `addWidget` 的第二个参数挪到 `widget.label` —— 🔴 **那第二个参数同时是控件的 name**，而汉化字典里有 `Manual Translate → 手动翻译`，于是中文界面下 name 变成中文，`findWidget` 全落空、按钮**点了就报 TypeError**（真机复现：`["from_translate","to_translate","manual_translate","手动翻译","text"]`）；按钮位置也从写死的 `splice(3, ...)` 改成按 `text` 控件名定位。🔴 **语言表故意比 googletrans 少 1 项（巽他语）**，删它是合规要求（见「Registry 扫描」那一章的 v0.9.3 小节），**别按「107 项只有 106 项」把它补回来** —— 补回去等于把扫描命中带回发布包；断言里已经钉了「表里不含那一项」，`check_registry_status.py` 也能确认最新一版是 `Active`。断言 `tools/_check_google_translate.py`（68 项，`requests` 整个用桩，能直接看请求体里的 `format`）+ 真机 `_check_google_translate_live.py`（15 项，含黑洞代理下的阻塞对照）+ 前端 `_check_google_translate_ui.cjs`（11 项，中英文界面各一遍，含按钮点击） |
 | 孤海工具箱（Goohaitools-comfyui，GPL-3.0） | 任意切换 / 展示任意 | `QG_AnySwitch` / `QG_DisplayAny` | 类名与分类改成 QG，GPL 出处标注保留在文件头 |
 | 孤海工具箱（GPL-3.0，**只借思路，算原创**） | 路由阻断 | `QG_RouteBlocker` | v0.8.0 搬的是 `GoohaiRouteBlocker`，10-30 整段重写成原创（ID / 槽名 / 选项值 / 三种结果全不变，老工作流照开）。`block`(BOOLEAN) + `mode`(combo: `empty` / `cut`) + `any`(optional, `*`, forceInput) 进，`any`(`*`) 出；`empty` 给 `None`（下游照跑）、`cut` 给 `ExecutionBlocker(None)`（下游静默跳过）。🔴 **真改进是给 `any` 加 `lazy`** —— 搬运版把 `any` 当普通输入，ComfyUI 在调用节点前先把它求值掉，于是开关打开（要掐断）时上游照样跑完一整遍再被丢掉；加 `lazy` + `check_lazy_status` 后，开关打开时上游一个节点都不排队。🔴 `any` 没接线必须用 `_MISSING` 哨兵跟 `None` 分开（lazy 输入下 `None` 表示「接了还没求值」），混用会让没接的线被反复索要、执行器无限重调度。🔴 `_qg_combo_legacy.py` 里登记着老中文选项值（`仅输出空值` / `中断后续分支`），`VALIDATE_INPUTS` 必须具名收 `mode` 才跳过 combo 校验。断言 `tools/_check_route_blocker.py`（41 项）+ 真机 `_check_route_blocker_live.py`（10 项，懒执行用 `QG_Math` 除零做阳性对照） |
 | 孤海工具箱（GPL-3.0，**只借思路，算原创**） | 扩图画板 | `QG_OutpaintBoard` | 2026-11-01 从零写，对位孤海「外补画板（可视化）」的**用法**；没有搬代码（实测最长连续相同 2 行、去样板行重合 3.0%、序列相似 2.0%）。交互四处刻意不同：扩边时缩放钉死、扩出去的边能点回 / 拖回、参数收进右侧浮层、主色琥珀橙。几何是纯函数 `compute_layout`（单位换算 → 长边上限只削补边 → 整除数向上取整补右下），源图走切片复制不重采样；颜色解析复用 `_qg_color_helpers.parse_fill_color`。详见下方「Outpaint Board（`QG_OutpaintBoard`，自写，2026-11-01）」 |
@@ -480,7 +695,7 @@ python tools/verify_origin.py          # 校验：与注册节点 / README / 文
 | 原创（无上游代码） | 颜色匹配 | `QG_ColorMatch` | v0.9.5。十种方法都是公开算法的自写实现，没搬任何插件代码：Haar 小波 3 层只匹配低频子带、AdaIN 逐通道实例归一化（sRGB 上，**单尺度**）、RBF 核 MMD 拟合仿射映射、逐通道 CDF 分位匹配、Reinhard LAB 逐通道均值/标准差（2001）、LAB 3×3 协方差匹配（Pitié 2007 线性 MKL 的核心：白化再着色）、两种三步串联（直方图-多元高斯-直方图、直方图-MMD-直方图）、Reinhard 的整批 4D 实现、仅匹配均值。参数划分（强度 / 匹配范围 / 遮罩羽化 / 遮罩用途 / 细节回填 / 参考取帧 / 目标统计）是本插件自己的。🔴 出口**不硬裁**：出界像素在 LCh 里缩 chroma（二分 6 次，保色相 + 保 L\*），因为逐通道 clamp 会改三原色比例、也就是改色相（实测饱和色偏 2–8°）。🔴 源侧 σ 有下限 `STD_FLOOR`（归一化 L 的 2%），否则平目标的 σ≈0.005 会被放大几十倍、噪声爆炸（实测同一张近纯色图：无下限偏离 0.12，有下限 0.013）；mvgd 的源协方差同时加了岭项。🔴 `src_mode=whole-batch`（中文界面「目标统计 = 全批统一」）时源侧统计量整批算一次，直方图必须变成「值→值」单调查表（`_hist_lut`/`_hist_map_lut`）才能套用到每一帧，否则帧间会闪 —— 这也是 ComfyUI 内置 ColorTransfer 的 uniform 口径。🔴 对外 10 个方法名，对内是 `CHAINS` 里的步骤组合，链式方法按序依次作用、参考侧统计量各算一次全链复用。🔴 MMD **不能**做成逐像素核回归：E[Y\|X] 的方差上界是 Y 的方差，实测输出 σ 只剩参考的四成、画面发灰 → 改成 12 个参数的仿射映射用 Adam 迭代（60 步）+ 逐通道均值/标准差锚定项（`MMD_ANCHOR`，纯核目标在核宽三倍外的平坦区会乱走）。🔴 AdaIN 曾做多尺度金字塔融合，实测把方差抹平、整体色偏，回退成 sRGB 单尺度。🔴 LAB 归一化尺度 `L/100`、`a,b/128` 是为了让协方差三个维度量纲一致（否则 L 的方差比 a/b 大两个数量级，eigh 出来的变换被 L 主导）。🔴 遮罩有**两个独立用途**，实现上别混：`遮罩` 决定作用区域（结果侧），`mask_use=also-restrict-reference`（中文界面「遮罩用途 = 也限定目标统计」）才让它同时限定**目标侧统计量**（对应 Photoshop 匹配颜色的「使用选区计算颜色」）；参考侧另有 `ref_mask` 单独限定统计区域（对应其「使用来源中的选区」）。`_pool_of()` 是统一入口，遮罩内不足 16 像素就退回全图（几个像素的统计量是噪声）。🔴 `细节回填` 补的是 `_high_freq(原图) - _high_freq(结果)` 的**差额**，不是原图高频本身 —— 后者会把锐度叠两遍；差额再逐通道去均值，保证只动纹理不动明暗（实测 sRGB 通道均值变化 < 1e-4）。🔴 直方图匹配会把低对比素材的噪声一起拉宽（文献里的 grain effect，实测高频能量 0.047→0.086），所以细节回填的方向可能是「压回去」而不是「补回来」。🔴 `_sqrtm` 用 eigh 不用 Cholesky：大面积同色时协方差接近奇异，Cholesky 直接失败，eigh 只是把那个方向压到 EPS。🔴 参考图**不需要**与目标图同尺寸（取统计量），遮罩同样按需插值 |
 | 原创（无上游代码） | 布尔开关 | `QG_BoolToggle` | v0.9.4，见下方「布尔开关」。交互参考孤海「布尔」，卡片绘制 / 等比缩放 / 命中区是自己写的 |
 | 原创（无上游代码） | 数值 | `QG_Number` | v0.9.4，见下方「数值」 |
-| 原创（无上游代码） | 数值滑条 | `QG_Slider` | v0.9.5。一行：滑条 + 读数 + 齿轮；类型 / 范围 / 步长收在齿轮菜单里，五个控件全隐藏、输入槽也摘掉。默认 0–1 / 一格 0.1 / 输出小数（LoRA 强度那一档）。读数**按范围定宽**（默认 22px），轨道一直铺到它左缘前 4px；**点读数就地输入**（`web/slider/` 的 `openValueEditor`，回车提交 / Esc 取消 / 输入法回车放过）。🔴 **经典模式是 canvas 自绘**（和布尔开关同一套模板），节点恒 320×58、和布尔开关同尺寸；Nodes 2.0 走 DOM 卡片（`addDOMWidget` 那条路最低只能到 90，压不到 58）。🔴 输出槽恒 `*`，两种模式都接得进 `FLOAT` 口；`onMouseDown` 必须用 `chainHandler`（`chainCallback` 会丢掉 `return true`，节点会跟着拖动）。🔴 拖拽的 window 监听必须 `{capture:true}`：LiteGraph 在 canvas 的 pointerup 里 stopPropagation，冒泡收不到 → 松手后 `dragging` 一直 true。见 `web/slider/` |
+| 原创（无上游代码） | 数值滑条 | `QG_Slider` | v0.9.5。一行：滑条 + 读数 + 齿轮；范围 / 步长收在齿轮菜单里（2026-11-24 起固定浮点，类型切换已移除），五个控件全隐藏、输入槽也摘掉。默认 0–1 / 一格 0.1 / 输出小数（LoRA 强度那一档）。读数**按范围定宽**（默认 22px），轨道一直铺到它左缘前 4px；**点读数就地输入**（`web/slider/` 的 `openValueEditor`，回车提交 / Esc 取消 / 输入法回车放过）。🔴 **经典模式是 canvas 自绘**（和布尔开关同一套模板），节点恒 320×58、和布尔开关同尺寸；Nodes 2.0 走 DOM 卡片（`addDOMWidget` 那条路最低只能到 90，压不到 58）。🔴 输出槽恒 `*`，固定输出小数接得进 `FLOAT` 口；`onMouseDown` 必须用 `chainHandler`（`chainCallback` 会丢掉 `return true`，节点会跟着拖动）。🔴 拖拽的 window 监听必须 `{capture:true}`：LiteGraph 在 canvas 的 pointerup 里 stopPropagation，冒泡收不到 → 松手后 `dragging` 一直 true。见 `web/slider/` |
 | 原创（无上游代码） | 数学运算 | `QG_Math` | v0.9.4，见下方「数学运算」 |
 | 原创（无上游代码） | 存在判断 | `QG_Exists` | v0.9.5。纯后端、无前端 JS：`任意`(optional, `*`) 进，`任意`(`*`) + `布尔`(BOOLEAN) 出。🔴 输入必须 optional —— required 的话 ComfyUI 在执行前就报「缺输入」，节点永远没机会输出假。🔴 `_present()` 口径**对齐孤海工具箱 `GoohaiAnyExists`「万能是否存在(GH)」**：`None` / `ExecutionBlocker` / 空 str·bytes·list·tuple·dict·set / **全黑 MASK**（`(H,W)`·`(B,H,W)`，`max ≤ 0.02`）/ **全零 LATENT**（`samples` 同阈值）算没有；**`0`、`False`、全黑 IMAGE**（`(B,H,W,C)`）算有。🔴 与孤海唯一有意的差异：**只判不改** —— 孤海会顺手把 ≤0.02 的遮罩像素抹成 0 再输出，我们原样透传（那节点叫「原样输出」，改值就是 bug）。逐场景对拍过：13 个用例 + `0.03` 边界 / `zeros(1,4,1,1)` / 0 元素张量全部一致。`VALIDATE_INPUTS` 返回 True 放行具体类型（否则接 IMAGE 端口会被判类型不符，照抄 `QG_IfElse`） |
 | 原创（无上游代码） | 导出图像 | `QG_ExportImage` | v0.9.3。只借了 KOOK / 孤海同类节点「quality 该放在哪」的结论 |
@@ -1002,6 +1217,38 @@ CPU、64×64）确认这三条路径都会出预览：
 
 **改名带来的后果**：节点 ID 变了，含 `AUSBOSS_NODES_LoraLoader` 的工作流需要重新放一次节点。
 
+### LoRA Loader 行强度接线：strength_N 长在行上（v0.9.22）
+
+`QG_LoraLoader` 也支持把数字线拖到某一行改它的 **model 强度**（`strength_1..24`，
+FLOAT forceInput）。**CLIP 强度不动**——这是刻意的：官方 `LoraLoader` 的
+`strength_model` / `strength_clip` 是两个独立输入，改一个不带动另一个；AusBoss
+那种「CLIP 按原比例跟随」是它自加的便利，本包不跟。
+
+和 `QG_LoraSwitchStack` 的差别只有一个字：**行不是 widget**。Loader 的行是 DOM
+面板自绘的（`.qgtools-lora-row`），没法把槽直接挂到行 widget 上。做法是给每个
+`strength_N` 槽造一个**不序列化的锚点 widget**（`node.addWidget("text", "__qg_sa_N",
+"", () => {}, { serialize: false })`），隐藏它，然后把 `input.widget` 指向它、把
+它的 `y` 设成该行在节点内的 y —— litegraph 每帧按 widget.y 重写槽 pos，槽和连线就
+落在行上（与 Switch Stack 第二条路同源，**不要**改成手写 `input.pos`，那条路会
+触发高度自增，见上一节）。
+
+三个必须踩住的地方：
+
+1. 🔴 **锚点要等 `configure` 之后建**（`setTimeout(..., 0)`），不能在 `onNodeCreated`
+   里同步 `addWidget`：加载存档时 `widgets_values` 还没恢复，先加 24 个 widget 会让
+   V3 的按位恢复错位 —— 实测 `loras` 被重置成 `[]`（面板空、用户的栈好像丢了）。
+2. 🔴 **行顺序变化要按行 id 重映射连线**（`remapStrengthLinks`，在 `commitRows` 和
+   `syncRows` 两处都调）。行 id 稳定、下标不稳定，删/排一行后不重映射，线会悄悄控制
+   到别的 LoRA 上。重连目标槽要**按名字求 `node.inputs` 真实下标**（隐藏的 input
+   不在数组里，`strength_1` 的下标是 2 不是 0），且必须用 `disconnectInput` +
+   源节点 `connect`，别手改 `input.link`（新版 Link 对象，孤链会被清理，实测丢线）。
+3. 行数上限 = 24（与 `SLOT_COUNT` 同口径）。超过 24 的行不能外控，仍用面板里的强度。
+
+守卫：`tools/_check_lora_rowlink.py`（17 项，从源码 AST 抽 `_merge_strengths` 验
+「只改 model、CLIP 不动」+ 空行占位 + 钳制 + 坏输入）；真机探针
+`_probe_lora_rowlink_ui/compat/connect/remap.cjs`（锚点定位、旧存档兼容、UI→prompt
+导出 `strength_1: ["73",0]`、行交换后连线跟随）。
+
 ### LoRA Switch Stack：开关长在行上（v0.9.18）
 
 `QG_LoraSwitchStack` 是 QG_LoraLoader 的第二种形态：每行一个 `on_N` 布尔输入，
@@ -1327,8 +1574,10 @@ CPU、64×64）确认这三条路径都会出预览：
   `getBounding()`，DOM 外壳与真实几何不符才 FAIL；Vue 原生控件行高差只记 WARN」。
 - **触发词按行存**（`rows_data` 里每行的 `triggers`），行尾 `×` 左边有个小方块图标：
   没有词是灰的，有词点亮成青色。点开是卡片（跟 `QG_LoraLoader` 那个「i」同一套功能）：
-  这一行已选 / 文件自带 / Civitai / 我的词，点词就勾进来或去掉，还能当场加自己的词
-  （走 `/qg/lora/triggers`，跟加载器共用同一份磁盘数据）。底部那个输入框是整行手改。
+  文件自带 / Civitai / 触发词（自己加的词），点词就勾进来或去掉（已选的在词表里青色高亮，
+  不再单列「这一行已选」），还能当场加自己的词
+  （走 `/qg/lora/triggers`，跟加载器共用同一份磁盘数据）。底部原先的整行手改输入框
+  2026-11-24 已删：点词即写回、加词有专门入口，关闭用 Esc。
   选 LoRA 时会把 `file_triggers` 当默认值填进来；换文件先清空，否则上一个文件的词会
   悄无声息混进 `triggers` 输出。
 - **卡片底部能拉 Civitai**（跟加载器那张卡片同一条链路）：`/qg/lora/hash` 算 SHA256 →
@@ -1556,7 +1805,7 @@ shared 的 `includes` 逐位等价，所以加载器换过去手感不变，只�
 
 🔴 **卡片 DOM 骨架有意不合并**：加载器用 CSS class + `zh()` + `retranslate`
 （汉化插件只整串全等匹配，而且只在挂到 body 时翻一次），开关堆用 inline style
-+ `zhPair`；两边还各有独有区块（推荐强度区间 / 整行手改）。硬拼成一个组件会同时
++ `zhPair`；两边还各有独有区块（推荐强度区间 / 卡片专属入口）。硬拼成一个组件会同时
 改掉已发布主力节点的视觉和翻译时机。共用的是**行为内核**：词逻辑、info 读取、
 Civitai 编排、按钮文案；存盘模型差异由回调注入（加载器 `writeTriggers` 按行 id
 定位，开关堆直接写 `row.triggers`）。
@@ -2359,7 +2608,7 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.21  |  76 nodes loaded  |  8 categories
+  QG-tools v0.9.22  |  84 nodes loaded  |  9 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```
@@ -2399,6 +2648,308 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
   各节点条目里本来就有，`zh()` 走合并字典直接复用。
 - **验证**：专项脚本 `tools/verify_appearance.py`（真机 CDP 造节点看上色 / 徽章 /
   菜单）；`tools/probe_teo_color.py` 验 TextEditOutput 也吃到配色。
+
+### 面板强调色也跟着方案走（2026-11-22）
+
+用户截图圈出开关卡片的「完成」「绕过」「画布渲染」「关 | 开」高亮，说「这种颜色
+在不同主题（= 插件自己的配色方案）要有不同颜色」。以前这些一律是品牌青，选了
+Plum / Rust 方案后，节点壳是紫的、卡片里还亮着青，割裂。
+
+- **值表**：`shared/appearance.mjs` 的 `NODE_COLOR_SCHEMES`，每行的 `accent` 字段
+  就是该方案的面板强调色（与标题同色相、更亮，能在深色面板上做「开」的底色）。
+  accent 与 title/body 写在**同一行**，`SCHEME_ACCENTS` 由该表派生 —— 以前 accent
+  是另一张手写表，加方案时漏配会静默回落成品牌青（2026-11-22 加 5 套时改成同行，
+  顺手就治好了）。`Custom` 由自定义标题色推导（`deriveAccent`：同色相、S≥0.42、
+  L=0.6）。
+- **写入点**：`appearance/index.js` 的 `applyAccent()`，`setup` 与两个设置的
+  `onChange` 里调用，写到 `document.documentElement` 的五个变量：
+  `--qg-accent` / `--qg-accent-hover` / `--qg-on-accent` /
+  `--qg-accent-soft`（55% 透明描边）/ `--qg-accent-fade`（16% 透明底）。
+  透明版在 JS 里拼 rgba —— 旧 Electron 没有 `color-mix`，不能给 hex 变量加 alpha。
+- **CSS 写法**：`border-color:var(--qg-accent, ${BRAND})`。回退值必须留着：
+  appearance 扩展没加载 / 还没 setup 时，规则退回品牌青，与以前完全一致。
+  已接入：`shared/widget_card.mjs`（所有走卡片控件的节点，含分段、输入框 focus、
+  滑条、chip）、`workflow_switches` 与 `workflow_switches_test` 的整段样式。
+- **JS 里要真值**：行左侧那个小方块是 `style.setProperty("--chip", …)`，拿不到
+  CSS 变量 → 用节点里的 `accentColor()`（读 `getComputedStyle(root)`，取不到回退
+  BRAND）。
+- **还没接的**：其它节点的 **canvas 绘制**（LoRA 堆的行、便签、计时器……）读不到
+  CSS 变量，仍是品牌青。要接得先把那些 `ctx.fillStyle = BRAND` 换成读
+  `accentColor()` 的等价函数，并处理重绘时机 —— 单独一项，别混在样式改动里做。
+- **验证**：`tools/_probe_accent_scheme.cjs`（18 项：默认青 / Plum 紫 / Rust 橙 /
+  Custom 推导 / 切回青；5 套 2026-11-22 新增方案的 accent 与节点壳色；逐套扫全表
+  断言「都有 6 位 hex 强调色、除 Theme default 外互不重复」，漏配回落一眼就红；
+  方案名从扩展自己的 `settings[0].options` 读，再加方案不用改探针）。
+  菜单项数同理：`tools/verify_appearance.py` 里不再写死「11 项」，改成
+  `settings[0].options.length + 1`（原来是硬编码，加方案就假红）。
+
+### 两个「用自定义色」开关：面板高亮 / 参考线各自一个（2026-11-22 晚）
+
+用户先要「强调色的自定义颜色开关」，随即补一句「参考线是要另外一个开关，不要和
+强调色一起」—— 所以是**两个独立布尔**：强调色默认**开**（出厂色 = QG-tools 方案的
+青，所以开箱观感不变），参考线默认**关**（跟随方案，回到这对设置出现前的行为）。
+关掉 = 跟当前配色方案：
+
+- `QG.Appearance.CustomAccent` → `--qg-accent` 系列（面板高亮），配色用
+  `QG.Appearance.AccentColor`（调色盘，默认品牌青）。
+- `QG.Appearance.CustomGuide` → `--qg-guide`（画布对齐参考线），配色用
+  `QG.Appearance.GuideColor`（调色盘，默认原来的橙 `#fb923c`）。
+- 开关打开 = **调色盘里那个色原样用**（不做亮度推导：用户挑了就是要这个色）；
+  存的值不是合法 hex 时退回方案 accent，面板不会变空。开关关 = 方案 accent
+  （方案是 `Custom` 时即由自定义标题色推导）。
+- `accentFor()` 保持纯 name → color 查询（两参）。开关与调色盘的优先级、以及
+  非法值兜底都在 `applyAccent()` 里，别把三参版本再加回去（加过又撤了，
+  两处逻辑容易漂）。
+- 🔴 设置面板的行序是**注册顺序的倒序**：想让「开关在上、它驱动的调色盘在下」，
+  就得先注册调色盘、后注册开关。详见 `settings:` 数组里的注释。
+- 参考线是 canvas 2D 画的，吃不到 CSS 变量：`snaplines/index.js` 里 `guideColor()`
+  读 `--qg-guide` 并**缓存**（每帧 `getComputedStyle` 会逼浏览器重解析样式，
+  拖动时 60fps 能看出卡顿），`appearance/index.js` 的 `applyAccent()` 末尾
+  `dispatchEvent("qg-accent-changed")` 让缓存失效并 `setDirtyCanvas`。
+  取不到变量时回退橙 `#fb923c`（appearance 没加载的极端情况）。
+- 排列面板的图标/CSS 也顺手接到 `var(--qg-accent, #fb923c)`。🔴 SVG 里必须写成
+  `style="stroke:…"`：presentation attribute（`stroke="var(…)"`）在 Chromium 下
+  不解析 var()，整条线会变黑。
+- 参考线颜色默认不再是橙：方案是 QG-tools 时就是品牌青。这是用户要的行为，
+  连带把 snaplines 那条设置的中文/英文 tooltip 从「橙色参考线」改成「参考线，
+  颜色跟随设置」。
+- 🔴 实测前提：`AusBoss.Canvas.SnapLines`（或 Pixaroma 的）开着时 QG 参考线按设计
+  让位、根本不画。**只关插件不管用**：AusBoss 目录改名成 `.disabled` 后，它留在
+  设置库里的 `AusBoss.Canvas.SnapLines` 仍是 `true`，旧代码只看设置值 → QG 永远
+  让位、怎么拖都不画（2026-11-22 用户在 8188 上就是这么撞的：
+  `GET /settings` 里键还在，`app.extensions` 里已经没有 `AusBoss.*`）。
+  修法：`otherSnapperOn()` 现在要「装 + 开着」两个条件 —— `OTHER_SNAPPERS` 每项带
+  `{ setting, ns }`，`extensionLoaded(ns)` 在 `app.extensions` 里按扩展名前缀
+  （`ausboss` / `pixaroma`）找；拿不到扩展列表时按「装着」处理，保持旧行为。
+- 🔴 8199 实例的坑：页面打开后几秒会把上次的工作流加载回来（实测 `graph.clear()`
+  之后 nodes 从 0 变 10，还把 `ds` 改成 scale .9 / offset 416,110），脚本若立刻
+  建节点会被冲掉、按 `pos` 算出的屏幕坐标也全错 → 先等 4~5 秒落定再动手。
+- 🔴 探针的持久化代价：`_probe_accent_scheme.cjs` 以前改完设置不还原，跑一次就把
+  用户的方案/自定义色改了（这次把用户从 Navy/#2c8ea7 改成 QG-tools/#7a2f8f，
+  事后手工恢复）。现在开头拍快照 `window.__qgAccentOrigin`、evaluate 结尾与
+  截图后各放回一次。`verify_appearance.py` 同理：它断言写死默认方案的色，先把
+  方案钉到 QG-tools、收尾放回原方案。
+- 🔴 CDP 坑：`verify_appearance.py` 用裸 Chrome + Runtime.evaluate 时，
+  `app` / `LiteGraph` 偶尔解析不到（同页面用 Playwright 正常）→ 全程改
+  `globalThis.app` / `globalThis.LiteGraph`，等待就绪的条件也一样。
+- 验证：`_probe_accent_scheme.cjs` 24 项（含「只开强调色时参考线不许动」「只开
+  参考线时面板不许动」四条交叉断言）；参考线真机肉眼：`tmp/_shot_guides.cjs`
+  拖 QG_TextConcat 产生参考线，随方案那张是青、开自定义那张是洋红，两张截图对比。
+
+### 测试堆的三处改动（2026-11-22 晚）：宽度对齐加载器 + 排序改用「≡」手柄
+
+- **宽度**：`shared/node_width.mjs` 里 `QG_LoraSwitchStackTest` 从 380 改成 **430**，
+  与 `QG_LoraLoader` 同宽（用户要求）。行绘制宽度按 `rowDrawWidth(node, widget)` 走
+  nodeWidth，加宽后强度条/× 自动铺满，不用另调。正式堆 `QG_LoraSwitchStack`
+  随后也一并改成 430/430（`MIN_WIDTH` 的兜底值同改，虽然实际走尺寸表）。
+- **排序手势：修饰键三连全废，最后改成「按在哪」**。🔴 三条路都试过：
+  1. **Alt + 拖** → 被 ComfyUI 的「拖拽克隆节点」抢走，按下瞬间就多一个节点，
+     行内 `onMouseDown` 根本收不到（用户实测「拖了没反应，反而多出一个节点」）。
+  2. **Shift + 拖** → 能穿到行内（Shift 在画布只参与点选），但 **Shift 是「拖强度改
+     CLIP 强度」的修饰键** —— 改完用户立刻报「clip 强度滑动调不了」。
+  3. **Ctrl + 拖** → 前端 `LiteGraph.leftMouseClickBehavior = "panning"` 时
+     `_processPrimaryButton` 见到 ctrl/meta 直接转多选拖框，到不了 widget。
+  最终做法：名字区最左端画一小条 **`≡` 手柄**（`GRIP_W = 13`），按住它上下拖 =
+  重排行；`rowHitZones` 里 `grip` 命中区优先于 `name`，`name.x0` 相应右移。
+  手势靠**位置**区分，不加任何修饰键，Shift 完整还给 CLIP 拖动。
+  手柄绘制在 `drawRowGrip()`（三条 1px 横线，hovevred 变亮、关掉的行更淡）。
+- **名字区现在也支持 Shift 拖 CLIP**：`beginDrag(..., shiftKey)`，与右侧数值区同一
+  口径 —— 两处都能滑 CLIP，用户在哪块按都行。普通拖名字仍只改模型强度。
+- **正式堆同步**（2026-11-22 深夜，用户要求「搬过去」）：`web/lora_switch_stack/index.js`
+  照测试堆一模一样改了三处 —— `GRIP_W = 13` + `drawRowGrip()`、`rowHitZones` 的
+  `grip` 命中优先于 `name`、名字区 `beginDrag(..., shiftKey)`。探针
+  `tools/_probe_lora_stack_layer2.cjs` 的 A 段也从「Alt 按下」改成「`graph_mouse`
+  落在 x = 48+6 的手柄区、不带修饰键」；`_check_lora_switch_stack.py` 那条静态断言
+  改成「入口在 `zone.grip` 分支 + 源码里不该再有 altKey 判定」，另加一条
+  「名字区 Shift 改 CLIP」。
+- 验证（`tmp/_verify_stack_formal.cjs`，Vue 模式）：① 名字区 Shift 拖 →
+  `strength_clip` 0.5→1.3、`strength` 不动；② 普通拖名字 → 1→1.8、clip 不动；
+  ③ 拖 ≡ 手柄到第 2 行 → `rows` 交换、`rowDrag` 从 true 到收尾清空。截图
+  `tmp/stack_formal_grip.png`（与加载器同宽 430，三行名字仍完整）。
+- 验证（`tmp/_verify_clip_name.cjs`）：① 名字区 Shift+横拖 → `strength_clip`
+  0.5→1.25 而 `strength` 不动；② 名字区普通拖 → `strength` 1→1.75 而 clip 不动；
+  ③ 拖 ≡ 手柄到第 2 行 → `rowDrag=true`、`rows` 交换、`node.pos` 不动。
+- 🔴 探针里直接改 `state.rows` 不会走 `applyRowCount`，行 widget 停在 `hidden/y=0`、
+  `computeSize` 仍是 `[0,-4]`：点击会落到节点本体、整节点被拖走，截图也拍不到行。
+  必须先 `w.computeSize = (width) => [width, 20]` + `hidden=false`，再 `node.arrange()`
+  让布局器写出真实 `w.y`（实测 66/90/114），之后才能按 `w.y` 算屏幕坐标 / 截图。
+
+### 两个「测试」节点的缺陷排查（2026-11-23 凌晨）
+
+用户要求「排查两个测试节点还有没有缺陷」。六个真问题，都已修：
+
+1. **右键双开**：两堆的 `rowAtPointer`（经典按坐标、Vue 按 `data-widget-name`）
+   只判 `node.__qgSwitchStack` 存在 —— 而正式堆和测试堆**共用这个属性名**，
+   于是同一次右键两个扩展都命中、各开一个行菜单（`stopPropagation` 拦不住
+   window 上同阶段的其他监听器）。修法：两处都加 `String(node?.type) !== NODE_CLASS`
+   过滤。实测两堆共存时右键各自的行，菜单数 = 1。
+2. **行徽章不实时刷新**：开关改了「哪几行归它管」之后，堆的 `refreshOwners`
+   有 400ms 节流 + 内容缓存，且没有任何人通知它重绘 → 用户改完开关要等下一次
+   重绘（拖节点/缩放）才看到 ⇄。徽章探针第一次「设管行」读到的就是空。
+   修法：`writeSettings` 末尾 `dispatchEvent("qg-owner-changed")`，堆侧
+   `installOwnerInvalidation()` 收到后清 `ownerCheckedAt` 并 `redrawVueRows`。
+3. **CSS 类名完全共用**：两个开关的样式表都用 `.qgtools-ws-*`，而两份内容
+   **并不相同**（正式版有旧的 `choice-list/pick` 规则，测试版有
+   `menu-foot/menu-note/wired`）。两个 style 元素 id 不同 → 两份都注入，
+   同名 class 后注入者胜，测试版改样式会改到正式卡片。修法：测试开关全部
+   类名换成 `.qgtools-wst-*`（102 处），四个相关探针同步改选择器。
+   🔴 加新规则时记得前缀是 `wst`，不是 `ws`。
+4. **测试堆的 style id 与正式堆相同**（`qg-row-menu-theme`、
+   `qgtools-stack-gear-style`），而 `ensureXxxStyle` 见到 id 已存在就 `return`
+   → 先加载的那份定死样式，测试堆改样式永远不生效。改成 `-test` 后缀。
+5. **强度恢复串开关**：`presetStrength` 遍历**所有** switch 找同一行的 on 快照，
+   同一行被两张卡片管着时会取到别人卡片选行时的旧强度，打开时把刚调好的值
+   覆盖掉。修法：`valuePairs` 给每个 pair 记 `entryId`，`presetStrength` 只查
+   自己那条。
+6. **死代码**：两个堆都 `import { widthFor }` + `TABLE_WIDTH` + `MIN_WIDTH`，
+   但宽度早已统一由 `web/qg_init.js` 的 `pinNodeWidth` 按尺寸表钉，这三个
+   常量一次都没用（测试堆的兜底值还停在 380）。删掉。
+
+验证（全部在独立 `--user-directory` 实例上跑，用户 8188 的设置没被碰）：
+`_probe_lora_stack_layer2` 13 项、`_probe_ws_test` 全过、`_probe_ws_test_rowgroup`
+全过、`_probe_ws_test_rowwired` 全过、`_probe_stack_owner_badge` 9 项全过、
+`_probe_accent_scheme` 全过、`_check_lora_switch_stack.py` 261 项（新增 7 项
+测试堆断言：类名/扩展名独立、无正式类名残留、右键类型过滤、样式 id 独立、
+手势一致、读测试存档键、宽度不另存常量）、违规扫描 0 命中。
+
+已知限制（这次没改，需要时再定）：
+- 测试堆的齿轮设置与正式堆/加载器**共用一份** scope（`qg.settings.…`），
+  在测试节点里调「默认强度/步长」会同时改正式节点 —— 这是当初「设置不该有
+  两份」的决定，但对「试验节点」是副作用。
+- 两个开关可以同时选同一行，切换时互相覆盖（无冲突提示）。
+- 子图里的开关只看得到子图内的堆（`state.node.graph` 兜底）。
+- 行徽章只标「测试开关」的归属，正式开关管的行不标。
+
+### 设置面板的汉化（2026-11-22 晚）
+
+用户截图指出「QG 工具 → 外观」整段设置还是英文。原因不是我们没写中文：
+
+- 设置面板的文案是**注册那一刻**定死的（`app.registerExtension({settings})`），
+  而那时 `app.i18n` / `app.ui.settings` 都还没建好、`<html lang>` 还是模板里的
+  `en`，所以 `zhPair()` 一律返回英文 —— snaplines / image_compare 的
+  `zhPair("English", "中文")` 在中文界面上也显示英文，就是这个原因。
+- 正解：**汉化插件的设置面板翻译走它的 Menu 字典**（`js/MenuTranslate.js` 的
+  `texe.MT()` 只查 `T.Menu`），所以词条放
+  `ComfyUI-Global-Translation/zh-CN/Menus/ComfyUI-QG-tools.json`（扁平
+  `"英文原文": "中文"`）。设置面板每次打开都会被 DOM observer 扫一遍，键对得上就换。
+- 该文件收录：外观 6 项（含 2 个开关 + 3 个调色盘 + 节点配色）的 name 与 tooltip、
+  snaplines 3 项、image_compare 1 项。tooltip 是长句，**必须与源码里拼接后的
+  整串逐字一致**（空格、破折号、句号都算），改文案时两边一起改。
+- 改名：`QG custom color` → `QG custom node color`（中文「QG 自定义节点配色」）——
+  有了「自定义强调色 / 参考线色」之后，原名容易被误读成通用自定义色。用户还要求
+  **前面那个 QG 前缀保留**（其它几项都带，去掉就那一行看着不合群）。
+  改 name 只影响显示（id 不变），但**字典键要跟着改**，否则面板退回英文。
+
+### 改用官方 locales（2026-11-23）：设置面板 / 命令面板自带汉化，不依赖汉化插件
+
+上游文档（docs.comfy.org/zh/custom-nodes/i18n）与后端实现
+（`app/custom_node_manager.py` 的 `EXTRA_LOCALE_FILES`）都支持在插件自己的
+`locales/<lang>/` 下放 `settings.json` / `commands.json`，前端按 **id 归一化**
+的键去查，不经过 DOM：
+
+| 文件 | 键 | 用途 |
+| --- | --- | --- |
+| `locales/zh/settings.json` | `settings.QG_Appearance_NodeColor.name` / `.tooltip` | 设置项名与提示 |
+| `locales/zh/commands.json` | `commands.QG_Align_left.label` | 命令名（命令面板 / 快捷键表） |
+| `locales/zh/main.json` → `settingsCategories` | `settingsCategories.Appearance` | 设置分组标题 |
+
+键的归一化就是把设置 id / 命令 id 里的 `.` 换成 `_`（`QG.Appearance.NodeColor`
+→ `QG_Appearance_NodeColor`）。`nodeCategories`（节点分类）本来就是同一机制，已经在用。
+
+🔴 **为什么必须写这份，而不是只靠 `zhPair()`**：2026-11-23 在 1.59.11 上实测，
+`registerExtension({settings, commands})` 求值那一刻语言**一定**取不到 ——
+
+- `app.i18n` 在 1.59 上根本没有（`Object.keys(app)` 里没有，`hasI18n: false`），
+  `zh.mjs` 的第一级兜底是死分支；
+- `localStorage` 里既没有 `Comfy.Locale` 键，也没有 `Comfy.Settings.json`
+  （新前端改成后端存 ＋ 每条设置一个 `Comfy.Settings.<id>` 键），第三级兜底也是空；
+- `<html lang>` 在注册期仍是模板里的 `en`。
+
+于是 `zhPair()` 在注册期返回英文 —— 实测 `app.extensionManager.setting.settings`
+里 `QG.SnapLines.Enabled` 的 name 就是 `"Snap into line while dragging (QG)"`。
+显示层现在由 `settings.<id>.name` 覆盖，所以面板是中文；**运行时**调用
+`zhPair()` 的地方（菜单、tooltip）不受影响，因为那时语言已经能读到。
+
+- 因此：**新增设置项 / 命令时，除了源码里的 `zhPair()`，还要在
+  `locales/zh/settings.json` / `commands.json` 里补一条**（键用归一化 id）。
+- 验证：`python tools/_probe_i18n_settings.cjs` 需要实例；它读
+  `document.getElementById("vue-app").__vue_app__.config.globalProperties.$t`
+  —— 1.59 的 `app` 上没有 i18n 实例，这是唯一能拿到设置面板同款翻译函数的路。
+- `build_translations()` 有 `lru_cache`，**改了 locales 必须重启后端**才对
+  `/api/i18n` 生效（前端另需刷新页面）。
+
+### nodeDefs 的 outputs 必须用索引键（2026-11-23）
+
+官方规范里输出翻译的键是 `"0"`、`"1"`…（按下标）。有 4 个节点
+（`QG_IfElse` / `QG_StringSwitch` / `QG_BoolToggle` / `QG_Number`）曾经同时写了
+类型名键（`any` / `string` / `boolean` / `value`）和一个正确的 `"0"`，前者是
+无效数据（前端永远不会按类型名查），已删除。
+
+### 上游前端 1.58~1.59 的破坏性变更（2026-11-23 核对，本机 1.59.11）
+
+| 变更 | 对我们的影响 |
+| --- | --- |
+| **PrimeVue 从宿主移除**：没有 `$primevue`、没有 PrimeVue 主题、`--p-*` 变量全没了、`v-tooltip` 与 `.p-tooltip` 不再存在 | 无影响。全仓 grep `--p-` / `.p-tooltip` / `p-tooltip` / `data-pd-` 均为 0 命中。设计系统替身是 `--background` / `--foreground` / `--border` / `--primary` / `--secondary` / `--node`；旧名 `--base-background` / `--base-foreground` / `--border-default` / `--primary-background` / `--secondary-background` 仍解析但已弃用，**新代码别再用**。打开中的 tooltip 现在是 `document.body` 末尾的 `[data-slot="tooltip-content"]` |
+| **toast API 换代**：`add()` 降级成别名，`remove()` / `removeAll()` 已移除 | `shared/index.mjs` 的 `showToast()` 已改成先调 `toast.success/info/warn/error(title, {description, duration})`，再回退 `add()`，最后回退 console；`google_translate` 两处直调 `toast.add` 也改走它 |
+| **`app.i18n` 不在 app 上**（1.59） | 见上一节；`zh.mjs` 的第一级兜底是死分支，语言判定实际靠 `app.ui.settings` 的 `Comfy.Locale` |
+| **设置项 `attrs` 里的 PrimeVue props 失效**（`showButtons` / `maxFractionDigits` / `editable` / `filter`） | 我们没用这些，`number` 项要限范围请用 `attrs: {min, max, step}`，小数位用 `formatOptions.maximumFractionDigits` |
+| **节点几何进 layout store**：`node.size` 是「请求尺寸」，渲染边界看 `getBounding()` / `boundingRect`；`repositionNodesVueMode()` 改名 `applyNodePositions()` | 本仓未用 `repositionNodesVueMode`；`node_width.mjs` 钉宽走 `setSize`，Vue 下 size 不再被内容反撑，反而更准 |
+| **node.id 变成字符串**（`SUBGRAPH_INPUT_ID` = `'-10'`、`SUBGRAPH_OUTPUT_ID` = `'-20'`） | 全仓没有 `parseInt(node.id)` / `id === 数字` 的写法；`getNodeById` 传字符串即可 |
+| **`node.widgets` 直接赋值有风险**（widget value 变为 store-backed） | 仍有 3 处：`lora_switch_stack:4608`、`lora_switch_stack_test:4941`、`triple_loader:86`。目前真机未复现问题（它们只在裁剪隐藏 widget 时整体替换），但要改 widget 列表时优先用 `removeWidget()` + `push`，别整体换数组 |
+
+另外记两条上游已知坑（与本仓机制直接相关，遇到时先想到它们）：
+
+- **Nodes 2.0 里 legacy canvas widget 各自一块小 canvas**，只有 `widget.triggerDraw?.()`
+  会重绘，`setDirtyCanvas()` 只刷主画布 —— 本仓已在 LoRA 堆的刷新手势里调了
+  `triggerDraw`（见 278 行附近的注释），新增自绘 widget 时照抄。
+- **有插件 patch 全局 `LGraphCanvas.prototype.drawBackCanvas` 会导致节点/连线错位**
+  （ComfyUI#16871）。本仓确有全局 patch（`setget` 的
+  `computeVisibleNodes` / `showLinkMenu`、`ratio_resolution` 的 `drawNode`），
+  都做了「先存原函数、转发时只改自己关心的节点」的处理；以后再加全局 patch 必须
+  走同样写法，并在 `needsFix` 之外保持零副作用。
+
+### 全节点排查（2026-11-23，按上面这套口径过一遍 78 个节点）
+
+结论：**i18n 规范 0 BUG / COMBO 覆盖 0 缺口 / 前端专项 PASS / 双模式真机体检 FAIL 0**。
+
+三门脚本（都进了 `regress.py:CHECKS`，吃 `reports/qg_object_info.json`）：
+
+| 脚本 | 查什么 | 判定 |
+| --- | --- | --- |
+| `tools/_audit_nodes_spec.py` | 输出键必须是数字索引；输入键必须后端真存在（死键）；后端有 tooltip 就必须有译文；COMBO 覆盖率；节点分类段有译文 | 有 BUG 就非 0 退出 |
+| `tools/_audit_combo_coverage.py` | 下拉选项中文覆盖，**以 `nodes/_qg_combo_legacy.py` 的 LEGACY 表为准、nodeDefs 的 options 兜底** | 有真缺口就非 0 退出 |
+| `tools/_audit_frontend_159.py` | 自绘 widget 缺 `triggerDraw`、`onDraw*` 无 Vue 兜底、`mouse`+`onPointerDown` 并存、`getBoundingClientRect` 量宽、`node.widgets` 整体替换、全局 prototype patch、已移除的 PrimeVue/toast API | 只对 A/G 系列判负 |
+
+🔴 **口径必须统一，否则假红一大片**：只看 nodeDefs 会报 54 条「COMBO 缺译文」，其中
+40 多条其实由 LEGACY 表（前端 `combo_zh.mjs` 的 `getOptionLabel`）覆盖；而文件名、
+模型名、字体名、`1024x1024`、`16:9`、`fp8_e4m3fn`、语言码这些**值本身是数据不是文案**，
+翻了用户反而找不到文件。这两条规则收在 `tools/_qg_audit_common.py` 的
+`should_translate()` 里，两份审计共用。
+
+本轮实际修的东西：
+
+1. 🔴 **真 bug：`web/color_picker/index.js` 的 `applyColor()` 只调 `setDirtyCanvas`**，
+   Nodes 2.0 下颜色控件的独立小 canvas 不重绘 —— 选完颜色节点上的色块纹丝不动，得拖一下
+   节点才更新。补了 `widget.triggerDraw?.()`（与 LoRA 堆同款写法）。探针
+   `tools/_probe_color_vue.cjs` 确认 Vue 下该钩子存在。经典模式无此钩子，`?.()` 安全跳过。
+2. **补 7 处 COMBO 中文**（真缺口）：`QG_ImageCropRotatePad` 的 `crop_aspect_ratio` /
+   `painted_area` / `resize_method`、`QG_StitchInpaint.paste_onto`、`QG_TripleLoader.device`、
+   `QG_LoraSwitchStack(Test).on_missing`。这 4 个节点从来没登记进 LEGACY，中文只能走
+   nodeDefs 的 `options`（带空格的值也支持，仓里已有 `Qwen-Image 1K` 这种先例）。
+   `resize_method` 的译名直接抄 `QG_ImageFitResize.interpolation`，同一概念两种说法就是 bug。
+3. 有意**不翻**两类，写进 `_qg_audit_common.NO_TRANSLATE`：`QG_ExportImage.format`
+   （JPEG/PNG/WEBP）、`QG_TripleLoader.clip_type`（模型架构代号）。与 ComfyUI 原生下拉一致。
+
+**遗留（有意保留，需人工定性）**：`node.widgets = kept` 3 处（LoRA 堆 ×2 + 三合一加载器，
+只在裁剪隐藏行时整体替换，真机未复现问题）、全局 `LGraphCanvas.prototype` patch 3 处
+（`ratio_resolution.drawNode` 在 Vue 下根本不会被调用，`setget` 的
+`computeVisibleNodes`/`showLinkMenu` 是必要的接管）。这三处都由
+`_audit_frontend_159.py` 持续盯着，新增同类写法会立刻报出来。
+
+**双模式真机体检**：`tools/probe_audit_all_nodes.cjs` 已从 38 个节点扩到全部 78 个
+（列表从 nodeDefs 生成），经典 / Nodes 2.0 / 切回经典三段各测一遍，判据是创建成功、
+尺寸非 NaN、Vue 外壳高 = size+30、徽章未被遮挡、无控制台错误。结果为 **FAIL 0**；
+唯一的 WARN 是 `QG_MDReader` 的阅读区 492→149（长文档正常滚动，节点可手动拉高）。
 
 ## snaplines 全局扩展（QG-Multipack 搬入，2026-11-08）
 
@@ -2490,6 +3041,10 @@ curl -s 'https://api.comfy.org/nodes/comfyui-qg-tools/versions?include_status_re
 > 把字面拆开、或者只做文字描述，别贴完整调用。
 
 ### v0.9.3 删掉了一个语言码
+
+> **2026-11-25 现状**：`QG_GoogleTranslateText` 已整体迁到 ComfyUI-QG-Multipack
+> （那边叫 `QG_GoogleTranslate`，走官方 API，没有这张语言表）。本节仅作历史记录——
+> 将来若把免费端点版本搬回来，巽他语这条仍然不能补。
 
 `QG_GoogleTranslateText` 的语言表里那条巽他语，是唯一一处**加注释也消不掉**的命中：
 扫描器的 `confidence_note` 原文写着 `_presence`（60%）匹配的是裸字符串字面量、
@@ -2652,3 +3207,302 @@ Nodes 2.0 的画布也是异步布局的，这一帧两者都能兜住。
 验证：`tools/_check_exists.py`（15 项，负例断言 `slot.type =` / `slot.name =` 不许出现，
 用 `=(?!=)` 排除 `===`）、`tools/_probe_exists_label.cjs`（16 项真机：文本 / 遮罩 / 图像
 切换、断开回落、存档往返、经典 + Nodes 2.0 两种界面）。两个都进了 `regress.py`。
+
+## 测试节点转正（2026-11-23）
+
+用户要求「用测试版的节点替换到正式版」。两个 `QG-tools/Test` 副本（工作流开关、
+LoRA 堆）转正，正式节点改用它们的前端实现，测试节点与其前端整份删除。
+
+**为什么是「替换实现」而不是「合并代码」**：对比下来测试版是正式版的超集 ——
+后端只差 `node_id` / `display_name` / `category` / `SEARCH_ALIASES`，执行逻辑逐字相同；
+前端 LoRA 堆多 353 行（行归属 ⇄ 徽章、可交互徽章、菜单配色），开关多 483 行
+（选 LoRA 行、筛选框、冲突标记、行状态、`⇄N` 行数）。正式版独有的 16 行全是
+标识符与注释。所以以测试版为源、机械改名最干净。
+
+**改名（`tools/_promote_test_nodes.py`，169 处，逐条可审计）**：
+
+| 从 | 到 | 影响 |
+| --- | --- | --- |
+| `QG_LoraSwitchStackTest` / `lora_switch_stack_test` | 去掉 Test | 类名、扩展名、样式 id |
+| `QG_WorkflowSwitchesTest` / `QG.WorkflowSwitchesTest` | 去掉 Test | 注意扩展名是驼峰的 `QG.xxx`，不在 `_test` 规则里 |
+| `qg_workflow_switches_test` | `qg_workflow_switches` | 存档键回到正式键 → **旧工作流原样可读** |
+| `qgtools-wst` | `qgtools-ws` | CSS 前缀（wst 是 test 的缩写） |
+| `qg-owner-tip-style-test` / `qg-row-menu-theme-test` / `qgtools-stack-gear-style-test` | 去掉 `-test` | 样式元素 id，与旧版节点共用同一批 |
+
+**转正时必须补回的东西**（机械替换查不出，靠 `grep 导出` 才发现的）：
+
+🔴 `web/lora_loader/index.js` 从 `shared/workflow_switches.mjs` import
+`releaseStackRow` / `stackRowOwners`，而测试副本是在这两个函数**之前**复制的 ——
+直接覆盖文件后，这两个导出消失，ESM 链接期直接报错，**整个 LoRA 加载器扩展不加载**。
+已把 `pairMovesRow` + `stackRowOwners` + `releaseStackRow` 补回该模块末尾
+（依赖 `sameFile` / `stackRows` / `findRow` / `valuePairs` / `changeSwitch` 都在）。
+
+**功能取舍（用户 2026-11-22 已定，不是这次丢的）**：行菜单里「改为改设置 / 保存为开 /
+保存为关」那组入口在测试版就移除了，由「选择 LoRA 行」替代（还能记住每行当时的强度）。
+老工作流里已经存下的 on/off 快照**仍然被读取、仍然生效**，只是界面不再提供新建与修改。
+`snapshotNode` 因此从共享模块消失，`saveSide()` 一并删掉。
+
+**删除清单**（都已执行，测试代码备份在 `.backup/promote-test-nodes-20261123/`）：
+`nodes/qg_{lora_switch_stack,workflow_switches}_test.py`、`web/{lora_switch_stack,workflow_switches}_test/`、
+`web/shared/workflow_switches_test.mjs`、`locales/zh/nodeDefs.json` 两条、
+`shared/node_width.mjs` 两条、`shared/node_aliases.mjs` 两条、`shared/zh_node_defs.mjs`（重新生成）、
+汉化字典 `ComfyUI-Global-Translation/.../ComfyUI-QG-tools.json` 两个节点块、
+`audit_zh_pack.py` 的 ALLOW_ZOMBIE、`scan_violations.py` 豁免、`sync_translation_pack.py` 节点表、
+`_probe_accent_scheme.cjs` / `_probe_ws_test*.cjs` / `_probe_stack_owner_badge.cjs` 的节点名。
+
+**测试节点建过的工作流**：节点类型已不存在，打开会显示缺失节点（红块），数据仍在该节点的
+`properties` 里。要救可以手动把 JSON 里的 `"type": "QG_...Test"` 改成正式名。
+
+**回归口径变化**：`_check_lora_switch_stack.py` 的「测试堆对等检查」9 条改写成
+「转正后的归属与手势」6 条（断言正式堆现在带徽章 / ≡ 手柄 / Shift 改 CLIP / 读正式开关键，
+并挡住 `-test` 标识回流），总数 261 → 260。
+
+### 转正带来的两处功能减少（2026-11-23 记录，待用户定夺）
+
+对比 HEAD 版与测试版实现时发现，测试版并不完全是超集，少了 `saveSide` 之外的第三块：
+
+1. **「保存为开 / 保存为关」入口** —— 用户 2026-11-22 明确要求移除，改由「选择 LoRA 行」
+   承担。**确认无需恢复**；老工作流里的快照仍被读取生效。
+2. **「Show as: Rows / one pill」显示模式** —— `settings.show === "pill"` 时整张卡片把
+   所有开关合成一排分段胶囊（互斥选择器），代码是 `cardView()` + `buildPick()` +
+   `choiceState()` / `choosePlan()`，约 250 行。测试版**整块没有**（`cardView` / `choosePlan`
+   在现版源码里 0 命中），但测试版注释只提到了第 1 条，没有说明第 2 条 —— 看起来是
+   重构时连带删掉的。
+
+   影响：`exclusive`（开一个自动关其它）**仍在**，丢的只是「把所有开关画成一排胶囊」的
+   紧凑外观；曾经设过 `show: "pill"` 的卡片会回到一行一个的默认布局。
+   随之失效的 28 条文案已从 `ComfyUI-Global-Translation` 的 `QG_WorkflowSwitches.ui`
+   删掉（备份在 `.backup/promote-test-nodes-20261123/dict-before-deadkey-cleanup.json`）。
+   要恢复就从 `git show HEAD:web/workflow_switches/index.js` 与
+   `git show HEAD:web/shared/workflow_switches.mjs` 拿这两块，按现版的 wst→ws 结构重接。
+
+## 工作流开关的行列对齐（2026-11-23）
+
+用户截图报的现象：**带「⇄2」徽章的那一行**，开关胶囊被挤成 26px 宽、文字竖着换行，
+行尾的 ⋯ 菜单被顶出卡片右缘 —— 而没有徽章的那一行看着完全正常。
+
+**根因**：`.qgtools-ws-row` 是**固定列数**的 grid，元素顺序是
+`chip | 名字 | 节点数 | ⇄LoRA 行数 | 关/开 | 准星 | 菜单`，
+但三套模板分别只写了 4 / 6 / 7 列，**漏掉 ⇄LoRA 行数那一列**。
+没有徽章的行恰好少一个可见元素，正好填满已知的列数 —— 于是只有「管着 LoRA 行的
+开关」出错。缺列被另一种情形掩盖，这种 bug 最容易在真机上漏过去。
+
+**改法**（`web/workflow_switches/index.js`）：
+
+| 视图 | 旧模板 | 新模板 |
+| --- | --- | --- |
+| 收起 | `10px 1fr auto 84px`（4） | `10px 1fr auto auto 84px`（5） |
+| 编辑 | `10px 1fr auto 84px 26px 26px`（6） | `10px 1fr auto auto 84px 26px 26px`（7） |
+| 编辑 + 有「另一侧」 | `10px 1fr 14px auto 84px 26px 26px`（7） | `10px 1fr 14px auto auto 84px 26px 26px`（8） |
+
+同时把 `rowCount.hidden = !rowTotal` 删掉：**空的徽章也必须占住自己那一格**。
+`display:none` 会让它后面的胶囊整体左移一格，于是「没有 ⇄N 的行」转而错位 ——
+修一半等于没修。CSS 里的 `.qgtools-ws-rowcount[hidden]{display:none}` 一并删掉，
+免得以后有人顺手又用 hidden。
+
+**口径**：固定列数的 grid + 条件显隐的子元素，必须保证「任一时刻可见的 item 数
+= 列数」。要么给每个元素写显式 `grid-column`，要么让可选元素保持占位（空着），
+不要让 `display:none` 改变排列。
+
+改名（title ↔ name 输入框）是成对互换、item 数不变，所以那块不受影响。
+
+**回归**：`tools/_probe_ws_row_layout.cjs`，已进 `regress.py` 两份清单。它造两行
+（一行认领两行 LoRA 带 ⇄2、一行空），编辑视图与收起视图各测一遍：胶囊等宽且
+≥80px、两个半按钮并排（同一水平带）、行尾两按钮同带且不超出卡片右缘、各行胶囊
+右缘对齐。这些**功能全对、只有人眼看截图才现形**的问题，只能靠几何断言钉住。
+
+## 取消「控制 LoRA 行」（2026-11-23）
+
+用户报「设置了控制 LoRA 行，取消不了」。
+
+**现象**：打开「选择 LoRA 行」，把勾全去掉、按「完成」——菜单关了、看着像生效，但行首
+的 ⇄N 还在、开关继续翻那些行；再打开列表，那几行还是勾着的。
+
+**根因**：`applyRowPick()` 只遍历「勾上的行」去写两侧快照。一行都不勾时循环整个跳过，
+`next = settings` 原样写回 —— **取消这条路根本没有代码**。部分取消是对的（重写整栈快照时
+没勾的行两侧保持相同），所以只有「全部取消」这一个动作是死的。
+
+**改法**：
+
+1. `web/shared/workflow_switches.mjs` 新增 `dropValues(settings, id, nodeIds)` ——
+   与 `saveValues` 对称，把两侧里这些节点的快照一起删掉（复用已有的 `withoutKeys`）。
+   **必须两侧一起删**：LoRA 行快照是 on/off 成对的，只删一侧会让这一行「一边管着、
+   一边没管」，卡片仍显示 ⇄N。
+2. `applyRowPick()` 记下这次真正写过的堆（`touched`），然后把「以前有快照、这次没写过」
+   的堆整个交出去。判据是**两侧有没有这个节点的 `rows_data`**，不是 `heldRowNames`：
+   堆被清空成零行时它产不出行，但快照仍在，那同样要放手。
+3. 提示语分开：取消后说「这个开关不再控制任何 LoRA 行。」（新增词条），
+   而不是原来那句「没选任何 LoRA 行，只改其它设置」。
+
+**回归**：`tools/_probe_ws_row_unpick.cjs`（已进 `regress.py` 两份清单）。它走真实路径：
+勾两行 → ⇄2；只留一行 → ⇄1 且第 2、3 行两侧回到一致；全部取消 → 两侧键清空、⇄N 消失、
+堆自己的行一个没改；再打开列表 → 一行都不勾。
+
+**判据自查**：`dropValues` 只删带 `rows_data` 的节点键，不会碰 `nodes`（旁通的节点）
+和 `nodes_off`，所以「既管行又管节点」的开关取消行之后，节点那部分照旧。
+
+## 遮罩编辑器加「画框」（2026-11-23）
+
+用户要求在加载图像的「编辑遮罩」里加画框，并指明参考孤海
+（`Goohaitools-comfyui/web/js/goohai_mask_editor.js` 的 `marquee` 选框：拖框 → 松开
+`fillMarqueeIntoMask()`）。孤海那支还带加框 / 减框 / 移动选区，这里只取核心语义：
+**拖矩形 → 松开填进遮罩**，右键 / Ctrl 拖则挖掉矩形，Shift 拉正方形。
+
+**做法：画框是一条矩形笔画，不是第四套绘制管线。**
+`stroke.r = [x1,y1,x2,y2]`（原图口径），`paintStroke()` 见到 `r` 就 `fillRect`，
+其余字段与画笔一致（`o` 画/擦、`c` 颜色）。于是撤销、重做、烘基线、按颜色分层、
+填洞、存盘全部复用 `replayStroke()` / `commitStroke()`，不用改出口：
+`ed.strokes` 里的矩形笔画会被 `rebuild()`、`bakeStrokes()`、存盘合成一视同仁地重放。
+框是**硬边**（`s = 0`），不吃笔宽和软度；拖拽过程只是 `view` 层上的虚线草稿
+（`ed.draft`），抬笔才 `strokeInto()` 落进遮罩，所以拖动中不会污染历史。
+虚线框有四角小方块、**黄起点 / 白（或擦框时红）终点**，并在框边标出原图口径的宽 × 高。
+
+🔴 **实时反馈踩过的坑**：`pointermove` 里原本是 `if (ed.stroke) extendTo(event); else scheduleCursor();`。
+画框时 `ed.stroke` 是空的（草稿在 `ed.draft`），于是 `extendTo()` 永远不被调用 ——
+草稿终点停在按下那一刻，虚线框宽度 0，用户看到的就是「画框没显示」。
+正确条件是 `if (ed.stroke || ed.draft) extendTo(event)`；`pointerup` 也同样补一次
+`extendTo()`，快速一拖直接松手才不会短一截。`tools/_probe_mask_frame.cjs` 在按下与
+松开**中途**读 `__qgState.draft.r` 并断言终点跟着鼠标走，这一条不能省。
+
+**交互细节**：
+- 按下时的左右键 / Ctrl 决定画还是擦（`brushFlips()`），存进 `ed.draft.paint`，
+  中途改按键不会让这一框换了性质；
+- `pointerup` 也走一次 `extendTo()`，快速一拖直接松手不会短一截；
+- 小于 2px 的拖拽当误触丢掉，免得留下一个看不见却能撤销出来的小方块；
+- 画框模式下光标是十字，不画笔尖圈 —— 圈会让人误以为笔宽影响框；
+- 工具栏第三颗「画框」，快捷键 `M`（同孤海）与 `F`；三条新文案进 `QG_LoadImage.ui`。
+
+**与自动填洞的关系**：填洞会把「擦出来的闭合矩形」当成洞再填回去 —— 画笔擦除同样如此。
+2026-11-23 按用户要求改成**切到画框时自动关掉填洞、切回画笔时恢复进画框前的状态**：
+`setTool()` 集中管理工具切换，`setAutoFill(on, manual)` 的 `manual=false` 留给自动切换，
+避免它抹掉待恢复的状态；用户中途自己点过填洞开关就尊重他的选择，不再自动恢复。
+`autoFillBeforeFrame` 存在 `ed` 上；关掉时 `refreshFill()` 会清掉已算出来的洞层。
+文档：[README.md 遮罩编辑器](../README.md)、探针 `tools/_probe_mask_frame.cjs`。
+
+## 遮罩编辑器笔宽改为固定值（2026-11-23）
+
+用户对比孤海后问「为什么我们的画笔每次都这么大」——一张 2560×3413 的图，
+打开编辑器笔宽就是 **284px**（滑条几乎拉满），孤海始终是 30px。
+
+**根因**：打开图片时 `ed.size = clampBrushSize(defaultBrushSize(w,h), BRUSH_RANGE)`，
+沿用了「图像对比」擦除工具的默认算法：长边/24×2。3413/24×2 = 284。大图必然一笔涂一大片。
+
+**改法**：加 `DEFAULT_BRUSH_SIZE = 50`（用户定的值，比孤海的 30 稍大），
+`ed` 初始值和 `picture.onload` 里都用它，不再按图算。删掉对 `defaultBrushSize` 的 import
+（compare_erase.mjs 那边不受影响，别的调用方照用）。`BRUSH_RANGE` 仍是 [2,600]，用户自己调的范围不变。
+
+**回归**：`probe_mask_editor.cjs` 加一条「笔宽固定 50px」断言（读笔宽滑条 value）。
+顺带修了该探针的两处过时假设：① 存盘后「两个文件都进了下拉」原本必挂——`qg-src-*`
+已按设计排除出下拉（存在性靠 HTTP 200 验），断言改成只数下拉里的选项；
+② `image[0]` 在新前端是字符串 "COMBO"、选项在 `image[1].options`（V3 COMBO 双形态），
+旧代码 `Array.isArray(raw) ? raw : []` 恒为空，已兼容两种形态。
+
+## QG_ColorImage 高度收敛到实测值（2026-11-23）
+
+用户截图「纯色图像」节点底部空了一大块。实测 `computeSize()=210×130`，
+但尺寸表里是建节点时的"待测"估值 `h=190/minH=190`（11-18 就标注待实测，一直没修），
+`minH` 把节点撑到 190，底部空约 60px。
+
+**改**：`web/shared/node_width.mjs` 改成 `h=130/minH=130`（真机 value），
+两种渲染模式（经典 / Vue）下 computeSize 都是 130，安全。
+同构节点 `QG_ImageGrid`（同样 6 槽 4 控件、computeSize 210×130）本来就登记 130，对齐即可。
+验证 `_probe_sizes_vs_table.cjs QG_ColorImage` PASS，节点 `size` 从 270×190 变 270×130，
+截图确认控件行全在、底部无空白、无裁切。
+
+## LoRA 加载器头部按钮重排（2026-11-23）
+
+用户截图标注：把面板头部的 ▤模板 / ↻重检 / ⚙设置 三颗按钮移到**标题栏「?」左侧**，
+主开关移到最左，「0/3 已启用」摘要不显示。
+
+**最终布局**：标题栏 `▤ ↻ ⚙ ?`（左到右）；面板里那行只剩居中的主开关。
+
+🔴 **关键坑：`renderRows(state)` 每次都 `panel.textContent = ""` 整块重建面板**——
+三颗真按钮是每次新建的 DOM。所以**不能把它们搬进标题栏**（下次重建就成了孤儿）。
+改成**持久代理按钮**：
+
+- `state.headerBtns` 每次 renderRows 存下当前真按钮引用；
+- `mountHeaderButtons(state, node)` 只在 mountCard 首次调用（`state.headerMounted` 守卫），
+  建三颗持久代理按钮 + 挂 node 的绘制/点击钩子；
+- 点代理 → `invokeHeaderBtn()` 从 `state.headerBtns` 取当前真按钮、临时挂 `__qgHeaderRect`
+  （菜单锚点）、调 `.click()`。所有菜单逻辑/文案/定位一点没改。
+
+**两种渲染模式两条路**（按钮 DOM 只有一份代理）：
+- Vue：代理按钮 DOM 插进 `.lg-node-header > div`，安在 `.qgtools-help-badge`（?）前面，
+  800ms sweep 兜底重挂（同 help_badge_dom / export_image 齿轮）；
+- 经典：标题栏是画布自绘，`onDrawForeground` 照 `badgeCenter()`（? 中心 = [w-16,-15]）
+  往左每 24px 画一颗（▤ 用描边矩形、↻ 用弧+箭头、⚙ 用 8 齿+挖孔），
+  `onMouseDown` 命中后转发点击，`__qgHeaderRect` 返回图标屏幕矩形让菜单弹在图标旁。
+  面板里三颗真按钮用 `.qgtools-lora-headmode > .qgtools-lora-gear{display:none}` 隐藏。
+
+**锚点**：`anchorRectOf(el)` 优先用 `__qgHeaderRect()`，否则用 `getBoundingClientRect()`。
+只改了 templates（openTemplates）和 settings（openSettingsMenu）两处调用点，
+行菜单/信息卡的锚点没动。
+
+**盒子里的加载器**（`state.box`）没有独立标题栏，保持原样（▤/主开关/摘要/↻）。
+
+**验证**：`tools/_probe_lora_head_buttons.cjs`（一次跑经典+Vue，已进 regress 两份清单）——
+顺序、等距、在 ? 左侧、真按钮隐藏、摘要消失、主开关保留、无页面错误，全 PASS；
+两模式的点击探针确认菜单从图标旁弹出；`_check_lora_loader_ui` FAIL 0、
+`_probe_lora_row_menu` / bigstack / default_height 全过；76 节点双模式体检 FAIL 0；
+门禁全绿。`_check_lora_loader.py` 因缺 AusBoss 的 `_lora_helpers.py`（环境问题）跳过，与本次无关。
+
+## 运行计时器尺寸改 270×90（2026-11-23）
+
+用户截图「0.0 s」面板，要求默认宽 270、高 90（原 510×140）。
+
+`QG_RunTimer` 是 `own: true` 节点，尺寸有两处真相源，必须同步改：
+1. `web/shared/node_width.mjs` SIZES → `w:270, minW:270, h:90, minH:90`；
+2. `web/run_timer/index.js` 的 `DEFAULT_SIZE = [270,90]`、`MIN_WIDTH = 270`（顶部搬入说明
+   与常量注释里的 510/140 一并更新）。
+
+绘制无需改：字号按高度算（`numPx = h * INK_RATIO`），宽度不足时按 `avail = w-72`
+整体等比缩字号（`k`），所以 270 宽下最长读数 `000.0s` 仍放得下。真机截图确认
+「0.0 s」完整显示、状态圆点在面板内、无裁切。
+
+注意 `onConfigure` 的 `_widthFixed` 宽度补强：只把宽度 <270 的老节点补到 270，
+已在画布上的 510 宽节点不会被自动缩小（打过标记）。要它变小得手动拖或重建节点。
+
+验证：`_probe_sizes_vs_table.cjs QG_RunTimer` PASS（node.size 实测 270×90）、
+76 节点双模式体检 FAIL 0、门禁全绿。模块版本串 `202611231615`。
+
+## MaskCrop 控件顺序对齐孤海 + 老存档迁移（2026-11-23）
+
+用户截图要求「控件排序对齐孤海」。孤海「遮罩裁剪V2」的顺序是：
+遮罩填充 → 扩展系数上/下/左/右 → 输出尺寸 → 自定义宽 → 自定义高 → 倍数取整。
+我们原来是 尺寸模式 → 宽 → 高 → 倍数 → pad_top/right/bottom/left → 补洞 → 填充。
+
+**改后顺序**（`nodes/qg_mask_crop.py` define_schema）：
+`fill_holes → pad_top → pad_bottom → pad_left → pad_right → size_mode →
+custom_width → custom_height → multiple → fill`
+注意孤海的扩展是**上/下/左/右**，我们原来是上/右/下/左——顺序也一并纠正。
+`fill`（填充方式）孤海没有，保留在末尾。
+
+### 🔴 widgets_values 按位置存，必须迁移
+
+ComfyUI 存档的 `widgets_values` 是**按控件下标的数组**（实测确认），改顺序后老工作流
+打开会把值填到错误控件上（实测：`size_mode="custom"` 落进 `fill_holes`，
+`pad_top` 拿到 1024）。新增 `web/mask_crop/index.js`，在 `onConfigure` 里识别旧布局并重排：
+
+- 判据：数组长度 10 且 `[0]` 是字符串（旧第 0 位是 size_mode 的 COMBO 值；
+  新第 0 位是 fill_holes 布尔）——不会误伤新存档；
+- 重排映射 `[8,4,6,7,5,0,1,2,3,9]`，既写回各 widget.value 也更新 `widgets_values`
+  （保存时才不会写回旧顺序）；
+- 长度 ≠ 10 的不碰（更早形态留给各自迁移，宁可不猜）。
+
+`execute` 的**形参顺序没动**（仍是旧的），因为 ComfyUI 按关键字传参、前端顺序只由
+schema inputs 决定。`_check_mask_crop_align.py` 有 19 处按位置调用 execute，因此不受影响。
+顺手把 `locales/zh/nodeDefs.json` 的 inputs 顺序也同步成新顺序（翻译按 name 查，纯可读性）。
+
+### 🔴 顺带修一个发布级 bug：双层 @classmethod
+
+排查 API 400 时发现 `QG_MaskCrop.validate_inputs` 上写了**两个** `@classmethod`
+（HEAD/v0.9.21 里就有，不是本次引入）。双层装饰后它变成
+`classmethod(classmethod(f))`，ComfyUI 的 `execution.validate_inputs` 用
+`inspect.getfullargspec` 读它 → `TypeError: unsupported callable` →
+**这个节点任何 prompt 都提交不了**（HTTP 400 `prompt_outputs_failed_validation`）。
+已删掉重复的那一层。AST 全仓扫过，只有这一处。
+
+**验证**：新探针 `tools/_probe_mask_crop_order.cjs`（已进 regress）——顺序、老存档
+10 个值逐个、新存档不误迁、无报错，全 PASS；`_probe_mask_crop_api.py` 端到端跑通
+（之前 400，现在出图 qg_maskcrop_00001_.png）；`_check_mask_crop_align.py` 37 项 0 失败；
+76 节点双模式体检 FAIL 0；门禁全绿。模块版本串 `202611231635`。

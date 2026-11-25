@@ -8,8 +8,6 @@ keep_colors 与单 batch 路径）；张量侧函数在 _qg_tile_image_helpers.p
 """
 from __future__ import annotations
 
-import torch
-
 from comfy_api.latest import io
 
 from ._qg_tile_image_helpers import STITCHER_KIND, _join, _rgb

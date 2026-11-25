@@ -21,7 +21,7 @@
  * 是否一致，漏一处就报错。
  */
 
-import { wantsChinese } from "./zh.mjs?v=202611210910";
+import { wantsChinese } from "./zh.mjs?v=202611251300";
 
 /** 子分类 → 中文菜单名。键必须跟后端 CATEGORY 的尾段逐字相同（含大小写）。 */
 export const CATEGORY_ZH = {
@@ -32,7 +32,10 @@ export const CATEGORY_ZH = {
     Workflow: "工作流",
     Mask: "遮罩",
     Image: "图像",
+    // 2026-11-25 新增：颜色五件套从 Multipack 搬进来后单独成类。
+    Color: "颜色",
     Inpaint: "重绘",
+    Test: "测试",
 };
 
 // 前缀故意拆成两截写：带斜杠的整串会被 verify_categories.py 当成前端硬编码分类

@@ -18,9 +18,13 @@ Third-party notice: THIRD-PARTY-NOTICES.md.
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from ._qg_lora_helpers import (
     MISSING_MODES,
     apply_lora_stack,
+    clamp_strength,
     collect_trigger_words,
     missing_lora_rows,
     parse_lora_stack,
@@ -31,6 +35,48 @@ from ._qg_lora_helpers import (
 )
 
 from comfy_api.latest import io
+
+# 行强度外控槽的数量。前端 web/lora_loader/index.js 里有一份同样的数字，
+# 改的话两边一起改（后端槽名决定存档键，前端只决定画几行连接点）。
+# 与 QG_LoraSwitchStack 的 SLOT_COUNT 保持同一口径，用户在两个节点间的
+# 心智模型一致。超过这个行数的行不能外控，仍可用面板里自己的强度。
+SLOT_COUNT = 24
+STRENGTH_PREFIX = "strength_"
+
+
+def _merge_strengths(rows_data: Any, wired: dict[str, Any]) -> str:
+    """把接线进来的 ``strength_N`` 覆盖到第 N 行的 model 强度上。
+
+    与 ``QG_LoraSwitchStack._merge_slots`` 同源，但**只动 model 强度**：
+    ``strength_clip`` 保持行自身值，与官方 ``LoraLoader`` 的语义一致（官方
+    的两个强度是两个独立输入，改一个不带动另一个）。用户 2026-11-22 明确
+    要求保持这个行为，不要改成 AusBoss 那种按比例跟随。
+
+    位置按**原始列表** 1-based 计，空行也占位 —— 与用户在面板里看到的行号
+    对齐（``parse_lora_stack`` 会滤掉空行，先滤会让开关/强度串到邻居上）。
+    未接线（None）的槽保留行自身强度。
+    """
+    text = "" if rows_data is None else str(rows_data)
+    if not wired:
+        return text
+    if not any(isinstance(name, str) and name.startswith(STRENGTH_PREFIX) for name in wired):
+        return text
+    try:
+        data = json.loads(text.strip() or "[]")
+    except (TypeError, ValueError):
+        return text
+    if not isinstance(data, list):
+        return text
+    merged: list[Any] = []
+    for position, entry in enumerate(data, start=1):
+        if isinstance(entry, dict):
+            value = wired.get("%s%d" % (STRENGTH_PREFIX, position))
+            if value is not None:
+                entry = dict(entry)
+                entry["strength"] = clamp_strength(value)
+                # 刻意不动 strength_clip：CLIP 强度只由面板里的那一栏决定。
+        merged.append(entry)
+    return json.dumps(merged)
 
 
 class QGLoraLoader(io.ComfyNode):
@@ -46,7 +92,11 @@ class QGLoraLoader(io.ComfyNode):
         "into this stack and bypasses the originals. Moved LoRA files "
         "resolve by name at run time; a genuinely missing one fails validation "
         "before anything is sampled and the error names the file - turn the "
-        "gear menu's Stop on missing LoRA switch off to warn and skip it instead."
+        "gear menu's Stop on missing LoRA switch off to warn and skip it instead. "
+        "A row's model strength can also come from the graph: drop a number wire "
+        "on the row and it overrides the row's own strength, while the CLIP "
+        "strength stays exactly as the row has it. The first 24 rows accept a "
+        "wire; rows past that keep their panel strength."
     )
     SEARCH_ALIASES = [
         "lora", "lora stack", "lora loader", "trigger words",
@@ -55,6 +105,24 @@ class QGLoraLoader(io.ComfyNode):
 
     @classmethod
     def define_schema(cls):
+        # 24 个 strength_N 是 FLOAT forceInput 可选槽：接上就覆盖该行的 model
+        # 强度，不接（None）保留面板里的值；CLIP 强度不受影响。
+        # 🔴 必须追加在所有既有输入**之后**：连线在 prompt 里按槽下标引用
+        # （[node_id, slot]），插在中间会让 model/clip 的下标整体后移、老图断线。
+        strength_inputs = [
+            io.Float.Input(
+                "%s%d" % (STRENGTH_PREFIX, slot),
+                optional=True,
+                force_input=True,
+                tooltip=(
+                    "Row %d's model strength, wired from a slider. A wire overrides "
+                    "the row's own strength; unwired, the row keeps its value. Only "
+                    "the model strength changes - the CLIP strength stays as set on "
+                    "the row, same as the built-in LoRA Loader." % slot
+                ),
+            )
+            for slot in range(1, SLOT_COUNT + 1)
+        ]
         return io.Schema(
             node_id="QG_LoraLoader",
             display_name="LoRA Loader",
@@ -71,6 +139,7 @@ class QGLoraLoader(io.ComfyNode):
                     tooltip="Joins the enabled rows' trigger words into the triggers output. Set from the node's gear menu; hidden on the canvas."),
                 io.Combo.Input("on_missing", optional=True, options=list(MISSING_MODES), default="error",
                     tooltip="What happens when an enabled row's file cannot be found. error (the default) fails validation before sampling and names the file, so an unattended or scripted run never renders without a LoRA it asked for; skip warns once in the console and applies the rest of the stack. Set from the node's gear menu (Stop on missing LoRA); hidden on the canvas."),
+                *strength_inputs,
             ],
             outputs=[
                 io.Model.Output("model", tooltip="The model with every enabled LoRA applied in row order."),
@@ -80,8 +149,9 @@ class QGLoraLoader(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, model, loras: str, clip=None, trigger_separator=", ", on_missing="error"):
-        rows = parse_lora_stack(loras)
+    def execute(cls, model, loras: str, clip=None, trigger_separator=", ", on_missing="error", **wired):
+        # 接线的 strength_N 覆盖对应行的 model 强度；CLIP 强度保持不变。
+        rows = parse_lora_stack(_merge_strengths(loras, wired))
         missing: list[dict] = []
         model, clip = apply_lora_stack(model, clip, rows, on_missing=on_missing, missing=missing)
         # A row skipped for a missing file loaded nothing, so its words stay
@@ -135,8 +205,8 @@ class QGLoraLoader(io.ComfyNode):
         return True
 
     @classmethod
-    def IS_CHANGED(cls, loras, trigger_separator=", ", clip=None, **_values):
-        # 🔴 一旦定义了 IS_CHANGED，核心就**只**看它的返回值，不再逐个比较输入。
+    def fingerprint_inputs(cls, loras, trigger_separator=", ", clip=None, **wired):
+        # 🔴 一旦定义了 fingerprint_inputs，核心就**只**看它的返回值，不再逐个比较输入。
         # 所以凡是会改变 outputs 的值都得进来，这里是两个容易被忘掉的：
         #
         #   trigger_separator —— 齿轮菜单里的设置，只影响 triggers 那一路。改了
@@ -147,11 +217,16 @@ class QGLoraLoader(io.ComfyNode):
         #   CLIP 线之后同一个栈的 triggers 就变了。只记「接没接」这个布尔，
         #   不拼对象本身：对象每次运行都可能是新的，拼进去会让缓存永不命中。
         #
+        # wired 里的 strength_N 照 _merge_strengths 折进指纹；但按 ComfyUI
+        # 1.58.5 的实测限制，调 fingerprint_inputs 时核心对连线输入只传 None，真正的
+        # 连线值变化由核心缓存键里的拓扑与祖先签名兜住（与 QG_LoraSwitchStack
+        # 的 fingerprint_inputs 同一处理）。别在这里假装拿得到上游真值。
+        #
         # （on_missing 不用进：error 模式下缺文件在采样前就被拦下，根本走不到
         # 缓存这一层。）
         has_clip = 1 if clip is not None else 0
         try:
-            fingerprint = stack_fingerprint(parse_lora_stack(loras))
+            fingerprint = stack_fingerprint(parse_lora_stack(_merge_strengths(loras, wired)))
         except ValueError:
             fingerprint = loras
         return "%s|sep=%s|clip=%d" % (fingerprint, trigger_separator, has_clip)

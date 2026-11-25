@@ -15,20 +15,20 @@
  */
 
 import { app } from "/scripts/app.js";
-import { sizeFor } from "../shared/node_width.mjs?v=202611210910";
+import { sizeFor } from "../shared/node_width.mjs?v=202611251300";
 import {
   BRAND,
   chainCallback,
   keepDomWidgetWidthAuto,
   notifyQgChange,
   zhPair,
-} from "../shared/index.mjs?v=202611210910";
-import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=202611210910";
-import { copyToClipboard } from "../shared/clipboard.mjs?v=202611210910";
-import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=202611210910";
-import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=202611210910";
-import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611210910";
-import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=202611210910";
+} from "../shared/index.mjs?v=202611251300";
+import { keepKeyInField } from "../shared/canvas_passthrough.mjs?v=202611251300";
+import { copyToClipboard } from "../shared/clipboard.mjs?v=202611251300";
+import { hideInputsInDef, hideWidget } from "../shared/widget_visibility.mjs?v=202611251300";
+import { holdNodeMinWidth, pinVuePanelHeight } from "../shared/panel_layout.mjs?v=202611251300";
+import { fitNodeToPanelHeight, unwatchVueShell, watchVueShell } from "../shared/vue_panel_fit.mjs?v=202611251300";
+import { formatSeed, pushSeed, seedFromExecuted } from "../shared/seed_history.mjs?v=202611251300";
 
 const NODE_CLASS = "QG_Seed";
 const CSS_ID = "qgtools-seed-css";
@@ -60,9 +60,9 @@ function ensureCss() {
   style.textContent = `
 .qgtools-seed{box-sizing:border-box;width:100%;height:100%;padding:0 6px 6px;pointer-events:none;overflow:hidden;font:12px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;color:#c8dddd;}
 .qgtools-seed *{box-sizing:border-box;}
-.qgtools-seed-card{display:flex;flex-direction:column;gap:7px;height:100%;padding:8px;overflow:hidden;border:1px solid rgba(0,180,170,.22);border-radius:8px;background:rgba(0,0,0,.28);}
+.qgtools-seed-card{display:flex;flex-direction:column;gap:7px;height:100%;padding:8px;overflow:hidden;border:1px solid var(--qg-accent-fade, rgba(0,180,170,.22));border-radius:8px;background:rgba(0,0,0,.28);}
 .qgtools-seed-field{display:flex;align-items:center;gap:6px;height:38px;padding:0 6px 0 12px;border:1px solid #2a3437;border-radius:7px;background:#0b0f10;pointer-events:auto;}
-.qgtools-seed-field:focus-within{border-color:${BRAND};}
+.qgtools-seed-field:focus-within{border-color:var(--qg-accent, ${BRAND});}
 .qgtools-seed-field.linked{opacity:.55;}
 .qgtools-seed-field input{flex:1 1 auto;min-width:0;height:100%;border:none;outline:none;background:transparent;color:#eef7f6;font:600 17px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;letter-spacing:.01em;}
 .qgtools-seed-field input:disabled{color:#8ba3a1;}
@@ -72,18 +72,18 @@ function ensureCss() {
 .qgtools-seed-seg{display:grid;grid-template-columns:1fr 1fr 1fr;height:30px;padding:3px;border:1px solid #2a3437;border-radius:7px;background:#0f1516;pointer-events:auto;}
 .qgtools-seed-seg button{border:none;border-radius:5px;background:transparent;color:#8ba3a1;font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;cursor:pointer;}
 .qgtools-seed-seg button:hover{color:#fff;}
-.qgtools-seed-seg button.on{background:${BRAND};color:#04201d;}
+.qgtools-seed-seg button.on{background:var(--qg-accent, ${BRAND});color:var(--qg-on-accent, #04201d);}
 .qgtools-seed-row{display:grid;grid-template-columns:1fr 1fr 30px;gap:6px;height:32px;}
 .qgtools-seed-btn{height:100%;border:1px solid #2a3437;border-radius:7px;background:#16201f;color:#d8ecea;font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;cursor:pointer;pointer-events:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.qgtools-seed-btn:hover{border-color:${BRAND};color:#fff;}
+.qgtools-seed-btn:hover{border-color:var(--qg-accent, ${BRAND});color:#fff;}
 .qgtools-seed-btn:disabled{opacity:.4;cursor:default;pointer-events:none;}
 .qgtools-seed-hint{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#6f8886;font-size:10.5px;text-align:center;}
-.qgtools-seed-hint b{color:#9fe3dc;font-weight:600;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+.qgtools-seed-hint b{color:var(--qg-accent-soft, #9fe3dc);font-weight:600;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
 .qgtools-seed-menu{position:fixed;z-index:10000;min-width:230px;padding:4px;border:1px solid #3a4047;border-radius:7px;background:#1c1f23;box-shadow:0 8px 28px rgba(0,0,0,.5);font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#d7dde2;}
 .qgtools-seed-menu-head{padding:5px 8px 6px;border-bottom:1px solid #2c3238;color:#78908e;font:10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;letter-spacing:.08em;}
 .qgtools-seed-menu-item{display:block;width:100%;padding:6px 8px;border:none;border-radius:5px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;}
 .qgtools-seed-menu-item:hover{background:#2c3238;color:#fff;}
-.qgtools-seed-menu-item.current{color:${BRAND};}
+.qgtools-seed-menu-item.current{color:var(--qg-accent, ${BRAND});}
 `;
   document.head.appendChild(style);
 }

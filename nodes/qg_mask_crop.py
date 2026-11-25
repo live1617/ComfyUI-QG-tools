@@ -105,7 +105,10 @@ class QGMaskCrop(io.ComfyNode):
     )
     SEARCH_ALIASES = ["mask crop", "crop by mask", "crop to mask", "遮罩裁剪", "裁剪", "qg"]
 
-    @classmethod
+    # 🔴 只能有一层 @classmethod。写了两层时它变成 classmethod(classmethod(f))，
+    # ComfyUI 的 validate_inputs 用 inspect.getfullargspec 读它 → TypeError:
+    # unsupported callable → 这个节点**任何 prompt 都提交不了**（HTTP 400
+    # prompt_outputs_failed_validation）。2026-11-23 发现并修。
     @classmethod
     def validate_inputs(cls, size_mode=None, fill=None):
         # size_mode/fill 中文标签在 LEGACY 表；具名报上去跳过列表校验，值由 coerce 换回。
@@ -122,6 +125,18 @@ class QGMaskCrop(io.ComfyNode):
             inputs=[
                 io.Image.Input("image", tooltip="The picture to cut from."),
                 io.Mask.Input("mask", tooltip="What to keep in frame. The whole batch shares the union of every frame's painted area."),
+                # 🔴 控件顺序对齐孤海「遮罩裁剪V2」（2026-11-23 用户要求）：先补洞，
+                # 再上/下/左/右四向扩展，最后尺寸三件套。孤海没有 fill，放在末尾。
+                io.Boolean.Input("fill_holes", default=False,
+                    tooltip="Fill the gaps the paint closes all the way round before measuring it, so a bracelet or a window does not shrink the frame."),
+                io.Float.Input("pad_top", default=1.4, min=1.0, max=4.0, step=0.05,
+                    tooltip="Room above the paint, as a multiplier of its short side. 1.0 hugs it."),
+                io.Float.Input("pad_bottom", default=1.4, min=1.0, max=4.0, step=0.05,
+                    tooltip="Room below, same unit."),
+                io.Float.Input("pad_left", default=1.4, min=1.0, max=4.0, step=0.05,
+                    tooltip="Room to the left, same unit."),
+                io.Float.Input("pad_right", default=1.4, min=1.0, max=4.0, step=0.05,
+                    tooltip="Room to the right, same unit."),
                 io.Combo.Input("size_mode", options=SIZE_MODES, default="native",
                     tooltip="native: the composed size. square: padded out to a square. custom: framed to the size below."),
                 io.Int.Input("custom_width", default=1024, min=0, max=8192, step=8,
@@ -130,16 +145,6 @@ class QGMaskCrop(io.ComfyNode):
                     tooltip="custom only. 0 means derive it from custom_width and the composed aspect."),
                 io.Int.Input("multiple", default=8, min=1, max=256, step=1,
                     tooltip="Round the crop up to a whole multiple of this. 8 keeps latent sizes legal; 1 disables it."),
-                io.Float.Input("pad_top", default=1.4, min=1.0, max=4.0, step=0.05,
-                    tooltip="Room above the paint, as a multiplier of its short side. 1.0 hugs it."),
-                io.Float.Input("pad_right", default=1.4, min=1.0, max=4.0, step=0.05,
-                    tooltip="Room to the right, same unit."),
-                io.Float.Input("pad_bottom", default=1.4, min=1.0, max=4.0, step=0.05,
-                    tooltip="Room below, same unit."),
-                io.Float.Input("pad_left", default=1.4, min=1.0, max=4.0, step=0.05,
-                    tooltip="Room to the left, same unit."),
-                io.Boolean.Input("fill_holes", default=False,
-                    tooltip="Fill the gaps the paint closes all the way round before measuring it, so a bracelet or a window does not shrink the frame."),
                 io.Combo.Input("fill", options=FILL_MODES, default="edge",
                     tooltip="How the room outside the picture gets painted: edge takes each side's most common colour, stretch repeats its outer row or column, black leaves it empty."),
             ],

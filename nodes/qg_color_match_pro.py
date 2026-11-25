@@ -120,9 +120,9 @@ class QGColorMatchPro(io.ComfyNode):
             is_output_node=True,
         )
 
-    def __init__(self):
-        self._prefix = "QG_ColorMatchPro_" + uuid.uuid4().hex[:12] + "_"
-
+    # 🔴 2026-11-24 全量体检修复：V3 lock_class 后 __init__ 里 self._prefix=...
+    # 会抛 immutable instance；而 _prefix 在本类里根本没被用到（见 _color_match），
+    # 直接去掉 __init__。_color_match 改 staticmethod，execute 不再 cls() 实例化。
     @staticmethod
     def _internal_method(method):
         """Map the public method name onto this plugin's own algorithm."""
@@ -216,7 +216,7 @@ class QGColorMatchPro(io.ComfyNode):
     ):
         # V1 装饰器 coerce method（中文遗留值 → 英文），V3 显式保留。
         method = coerce("QG_ColorMatchPro", "method", method)
-        # 原 color_match 实例方法（用 self._prefix/_transfer）逐字不动，实例化调用。
+        # 去掉 __init__ 后 cls() 不再设属性，lock 类允许实例化并调实例方法。
         out = cls()._color_match(
             image_target, image_ref, method, strength, mask, mask_feather,
             keep_luma, multithread, preview)

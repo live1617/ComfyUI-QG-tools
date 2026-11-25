@@ -17,7 +17,7 @@
 // 2048 长边足够；不压的话 4000 × 3000 的图每笔都要在 1200 万像素上做模糊。
 
 import { api } from "/scripts/api.js";
-import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=202611210910";
+import { BRAND, notifyQgChange, showToast } from "./index.mjs?v=202611251300";
 import {
   brushAdjusts,
   brushCore,
@@ -32,10 +32,10 @@ import {
   steppedSoft,
   startAdjust,
   moveAdjust,
-} from "./brush.mjs?v=202611210910";
-import { defaultBrushSize } from "./compare_erase.mjs?v=202611210910";
-import { encodeRgbaPng } from "./png_encode.mjs?v=202611210910";
-import { zh, zhPair } from "./zh.mjs?v=202611210910";
+} from "./brush.mjs?v=202611251300";
+import { fitRect } from "./compare_erase.mjs?v=202611251300";
+import { encodeRgbaPng } from "./png_encode.mjs?v=202611251300";
+import { zh, zhPair } from "./zh.mjs?v=202611251300";
 
 const CSS_ID = "qgtools-mask-editor-css";
 
@@ -45,6 +45,11 @@ const PREVIEW_SIDE = 2048;
 const ZOOM_MIN = 0.05;
 const ZOOM_MAX = 12;
 const BRUSH_RANGE = [2, 600];
+// 打开遮罩编辑器时的固定笔宽：每次都一样，不随图片尺寸变（用户 2026-11-23
+// 定 50px，比孤海的 30px 稍大，适合大面积涂抹）。以前沿用「图像对比」的
+// defaultBrushSize（长边/24×2），一张 2560×3413 的图会算到 284px —— 用户报
+// 「每次都这么大」，改为固定值。
+const DEFAULT_BRUSH_SIZE = 50;
 // 一笔最多记多少个点：再密也看不出区别，只是拖慢重画。
 const MAX_POINTS = 4000;
 // 撤销最多留多少步。每一步只是几个数字，不是一张图，所以给得宽。
@@ -162,7 +167,6 @@ function paintStroke(ctx, stroke, scale, colour = "#000") {
   const soft = stroke.s / 100;
   const core = Math.max(0.01, brushCore(stroke.d, soft) * scale);
   const sigma = brushSigma(stroke.d, soft) * scale;
-  const path = stroke.p;
   ctx.save();
   ctx.globalCompositeOperation = stroke.o ? "source-over" : "destination-out";
   ctx.lineCap = "round";
@@ -171,6 +175,23 @@ function paintStroke(ctx, stroke, scale, colour = "#000") {
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
   if (sigma >= 0.25 && CAN_FILTER) ctx.filter = `blur(${sigma.toFixed(3)}px)`;
+  // 画框是一条矩形笔画：r 是原图口径的 [x1,y1,x2,y2]，填充而不是描边。
+  // 走同一个 paintStroke，撤销 / 重做 / 烘基线 / 按颜色分层就都不用另写一套。
+  // 硬边：软笔尖会把框边糊掉，抠图时要的是整齐的一块。
+  if (stroke.r) {
+    const [ax, ay, bx, by] = stroke.r;
+    const left = Math.min(ax, bx) * scale;
+    const top = Math.min(ay, by) * scale;
+    const width = Math.abs(bx - ax) * scale;
+    const height = Math.abs(by - ay) * scale;
+    if (width >= 1 && height >= 1) {
+      if (CAN_FILTER) ctx.filter = "none";
+      ctx.fillRect(left, top, width, height);
+    }
+    ctx.restore();
+    return;
+  }
+  const path = stroke.p;
   ctx.beginPath();
   if (path.length === 2) {
     ctx.arc(path[0] * scale, path[1] * scale, core, 0, Math.PI * 2);
@@ -215,15 +236,6 @@ function saveScaleFor(width, height) {
 }
 
 // 一张图整个居中放进一个盒子时占哪块地方。
-function fitRect(boxWidth, boxHeight, width, height) {
-  if (!(boxWidth > 0) || !(boxHeight > 0) || !(width > 0) || !(height > 0)) {
-    return { left: 0, top: 0, width: 0, height: 0, scale: 0 };
-  }
-  const scale = Math.min(boxWidth / width, boxHeight / height);
-  const fitWidth = width * scale;
-  const fitHeight = height * scale;
-  return { left: (boxWidth - fitWidth) / 2, top: (boxHeight - fitHeight) / 2, width: fitWidth, height: fitHeight, scale };
-}
 
 /**
  * 打开遮罩编辑器。
@@ -323,9 +335,12 @@ export function openMaskEditor({
     filled: null,               // 自动填洞之后的遮罩（视图，不改笔画）
     fillCount: 0,
     autoFill: true,             // 默认开着：抬笔就把围住的洞补上
+    // 切到画框时会暂时关掉自动填洞（否则它把擦出来的矩形又填回去）。
+    // 这里记住进画框之前的状态，切回画笔再恢复；null = 没有待恢复的状态。
+    autoFillBeforeFrame: null,
     strokes: [], undone: [],
     tool: "paint",
-    size: 64,
+    size: DEFAULT_BRUSH_SIZE,
     // 软度默认 0（硬笔）：软边在交界处要多几像素才糊得开，画遮罩时硬边更好对准
     // 头发丝、衣领这种地方。想糊开按住 Shift+] 或拖滑条。
     soft: 0,
@@ -336,6 +351,9 @@ export function openMaskEditor({
     // 打开时按节点上的 `tint_output` 定初始档：带色 → 彩色叠加，不带色 → 仅遮罩。
     mode: tintOutput === true ? "tint" : "mask",
     stroke: null, adjust: null, pointer: null, flip: false, flipKey: false,
+    // 画框拖拽中的草稿：原图口径的 [x1,y1,x2,y2] + 按下那一刻定的画/擦。
+    // 还没落到遮罩上，抬笔才变成一条正式 stroke。
+    draft: null,
     fit: null, frame: 0, saving: false, dirty: false,
     name: String(name || ""),
   };
@@ -648,6 +666,18 @@ export function openMaskEditor({
     const ctx = layerContext(view);
     ctx.clearRect(0, 0, view.width, view.height);
     if (!ed.pointer || !fit || !ed.picture) return;
+    // 画框不看笔宽 —— 画一个十字当光标，别画那个会让人误以为「笔宽影响框」的圆圈。
+    if (ed.tool === "frame") {
+      const [px, py] = ed.pointer;
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,120,120,.95)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px - 7, py); ctx.lineTo(px + 7, py);
+      ctx.moveTo(px, py - 7); ctx.lineTo(px, py + 7);
+      ctx.stroke();
+      ctx.restore();
+    } else {
     const core = Math.max(1, brushCore(ed.size, ed.soft / 100) * fit.scale * ed.zoom);
     const reach = Math.max(core, brushReach(ed.size, ed.soft / 100) * fit.scale * ed.zoom);
     const wide = reach > core + 0.5;
@@ -678,6 +708,54 @@ export function openMaskEditor({
       ctx.stroke();
     }
     ctx.restore();
+    }
+    // 画框草稿：拖到哪儿就画到哪儿，松手前只是这层上的虚线，不碰遮罩。
+    // 坐标从原图口径换回视图，跟 toPicture() 是逆运算，放大平移后也不会跑偏。
+    if (ed.draft && fit) {
+      const [ax, ay, bx, by] = ed.draft.r;
+      const left = fit.left + Math.min(ax, bx) * fit.scale;
+      const top = fit.top + Math.min(ay, by) * fit.scale;
+      const width = Math.abs(bx - ax) * fit.scale;
+      const height = Math.abs(by - ay) * fit.scale;
+      ctx.save();
+      ctx.setLineDash([7, 4]);
+      ctx.strokeStyle = "rgba(0,0,0,.72)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(left, top, width, height);
+      ctx.strokeStyle = ed.draft.paint ? "rgba(255,255,255,.98)" : "rgba(255,120,120,.98)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(left, top, width, height);
+      // 四角小方块 + 起终点：用户说的「看不到起点和终点」就是缺这些抓手。
+      // 起点黄、终点按画/擦给白或红，一眼看得出往哪个方向拖。
+      ctx.setLineDash([]);
+      for (const [x, y] of [[left, top], [left + width, top], [left + width, top + height], [left, top + height]]) {
+        ctx.fillStyle = "rgba(0,0,0,.8)";
+        ctx.fillRect(x - 4, y - 4, 8, 8);
+        ctx.fillStyle = "rgba(255,255,255,.95)";
+        ctx.fillRect(x - 2.5, y - 2.5, 5, 5);
+      }
+      const sx = fit.left + ax * fit.scale;
+      const sy = fit.top + ay * fit.scale;
+      const ex = fit.left + bx * fit.scale;
+      const ey = fit.top + by * fit.scale;
+      ctx.fillStyle = "#ffd166";
+      ctx.fillRect(sx - 5, sy - 5, 10, 10);
+      ctx.fillStyle = ed.draft.paint ? "#ffffff" : "#ff7878";
+      ctx.fillRect(ex - 5, ey - 5, 10, 10);
+      // 尺寸直接标在框边，松手前就知道会填多大一块（原图像素口径）。
+      const label = `${Math.round(Math.abs(bx - ax))} × ${Math.round(Math.abs(by - ay))}`;
+      ctx.font = "600 12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      const lx = left + width / 2;
+      const ly = top > 22 ? top - 6 : top + height + 16;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,.85)";
+      ctx.strokeText(label, lx, ly);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(label, lx, ly);
+      ctx.restore();
+    }
   }
 
   // 画面缩放：只改 frame 的 transform，canvas 一个像素都不重画。
@@ -740,6 +818,15 @@ export function openMaskEditor({
     const point = toPicture(event);
     if (!point || ed.saving) return;
     ed.flip = brushFlips(event);
+    if (ed.tool === "frame") {
+      // 画框：按下只起一个草稿，抬笔才写进遮罩。左右键 / Ctrl 的律跟画笔一样 ——
+      // 左键填出一块，右键或 Ctrl 挖掉一块。
+      ed.draft = { r: [point[0], point[1], point[0], point[1]], paint: !ed.flip };
+      ed.undone.length = 0;
+      schedule();
+      syncTools();
+      return;
+    }
     const paint = ed.tool === "paint" ? !ed.flip : ed.flip;
     // 一笔一色：记下当前色点，撤销重画时才知道该落回哪一层。
     ed.stroke = { o: paint ? 1 : 0, d: ed.size, s: ed.soft, p: [point[0], point[1]], c: ed.tint };
@@ -758,7 +845,23 @@ export function openMaskEditor({
 
   function extendTo(event) {
     const point = toPicture(event);
-    if (!point || !ed.stroke) return;
+    if (!point) return;
+    if (ed.draft) {
+      let x = point[0];
+      let y = point[1];
+      // Shift 拉正方形，跟孤海那边的选框一致。
+      if (event.shiftKey) {
+        const [x0, y0] = [ed.draft.r[0], ed.draft.r[1]];
+        const side = Math.max(Math.abs(x - x0), Math.abs(y - y0));
+        x = x0 + Math.sign(x - x0 || 1) * side;
+        y = y0 + Math.sign(y - y0 || 1) * side;
+      }
+      ed.draft.r[2] = x;
+      ed.draft.r[3] = y;
+      scheduleCursor();
+      return;
+    }
+    if (!ed.stroke) return;
     const points = ed.stroke.p;
     const before = points.length;
     if (!pushPoint(points, point[0], point[1], pointGap(ed.size)) && before === points.length) return;
@@ -792,7 +895,47 @@ export function openMaskEditor({
     }
   }
 
+  // 一笔正式落进历史。画笔和画框共用，免得两条路径的撤销栈慢慢走散。
+  // 🔴 烘基线是一次同步的 getImageData(2048×1536)，60~100ms —— 画着画着
+  // 卡一下就是它。所以这里只能「尽量少烘」：留 240 笔（= MAX_UNDO 的 4 倍）
+  // 时几乎碰不到，撤销栈也足够深。曾经降到 80 笔，结果从「很少」变成
+  // 「每 20 笔一次」，把偶发卡顿变成规律卡顿（用户 2026-11-01 报的）—— 已改回。
+  // 🔴 软笔落笔时按「最后一段」补画（extendTo），blur 在接缝处叠了两次 ——
+  // 屏幕上比整条重画更浓，而撤销 / 重开 / 存盘都走整条重画，抬笔后会突然变淡。
+  // 抬笔整条重画一次，看到和存出去的才是同一个浓度。硬笔 alpha 饱和，不必付这次开销。
+  function commitStroke(stroke) {
+    ed.strokes.push(stroke);
+    if (ed.strokes.length > MAX_UNDO * 4) {
+      const drop = ed.strokes.length - MAX_UNDO * 4;
+      bakeStrokes(ed.strokes.slice(0, drop));
+      ed.strokes.splice(0, drop);
+    }
+    ed.dirty = true;
+    if (stroke.s > 0) rebuild();
+    else scheduleFill();
+  }
+
   function endStroke(cancelled) {
+    // 画框：草稿抬笔才变成一条正式笔画。不到 2px 的拖拽当误触丢掉，
+    // 免得点一下就在遮罩上留下一个几乎看不见、却能被撤销出来的小方块。
+    if (ed.draft) {
+      const draft = ed.draft;
+      ed.draft = null;
+      const [x1, y1, x2, y2] = draft.r;
+      if (!cancelled && Math.abs(x2 - x1) >= 2 && Math.abs(y2 - y1) >= 2) {
+        const rect = { o: draft.paint ? 1 : 0, s: 0, r: draft.r.slice(), c: ed.tint };
+        if (draft.paint) {
+          ed.strokeSeq += 1;
+          ed.layerOrder.set(ed.tint, ed.strokeSeq);
+        }
+        strokeInto(rect);
+        commitStroke(rect);
+      } else {
+        schedule();
+      }
+      syncTools();
+      return;
+    }
     const stroke = ed.stroke;
     ed.stroke = null;
     if (!stroke) return;
@@ -800,26 +943,7 @@ export function openMaskEditor({
       rebuild();
     } else {
       // 一笔只有起点（只是点了一下）也要留着：那就是一个圆点。
-      ed.strokes.push(stroke);
-      // 🔴 烘基线是一次同步的 getImageData(2048×1536)，60~100ms —— 画着画着
-      // 卡一下就是它。所以这里只能「尽量少烘」：留 240 笔（= MAX_UNDO 的 4 倍）
-      // 时几乎碰不到，撤销栈也足够深。
-      // 曾经把它降到 80 笔想让 rebuild 更快，结果烘基线从「很少」变成
-      // 「每 20 笔一次」，反而把偶发卡顿变成了规律卡顿（用户 2026-11-01 报
-      // 「画着就跳一下」）—— 已改回 240。
-      if (ed.strokes.length > MAX_UNDO * 4) {
-        const drop = ed.strokes.length - MAX_UNDO * 4;
-        bakeStrokes(ed.strokes.slice(0, drop));
-        ed.strokes.splice(0, drop);
-      }
-      ed.dirty = true;
-      // 🔴 软笔落笔时是按「最后一段」补画的（extendTo），blur 在接缝处叠了
-      // 两次 —— 屏幕上比「整条一次画出来」更浓，而撤销一步 / 重开 / 存盘走的
-      // 都是整条重画，于是抬笔后颜色会突然变淡，存出去的和画的时候看到的也
-      // 不是一个浓度。抬笔就整条重画一次，两者从此一致。硬笔不会累加（alpha
-      // 饱和），不必为此付一次全量重画。
-      if (stroke.s > 0) rebuild();
-      else scheduleFill();
+      commitStroke(stroke);
     }
     syncTools();
   }
@@ -1286,6 +1410,7 @@ export function openMaskEditor({
 
   const toolPaint = button(zh("Paint"), zh("Paint the mask on. B"));
   const toolErase = button(zh("Erase"), zh("Rub the mask out. E"));
+  const toolFrame = button(zh("Frame"), zh("Drag out a rectangle, then let go to fill it. M. Shift keeps it square; right button or Ctrl erases a rectangle instead."));
   const undoBtn = button(zh("Undo"), zh("Undo the last stroke. Ctrl+Z"));
   const redoBtn = button(zh("Redo"), zh("Put the last stroke back. Ctrl+Shift+Z"));
   const clearBtn = button(zh("Clear"), zh("Throw the whole mask away."));
@@ -1341,22 +1466,22 @@ export function openMaskEditor({
     return btn;
   });
 
-  toolPaint.addEventListener("click", () => { ed.tool = "paint"; syncTools(); }, { signal });
-  toolErase.addEventListener("click", () => { ed.tool = "erase"; syncTools(); }, { signal });
-  undoBtn.addEventListener("click", () => undo(), { signal });
-  redoBtn.addEventListener("click", () => redo(), { signal });
-  clearBtn.addEventListener("click", () => clear(), { signal });
-  invertBtn.addEventListener("click", () => invert(), { signal });
-  holesBtn.addEventListener("click", () => {
-    ed.autoFill = !ed.autoFill;
-    // 打开时立刻算一次，不用等下一笔；关掉就把填充层撤掉，回到原始笔画。
-    if (ed.autoFill) {
+  // 自动填洞的开关。manual=false 用于「进画框时暂时关掉」——那种情况不能
+  // 抹掉待恢复的状态。
+  function setAutoFill(on, manual = true, toast = true) {
+    ed.autoFill = on;
+    if (manual) ed.autoFillBeforeFrame = null;
+    if (on) {
       refreshFill();
       schedule();
     } else {
+      // refreshFill() 开头会清掉已算出来的洞层，关掉后立刻回到手画的样子。
       scheduleFill();
     }
-    if (ed.fillCount) {
+    // 🔴 只在「打开」时弹填洞计数：关闭走 scheduleFill() 的 debounce，
+    // ed.fillCount 要等定时器才清零，这里立刻读会拿到上一次的旧计数，
+    // 用户刚关掉填洞却看到「填了 N 个像素」的提示（2026-11-23 排查）。
+    if (toast && on && ed.fillCount) {
       showToast({
         severity: "info",
         summary: zh("Mask editor"),
@@ -1365,9 +1490,34 @@ export function openMaskEditor({
       });
     }
     syncTools();
-  }, { signal });
+  }
 
-  bars.append(toolPaint, toolErase, undoBtn, redoBtn, clearBtn, invertBtn, holesBtn, modeSeg);
+  // 工具切换集中在这里：进画框关填洞（否则擦框挖出的矩形会被填回去），
+  // 切回画笔再恢复进画框之前的状态；中途用户自己点过开关就尊重他的选择。
+  function setTool(next) {
+    if (ed.tool === next) return;
+    if (next === "frame") {
+      if (ed.autoFillBeforeFrame === null) ed.autoFillBeforeFrame = ed.autoFill;
+      if (ed.autoFill) setAutoFill(false, false, false);
+    } else if (ed.tool === "frame" && ed.autoFillBeforeFrame !== null) {
+      const back = ed.autoFillBeforeFrame;
+      ed.autoFillBeforeFrame = null;
+      if (ed.autoFill !== back) setAutoFill(back, false, false);
+    }
+    ed.tool = next;
+    syncTools();
+  }
+
+  toolPaint.addEventListener("click", () => setTool("paint"), { signal });
+  toolErase.addEventListener("click", () => setTool("erase"), { signal });
+  toolFrame.addEventListener("click", () => setTool("frame"), { signal });
+  undoBtn.addEventListener("click", () => undo(), { signal });
+  redoBtn.addEventListener("click", () => redo(), { signal });
+  clearBtn.addEventListener("click", () => clear(), { signal });
+  invertBtn.addEventListener("click", () => invert(), { signal });
+  holesBtn.addEventListener("click", () => setAutoFill(!ed.autoFill), { signal });
+
+  bars.append(toolPaint, toolErase, toolFrame, undoBtn, redoBtn, clearBtn, invertBtn, holesBtn, modeSeg);
 
   // 底栏三件（笔宽 / 软度 / 透明度）用滑条，不用数字框。
   // 数字框看着像输入框，得先把指针按上去左右拖才知道能拖；滑条一眼就能看出
@@ -1518,6 +1668,7 @@ export function openMaskEditor({
   function syncTools() {
     toolPaint.classList.toggle("on", ed.tool === "paint");
     toolErase.classList.toggle("on", ed.tool === "erase");
+    toolFrame.classList.toggle("on", ed.tool === "frame");
     undoBtn.disabled = !ed.strokes.length;
     redoBtn.disabled = !ed.undone.length;
     saveBtn.disabled = ed.saving || !ed.picture;
@@ -1531,9 +1682,11 @@ export function openMaskEditor({
     for (const [key, el] of dots) el.classList.toggle("on", key === ed.tint);
     const [sizeWord, softWord] = brushWords(ed.size, ed.soft);
     const zoomWord = ed.zoom === 1 ? "" : ` · ${Math.round(ed.zoom * 100)}%`;
-    hint.textContent = ed.pointer
-      ? `${sizeWord} · ${softWord}${zoomWord}\n${zh("Right button or Ctrl does the opposite tool. Alt + right drag resizes. Wheel zooms, Space or middle drag pans.")}`
-      : zh("Drag to paint. [ and ] resize, Shift + [ ] soften. Alt + right drag adjusts. Ctrl+Z undoes. Wheel zooms, Space or middle drag pans.");
+    hint.textContent = ed.tool === "frame"
+      ? zh("Drag out a rectangle and let go to fill it. Shift keeps it square. Right button or Ctrl erases a rectangle. Ctrl+Z undoes.")
+      : ed.pointer
+        ? `${sizeWord} · ${softWord}${zoomWord}\n${zh("Right button or Ctrl does the opposite tool. Alt + right drag resizes. Wheel zooms, Space or middle drag pans.")}`
+        : zh("Drag to paint. [ and ] resize, Shift + [ ] soften. Alt + right drag adjusts. Ctrl+Z undoes. Wheel zooms, Space or middle drag pans.");
   }
 
   // ---- 指针与键盘 -----------------------------------------------------------
@@ -1589,7 +1742,9 @@ export function openMaskEditor({
       syncTools();
       return;
     }
-    if (ed.stroke) extendTo(event);
+    // 画框时 ed.stroke 是空的（草稿存在 ed.draft），这里必须也调 extendTo，
+    // 否则拖拽终点一直停在按下的那一刻，虚线框宽度 0 —— 用户看到的就是「画框没反馈」。
+    if (ed.stroke || ed.draft) extendTo(event);
     else scheduleCursor();
   }, { signal });
 
@@ -1610,6 +1765,8 @@ export function openMaskEditor({
   view.addEventListener("pointerup", (event) => {
     event.stopPropagation();
     if (endPan()) return;
+    // 画框：抬笔这一次的位置也要算进矩形，快速一拖直接松手才不会短一截。
+    if (ed.draft) extendTo(event);
     finish(false);
   }, { signal });
   view.addEventListener("pointercancel", () => {
@@ -1667,13 +1824,17 @@ export function openMaskEditor({
       return;
     }
     if (event.key?.toLowerCase() === "b" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      ed.tool = "paint";
-      syncTools();
+      setTool("paint");
       return;
     }
     if (event.key?.toLowerCase() === "e" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      ed.tool = "erase";
-      syncTools();
+      setTool("erase");
+      return;
+    }
+    // 画框：M 跟孤海那边的选框一致，F 也认（Frame 的首字母）。
+    if ((event.key?.toLowerCase() === "m" || event.key?.toLowerCase() === "f")
+        && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      setTool("frame");
       return;
     }
     const change = brushKey(event);
@@ -1741,9 +1902,9 @@ export function openMaskEditor({
     ed.height = picture.naturalHeight;
     // 遮罩位图：长边压到 PREVIEW_SIDE，笔画坐标仍是原图像素。
     ed.maskScale = Math.min(1, PREVIEW_SIDE / Math.max(ed.width, ed.height));
-    // 共用「图像对比」那个默认值（长边的二十四分之一），但夹进这个编辑器
-    // 自己的范围：那边能到 2000，这边 600 就够画遮罩了。
-    ed.size = clampBrushSize(defaultBrushSize(ed.width, ed.height), BRUSH_RANGE);
+    // 🔴 笔宽固定 50px，不随图片尺寸变。以前按长边/24×2 算，
+    // 大图一打开就是 284px，用户每次都得先把它拖小，很烦。
+    ed.size = DEFAULT_BRUSH_SIZE;
     sizeBox.set(ed.size);
     softBox.set(ed.soft);
     // 遮罩从哪来：存盘的成品把遮罩放在 alpha 里，画面那张是不透明的，所以

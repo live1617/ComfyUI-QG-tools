@@ -325,7 +325,10 @@ class QGOutpaintBoard(io.ComfyNode):
         rgb255 = parse_fill_color(kw.get("pad_color", "#808080"),
                                   "Outpaint Board pad_color")
         rgb = tuple(c / 255.0 for c in rgb255)
-        has_pad = (l + r + t + b) > 0
+        # 🔴 用正化后的 pad 判据，不能用 l+r+t+b：pad 可为负（裁源图），正负
+        # 会互相抵消 —— left=-50/right=50 明明右侧补了 50px 新区域，求和却是 0，
+        # has_padding 误报 False，下游据此跳过就漏绘了新区域（2026-11-23 排查）。
+        has_pad = any(v > 0 for v in (pad_l, pad_r, pad_t, pad_b))
 
         # Output picture: paint the fill, then copy the kept pixels in place. No
         # interpolation anywhere on this path - a pure crop + paste.

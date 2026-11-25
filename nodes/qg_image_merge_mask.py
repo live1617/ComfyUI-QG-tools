@@ -26,7 +26,13 @@ from ._qg_mask_crop_helpers import resize_image, resize_mask
 
 
 def _as_image(value):
-    """任意 IMAGE 张量 -> float32 ``[B,H,W,3]``，值域钳到 0..1。"""
+    """任意 IMAGE 张量 -> float32 ``[B,H,W,3]``，值域钳到 0..1。
+
+    通道归一到 3：RGBA 取前 3 通道（本节点的透明度由外部 mask 决定，图像
+    自带的 alpha 不参与合成），灰度复制成 3 通道。否则 3 通道背景 + 4 通道
+    叠加层会在下面的广播乘法处抛 size mismatch，整个 workflow 中断
+    （2026-11-23 排查：带透明通道的 logo 叠加是最自然的用法，命中率高）。
+    """
     if value is None:
         raise ValueError("Image Merge Mask: an image input is required.")
     image = value.to(torch.float32)
@@ -34,8 +40,17 @@ def _as_image(value):
         image = image.unsqueeze(0)
     if image.dim() != 4:
         raise ValueError(
-            "Image Merge Mask: expected an IMAGE of shape [B,H,W,3], got %s."
+            "Image Merge Mask: expected an IMAGE of shape [B,H,W,C], got %s."
             % (tuple(image.shape),)
+        )
+    channels = int(image.shape[-1])
+    if channels >= 3:
+        image = image[..., :3]
+    elif channels == 1:
+        image = image.repeat(1, 1, 1, 3)
+    else:
+        raise ValueError(
+            "Image Merge Mask: expected 1, 3 or 4 channels, got %d." % channels
         )
     return image.clamp(0.0, 1.0)
 

@@ -1,12 +1,11 @@
+import { clamp } from "./math_utils.mjs?v=202611251300";
+export { clamp };
+
 const DEFAULT_WIDTH = 320;
 
 export function finiteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
-}
-
-export function clamp(value, minimum, maximum) {
-  return Math.max(minimum, Math.min(maximum, value));
 }
 
 export function formatTime(secondsValue, precision = 2) {

@@ -281,7 +281,7 @@ class QGLoadImage(io.ComfyNode):
         return True
 
     @classmethod
-    def IS_CHANGED(
+    def fingerprint_inputs(
         cls,
         image,
         keep_alpha=False,
@@ -306,7 +306,8 @@ class QGLoadImage(io.ComfyNode):
         paired = _paired_source(path) if path else None
         if paired is not None:
             try:
-                parts["source"] = f"{paired.stat().st_size}:{paired.stat().st_mtime_ns}"
+                st = paired.stat()
+                parts["source"] = f"{st.st_size}:{st.st_mtime_ns}"
             except OSError:
                 parts["source"] = "missing"
         return stable_file_fingerprint(path, parts)
