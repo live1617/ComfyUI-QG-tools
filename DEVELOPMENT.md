@@ -10,6 +10,7 @@ ComfyUI-QG-tools/
 ├── ORIGINS.json                       # 节点来源清单（机器可读）：原创 / 搬运 + 参考来源
 ├── PORTED.json                        # 搬运清单（机器可读）：每个文件从哪来、改了什么
 ├── README.md                          # 面向使用者
+├── NODE-ORIGINS.md                    # 84 节点完整来源表（由 ORIGINS.json 生成，README 里是短引用）
 ├── DEVELOPMENT.md                      # 本文件
 ├── LICENSE                            # GPL-3.0-or-later 全文
 ├── pyproject.toml                     # ComfyUI Registry 元数据（Manager 一键安装靠它）
@@ -2608,7 +2609,7 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.22  |  84 nodes loaded  |  9 categories
+  QG-tools v0.9.23  |  84 nodes loaded  |  9 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

@@ -273,19 +273,80 @@ def resize_mask(mask: torch.Tensor, height: int, width: int) -> torch.Tensor:
     return work.squeeze(1).clamp(0.0, 1.0)
 
 
+# 校色候选的判据：亮度结构（高频细节）一致才认为是「同一画面整体偏色」。
+# 整体偏色是每条通道加同一个偏移，高频细节原样保留；新增/移除的重绘内容
+# 会把局部结构换掉。用结构差异把后者排除，校色才不会去压暗一朵新画的花。
+COLOUR_DETAIL_SCALE = 0.02     # 高频差超过这个量级就开始降权
+COLOUR_STRUCTURE_MIN = 0.8     # 结构相似度低于此值不当作「同一画面」
+COLOUR_DIFF_CAP = 0.4          # 整通道差超过 102/255 的像素不参与估算
+COLOUR_SAMPLE_FRAC = 0.05      # 候选少于 5% 就不校，宁可不动也不瞎猜
+COLOUR_WORK_SIZE = 256         # 估算用的降采样边长上限，省算力又滤掉单像素噪声
+
+
+def _colour_detail(gray: torch.Tensor) -> torch.Tensor:
+    """灰度图减去 5×5 盒式模糊 = 高频细节；整体平移不改它。"""
+    padded = functional.pad(gray, (2, 2, 2, 2), mode="replicate")
+    box = sum(padded[..., dy:dy + gray.shape[-2], dx:dx + gray.shape[-1]]
+              for dy in range(5) for dx in range(5))
+    return gray - box / 25.0
+
+
 def match_colour(patch: torch.Tensor, reference: torch.Tensor, strength: float) -> torch.Tensor:
-    """Nudge the patch's channels so its median lines up with the reference's.
+    """Align only a *global* colour cast, never the repainted content.
 
     A crop that went through a resize-and-back comes home a touch brighter or
-    duller. One global per-channel offset removes that drift without touching
-    local contrast, which is all this is for: it is not a colour transfer, and
-    a patch that was genuinely repainted only gets its overall cast aligned.
+    duller. That drift is a near-constant per-channel offset, which leaves the
+    picture's high-frequency structure intact. Repainted content is the
+    opposite: it replaces that structure. So the offset is estimated from
+    pixels whose local detail still matches the source — a global cast keeps
+    them all, while a newly painted flower is excluded instead of being
+    mistaken for a cast and pressed dark.
+
+    No samples left means no correction: a patch that is genuinely different
+    from the source must keep its own colour. The offset is clamped to ±0.2
+    per channel and blended in by ``strength``.
     """
     if strength <= 0.0 or patch.shape[-1] < 3:
         return patch
-    source = patch[..., :3].reshape(-1, 3)
-    target = reference[..., :3].reshape(-1, 3)
-    offset = (target.median(dim=0).values - source.median(dim=0).values).clamp(-0.2, 0.2)
+
+    src = patch[..., :3]
+    ref = reference[..., :3]
+    if src.shape[-2:] != ref.shape[-2:]:
+        return patch
+
+    # 输入是 [B,H,W,C]：插值要临时换到 [B,C,H,W]，换回后仍是 BHWC。
+    # 降采样：大图直接算 5×5 卷积太慢，且单像素噪声不该左右估算。
+    h, w = int(src.shape[-2]), int(src.shape[-1])
+    scale = min(1.0, COLOUR_WORK_SIZE / max(h, w))
+    if scale < 1.0:
+        size = (max(1, round(w * scale)), max(1, round(h * scale)))
+        src_s = functional.interpolate(src.permute(0, 3, 1, 2), size=size, mode="area").permute(0, 2, 3, 1)
+        ref_s = functional.interpolate(ref.permute(0, 3, 1, 2), size=size, mode="area").permute(0, 2, 3, 1)
+    else:
+        src_s, ref_s = src, ref
+
+    # Rec.601 亮度：只用来比结构，不参与最终偏移。
+    lum = torch.tensor([0.299, 0.587, 0.114], dtype=src_s.dtype, device=src_s.device)
+    src_gray = (src_s * lum).sum(dim=-1)
+    ref_gray = (ref_s * lum).sum(dim=-1)
+    detail_gap = _colour_detail(src_gray) - _colour_detail(ref_gray)
+    structure = 1.0 / (1.0 + (detail_gap / COLOUR_DETAIL_SCALE).square())
+
+    candidate = (structure > COLOUR_STRUCTURE_MIN) \
+        & ((src_s - ref_s).abs().amax(dim=-1) <= COLOUR_DIFF_CAP)
+
+    # 3×3 腐蚀：贴着重绘边界的像素混了两边的颜色，不能拿来估算。
+    if bool(candidate.any()):
+        near = functional.max_pool2d(
+            candidate.to(torch.float32).unsqueeze(1), kernel_size=3, stride=1, padding=1
+        ).squeeze(1) > 0.5
+        candidate = candidate & near
+
+    sample_count = int(candidate.sum().item())
+    if sample_count < max(16, int(candidate.numel() * COLOUR_SAMPLE_FRAC)):
+        return patch
+
+    offset = (ref_s[candidate] - src_s[candidate]).median(dim=0).values.clamp(-0.2, 0.2)
     out = patch.clone()
     out[..., :3] = (out[..., :3] + offset * float(strength)).clamp(0.0, 1.0)
     return out
