@@ -2609,7 +2609,7 @@ ValueError: No mask painted: right-click your picture, choose Open in MaskEditor
 
 ```
 ----------------------------------------------------------------------
-  QG-tools v0.9.23  |  84 nodes loaded  |  9 categories
+  QG-tools v0.9.24  |  84 nodes loaded  |  9 categories
   https://github.com/live1617/ComfyUI-QG-tools
 ----------------------------------------------------------------------
 ```

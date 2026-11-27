@@ -12,13 +12,16 @@ Rectangles are ``(x, y, width, height)`` and may stick out of the frame on any
 side; every helper here clips while reading and never assumes the rectangle is
 inside the picture.
 
-Pure torch. Nothing in here touches the filesystem or the network.
+All geometry stays local; cv2 is only used as an optional exact-distance
+accelerator when present, with a pure torch disk fallback. Nothing in here
+touches the filesystem or the network.
 """
 
 from __future__ import annotations
 
 import math
 
+import numpy as np
 import torch
 import torch.nn.functional as functional
 
@@ -81,6 +84,10 @@ def plan_crop(
     ``(rect, (target_height, target_width), mode)``; the mode comes back
     changed to ``native`` when ``custom`` was asked for but no size given.
 
+    The rectangle is centred on the *grown* box, not on the original painted
+    bounds: asymmetric pads move the framing by half their difference, the
+    same way the reference crop node does.
+
     Rounding is deliberately asymmetric: ``native`` and ``square`` round **up**
     so the crop never loses painted pixels, ``custom`` rounds **down** because
     the target is a hard output size the sampler will be handed.
@@ -92,8 +99,12 @@ def plan_crop(
     )
     width = max(1, area_w + left + right)
     height = max(1, area_h + bottom + top)
-    centre_x = x0 + area_w // 2
-    centre_y = y0 + area_h // 2
+    # 展开后的矩形中心 = ((x0 - left) + (x0 + area_w + right)) // 2。
+    # 孤海「遮罩裁剪V2」先按四向扩展量拼出基础矩形再取中心；上下或左右
+    # 扩展不对称时它和原遮罩 bbox 中心差 (扩展差)/2，取景会跟着错开同样
+    # 的像素数。这次上扩 197、下扩 263，旧口径就比孤海高 33px。
+    centre_x = ((x0 - left) + (x0 + area_w + right)) // 2
+    centre_y = ((y0 - top) + (y0 + area_h + bottom)) // 2
 
     mode = str(size_mode)
     target_w = target_h = 0
@@ -244,7 +255,13 @@ def crop_mask(mask: torch.Tensor, rect: Rect) -> torch.Tensor:
 
 
 def resize_image(image: torch.Tensor, height: int, width: int) -> torch.Tensor:
-    """Resize a BHWC image; shrinks read as area, grows read as bilinear."""
+    """Resize a BHWC image; shrinks read as area, grows read as bilinear.
+
+    This is the package-wide default used by nodes that only need a size change
+    (for example Image Merge Mask). Crop Restore deliberately opts into the
+    antialiased variant below instead, because its result is pasted back over
+    the untouched source and any extra blur there reads as a colour shift.
+    """
     if image.shape[1] == height and image.shape[2] == width:
         return image
     work = image.permute(0, 3, 1, 2)
@@ -255,6 +272,28 @@ def resize_image(image: torch.Tensor, height: int, width: int) -> torch.Tensor:
         work = functional.interpolate(
             work, size=(height, width), mode="bilinear", align_corners=False
         )
+    return work.permute(0, 2, 3, 1)
+
+
+def resize_image_aa(image: torch.Tensor, height: int, width: int) -> torch.Tensor:
+    """LANCZOS-like crop resize: antialiased bicubic on the way back.
+
+    Bicubic with antialias keeps more of the source's fine detail than plain
+    bilinear, so a crop that shrinks for the sampler and grows back on paste
+    loses less texture -- measurably closer to a LANCZOS round-trip. Scoped to
+    Mask Crop / Crop Restore so other nodes keep their established behaviour.
+    """
+    if image.shape[1] == height and image.shape[2] == width:
+        return image
+    work = image.permute(0, 3, 1, 2)
+    shrinking = height <= image.shape[1] and width <= image.shape[2]
+    if shrinking:
+        work = functional.interpolate(work, size=(height, width), mode="area")
+    else:
+        work = functional.interpolate(
+            work, size=(height, width), mode="bicubic", align_corners=False,
+            antialias=True
+        ).clamp(0.0, 1.0)
     return work.permute(0, 2, 3, 1)
 
 
@@ -273,14 +312,164 @@ def resize_mask(mask: torch.Tensor, height: int, width: int) -> torch.Tensor:
     return work.squeeze(1).clamp(0.0, 1.0)
 
 
+def feather_mask_softtail(mask: torch.Tensor, sigma: float) -> torch.Tensor:
+    """Gaussian feather whose kernel tapers smoothly to zero at its radius.
+
+    A plain gaussian still carries weight at the cut-off, so truncating it
+    makes the first transparent pixel jump to a nonzero value - a faint hard
+    ring around a pasted crop. Tapering the kernel's outer half with a
+    smoothstep drives the tail to zero before the cut-off, so the transition
+    reads as continuous. Used only on Crop Restore's paste mask; the shared
+    blur_mask is left untouched for every other node.
+    """
+    if sigma <= 0.0:
+        return mask
+    radius = max(1, int(math.ceil(float(sigma))))
+    coords = torch.arange(-radius, radius + 1, dtype=torch.float64, device=mask.device)
+    ratio = coords.abs() / (radius + 0.5)
+    tail = ((ratio - 0.5) * 2.0).clamp(0.0, 1.0)
+    smooth = 1.0 - tail ** 3 * (tail * (tail * 6.0 - 15.0) + 10.0)
+    kernel = torch.exp(-0.5 * (coords / radius) ** 2) * smooth
+    kernel = (kernel / kernel.sum()).to(mask.dtype)
+    blurred = mask.unsqueeze(1)
+    blurred = functional.pad(blurred, (radius, radius, 0, 0), mode="replicate")
+    blurred = functional.conv2d(blurred, kernel.view(1, 1, 1, -1))
+    blurred = functional.pad(blurred, (0, 0, radius, radius), mode="replicate")
+    blurred = functional.conv2d(blurred, kernel.view(1, 1, -1, 1))
+    return blurred.squeeze(1).clamp(0.0, 1.0)
+
+
+def percent_to_pixels(percent: float, bounds: Rect) -> int:
+    """孤海口径：百分比按涂色区域平均边长换算，最小 1 像素。
+
+    ``bounds`` is the painted area's ``(x, y, w, h)``. GH_CropRestore stores
+    the same white-area size in its seam and uses ``int((w+h)/2*pct/100)``;
+    keeping that exact floor makes the same number mean the same thing in
+    both nodes.
+    """
+    value = float(percent)
+    if value <= 0.0:
+        return 0
+    _, _, w, h = bounds
+    average = (int(w) + int(h)) / 2.0
+    return max(1, int(average * value / 100.0))
+
+
+def expand_mask_euclidean(mask: torch.Tensor, pixels: int) -> torch.Tensor:
+    """Expand a binary-ish BHW mask by a Euclidean disk, GH style.
+
+    GH uses ``cv2.distanceTransform(1 - fg, DIST_L2, 3)`` and fills anything
+    within the radius. When cv2 is installed on the CPU path we use that exact
+    same call, so the shapes match bit for bit. Without it, the row-wise max
+    filter below is a pure torch disk union: for every vertical offset the
+    allowed horizontal half-width is ``floor(sqrt(r*r - dy*dy))``.
+    """
+    radius = int(pixels)
+    if radius <= 0:
+        return mask
+    flat = mask.ndim == 2
+    work = (mask > 1e-6).to(mask.dtype)
+    if flat:
+        work = work.unsqueeze(0)
+
+    if work.device.type == "cpu":
+        try:
+            import cv2
+        except ImportError:
+            cv2 = None
+        if cv2 is not None:
+            out = torch.zeros_like(work)
+            for b in range(int(work.shape[0])):
+                fg = work[b].detach().cpu().numpy().astype(np.uint8)
+                dist = cv2.distanceTransform(1 - fg, cv2.DIST_L2, 3)
+                filled = torch.from_numpy(
+                    (dist <= float(radius)).astype(np.float32)
+                ).to(work.dtype)
+                out[b] = filled
+            return out.squeeze(0) if flat else out
+
+    height = int(work.shape[-2])
+    out = torch.zeros_like(work)
+    for dy in range(-radius, radius + 1):
+        half = int(math.floor(math.sqrt(max(0, radius * radius - dy * dy))))
+        shifted = torch.zeros_like(work)
+        if dy > 0:
+            if dy < height:
+                shifted[:, :-dy, :] = work[:, dy:, :]
+        elif dy < 0:
+            take = -dy
+            if take < height:
+                shifted[:, take:, :] = work[:, :-take, :]
+        else:
+            shifted = work
+        if half == 0:
+            row = shifted
+        else:
+            padded = functional.pad(
+                shifted.unsqueeze(1), (half, half, 0, 0), mode="constant", value=0.0
+            )
+            row = functional.max_pool2d(
+                padded, kernel_size=(1, 2 * half + 1), stride=1
+            ).squeeze(1)
+        out = torch.maximum(out, row)
+    return out.squeeze(0) if flat else out
+
+
+def fade_mask_at_crop_edges(
+    mask: torch.Tensor, rect: Rect, frame_hw: tuple[int, int], fade_px: int
+) -> torch.Tensor:
+    """GH's smoothstep fade on crop edges that fall inside the picture.
+
+    A crop cut out of the picture has artificial borders: there is no
+    processed pixel beyond them. Fading the paste mask to zero there avoids
+    a hard seam; borders that coincide with the canvas edge need no fade.
+    """
+    fade = int(fade_px)
+    if fade <= 0:
+        return mask
+    x, y, w, h = (int(v) for v in rect)
+    frame_h, frame_w = (int(v) for v in frame_hw)
+    vx0, vy0 = max(0, -x), max(0, -y)
+    vx1, vy1 = min(w, frame_w - x), min(h, frame_h - y)
+    if vx1 <= vx0 or vy1 <= vy0:
+        return mask
+
+    flat = mask.ndim == 2
+    out = mask.unsqueeze(0) if flat else mask.clone()
+    valid = out[..., vy0:vy1, vx0:vx1]
+
+    def window(length: int, low: bool, high: bool) -> torch.Tensor:
+        pos = torch.arange(length, dtype=out.dtype, device=out.device)
+        weight = torch.ones_like(pos)
+        if low:
+            weight = torch.minimum(weight, pos / float(fade))
+        if high:
+            weight = torch.minimum(weight, (length - 1 - pos) / float(fade))
+        weight = weight.clamp(0.0, 1.0)
+        return weight ** 3 * (weight * (weight * 6.0 - 15.0) + 10.0)
+
+    if y > 0 or y + h < frame_h:
+        valid = valid * window(vy1 - vy0, y > 0, y + h < frame_h).view(1, -1, 1)
+    if x > 0 or x + w < frame_w:
+        valid = valid * window(vx1 - vx0, x > 0, x + w < frame_w).view(1, 1, -1)
+    out[..., vy0:vy1, vx0:vx1] = valid
+    return out.squeeze(0) if flat else out
+
+
 # 校色候选的判据：亮度结构（高频细节）一致才认为是「同一画面整体偏色」。
 # 整体偏色是每条通道加同一个偏移，高频细节原样保留；新增/移除的重绘内容
 # 会把局部结构换掉。用结构差异把后者排除，校色才不会去压暗一朵新画的花。
 COLOUR_DETAIL_SCALE = 0.02     # 高频差超过这个量级就开始降权
 COLOUR_STRUCTURE_MIN = 0.8     # 结构相似度低于此值不当作「同一画面」
-COLOUR_DIFF_CAP = 0.4          # 整通道差超过 102/255 的像素不参与估算
+COLOUR_DIFF_CAP = 24.0 / 255.0   # 单通道差超过 24 级的不算「轻微偏色」
+COLOUR_LUMA_CAP = 18.0 / 255.0   # 明度差超过 18 级的不算「轻微偏色」
 COLOUR_SAMPLE_FRAC = 0.05      # 候选少于 5% 就不校，宁可不动也不瞎猜
 COLOUR_WORK_SIZE = 256         # 估算用的降采样边长上限，省算力又滤掉单像素噪声
+COLOUR_GAIN_MIN = 0.9          # 增益钳制区间：平坦背景不该被放大噪声
+COLOUR_GAIN_MAX = 1.1
+COLOUR_OFFSET_CAP = 24.0 / 255.0
+COLOUR_ITERATIONS = 6          # 增益/偏移的鲁棒迭代轮数
+COLOUR_STABLE_FRAC = 0.6       # 稳定样本不足 60% 就放弃整块校正
 
 
 def _colour_detail(gray: torch.Tensor) -> torch.Tensor:
@@ -292,19 +481,15 @@ def _colour_detail(gray: torch.Tensor) -> torch.Tensor:
 
 
 def match_colour(patch: torch.Tensor, reference: torch.Tensor, strength: float) -> torch.Tensor:
-    """Align only a *global* colour cast, never the repainted content.
+    """Align a *global* colour cast, never the repainted content.
 
-    A crop that went through a resize-and-back comes home a touch brighter or
-    duller. That drift is a near-constant per-channel offset, which leaves the
-    picture's high-frequency structure intact. Repainted content is the
-    opposite: it replaces that structure. So the offset is estimated from
-    pixels whose local detail still matches the source — a global cast keeps
-    them all, while a newly painted flower is excluded instead of being
-    mistaken for a cast and pressed dark.
-
-    No samples left means no correction: a patch that is genuinely different
-    from the source must keep its own colour. The offset is clamped to ±0.2
-    per channel and blended in by ``strength``.
+    Only pixels that are still the same picture as the source qualify: their
+    local detail must match (a repaint replaces structure) and their colour
+    and luminance must be only slightly adrift (a genuinely different patch
+    is not a cast). From those samples a robust gain+offset pair is fitted by
+    iterated reweighted least squares; the fit is thrown away unless a large
+    fraction of samples agree with it. Flat backgrounds fall back to offset
+    only, so noise is never amplified.
     """
     if strength <= 0.0 or patch.shape[-1] < 3:
         return patch
@@ -315,7 +500,6 @@ def match_colour(patch: torch.Tensor, reference: torch.Tensor, strength: float) 
         return patch
 
     # 输入是 [B,H,W,C]：插值要临时换到 [B,C,H,W]，换回后仍是 BHWC。
-    # 降采样：大图直接算 5×5 卷积太慢，且单像素噪声不该左右估算。
     h, w = int(src.shape[-2]), int(src.shape[-1])
     scale = min(1.0, COLOUR_WORK_SIZE / max(h, w))
     if scale < 1.0:
@@ -325,15 +509,18 @@ def match_colour(patch: torch.Tensor, reference: torch.Tensor, strength: float) 
     else:
         src_s, ref_s = src, ref
 
-    # Rec.601 亮度：只用来比结构，不参与最终偏移。
+    # Rec.601 亮度：只用来比结构和明度差，不参与最终增益/偏移。
     lum = torch.tensor([0.299, 0.587, 0.114], dtype=src_s.dtype, device=src_s.device)
     src_gray = (src_s * lum).sum(dim=-1)
     ref_gray = (ref_s * lum).sum(dim=-1)
     detail_gap = _colour_detail(src_gray) - _colour_detail(ref_gray)
     structure = 1.0 / (1.0 + (detail_gap / COLOUR_DETAIL_SCALE).square())
 
+    # 三个判据同时成立才算「轻微偏色」样本；通道/明度阈值比旧版严得多，
+    # 免得把重绘内容当整体偏色一起校掉。
     candidate = (structure > COLOUR_STRUCTURE_MIN) \
-        & ((src_s - ref_s).abs().amax(dim=-1) <= COLOUR_DIFF_CAP)
+        & ((src_s - ref_s).abs().amax(dim=-1) <= COLOUR_DIFF_CAP) \
+        & ((src_gray - ref_gray).abs() <= COLOUR_LUMA_CAP)
 
     # 3×3 腐蚀：贴着重绘边界的像素混了两边的颜色，不能拿来估算。
     if bool(candidate.any()):
@@ -343,12 +530,57 @@ def match_colour(patch: torch.Tensor, reference: torch.Tensor, strength: float) 
         candidate = candidate & near
 
     sample_count = int(candidate.sum().item())
-    if sample_count < max(16, int(candidate.numel() * COLOUR_SAMPLE_FRAC)):
+    frames = int(src.shape[0])
+    # 判据按每帧独立成立：batch 变大不能把「最少样本」也放大，否则第 2 帧
+    # 起会永远凑不够全局阈值，明明是整体偏色却整批不校。
+    need_per = max(16, int(candidate.shape[-2] * candidate.shape[-1] * COLOUR_SAMPLE_FRAC))
+    if sample_count < need_per * frames:
         return patch
 
-    offset = (ref_s[candidate] - src_s[candidate]).median(dim=0).values.clamp(-0.2, 0.2)
+    fitted = []
+    for b in range(frames):
+        count = int(candidate[b].sum().item())
+        if count < need_per:
+            fitted.append(None)
+            continue
+        sv = src_s[b][candidate[b]].to(torch.float64)
+        rv = ref_s[b][candidate[b]].to(torch.float64)
+        sw = structure[b][candidate[b]].to(torch.float64)
+        gain = torch.ones(3, dtype=torch.float64, device=sv.device)
+        offset = torch.median(rv - sv, dim=0).values
+        for _ in range(COLOUR_ITERATIONS):
+            residual = rv - (sv * gain + offset)
+            center = torch.median(residual, dim=0).values
+            mad = torch.median((residual - center).abs(), dim=0).values * 1.4826
+            scale = torch.clamp(mad, min=0.004)
+            deviation = ((residual - center).abs() / (4.685 * scale)).amax(dim=1)
+            weight = (1.0 - deviation.square()).clamp(min=0.0).square() * sw
+            wsum = float(weight.sum().item())
+            if wsum < max(16, len(sv) * 0.1):
+                gain = None
+                break
+            wn = weight / wsum
+            sm = (sv * wn[:, None]).sum(dim=0)
+            rm = (rv * wn[:, None]).sum(dim=0)
+            var = ((sv - sm).square() * wn[:, None]).sum(dim=0)
+            cov = ((sv - sm) * (rv - rm) * wn[:, None]).sum(dim=0)
+            gain = ((cov + 1e-4) / (var + 1e-4)).clamp(COLOUR_GAIN_MIN, COLOUR_GAIN_MAX)
+            offset = (rm - sm * gain).clamp(-COLOUR_OFFSET_CAP, COLOUR_OFFSET_CAP)
+        if gain is None:
+            fitted.append(None)
+            continue
+        stable = ((rv - (sv * gain + offset)).abs().amax(dim=1) < 0.035) & (sw > 0.5)
+        ok = int(stable.sum().item()) >= max(need_per, int(len(sv) * COLOUR_STABLE_FRAC))
+        fitted.append((gain, offset) if ok else None)
+
     out = patch.clone()
-    out[..., :3] = (out[..., :3] + offset * float(strength)).clamp(0.0, 1.0)
+    mix = min(float(strength), 1.0)
+    for b, fit in enumerate(fitted):
+        if fit is None:
+            continue
+        gain = (1.0 + (fit[0] - 1.0) * mix).to(torch.float32)
+        offset = (fit[1] * mix).to(torch.float32)
+        out[b, ..., :3] = (out[b, ..., :3] * gain + offset).clamp(0.0, 1.0)
     return out
 
 
@@ -358,17 +590,20 @@ def stitch_back(
     mask: torch.Tensor,
     rect: Rect,
     colour_strength: float = 0.0,
+    dither: bool = False,
 ) -> torch.Tensor:
     """Blend a processed crop over ``background`` at ``rect``.
 
     Only the part of ``rect`` that lands inside the picture is written, so a
     crop that hung outside the frame loses nothing on the way back. Every
-    pixel outside the mask is copied from ``background`` verbatim.
+    pixel outside the mask is copied from ``background`` verbatim. ``dither``
+    adds GH's sub-1/255 pattern in the soft transition so uint8 saving does
+    not quantise the feather into a visible ring.
     """
     x, y, width, height = rect
     _, dst_h, dst_w, _ = background.shape
     if patch.shape[1] != height or patch.shape[2] != width:
-        patch = resize_image(patch, height, width)
+        patch = resize_image_aa(patch, height, width)
     if tuple(mask.shape[-2:]) != (height, width):
         mask = resize_mask(mask, height, width)
     if patch.shape[0] != background.shape[0]:
@@ -411,5 +646,24 @@ def stitch_back(
     base = out[:, y_start:y_end, x_start:x_end]
     if colour_strength > 0.0:
         patch_region = match_colour(patch_region, base, colour_strength)
-    out[:, y_start:y_end, x_start:x_end] = base * (1.0 - mask_region) + patch_region * mask_region
+    blended = base * (1.0 - mask_region) + patch_region * mask_region
+    if dither:
+        xs = torch.arange(x_start, x_end, dtype=torch.float64, device=out.device)
+        ys = torch.arange(y_start, y_end, dtype=torch.float64, device=out.device)
+        pattern = torch.remainder(
+            52.9829189 * torch.remainder(
+                xs[None, :] * 0.06711056 + ys[:, None] * 0.00583715, 1.0
+            ),
+            1.0,
+        ).to(blended.dtype) / 255.0
+        transition = (mask_region > 0.0) & (mask_region < 1.0)
+        channels = min(3, int(blended.shape[-1]))
+        cap = torch.maximum(base[..., :channels], patch_region[..., :channels])
+        noisy = torch.minimum(
+            blended[..., :channels] + pattern[None, :, :, None], cap
+        )
+        blended[..., :channels] = torch.where(
+            transition.expand_as(blended[..., :channels]), noisy, blended[..., :channels]
+        )
+    out[:, y_start:y_end, x_start:x_end] = blended
     return out

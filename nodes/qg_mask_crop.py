@@ -22,9 +22,10 @@ What is deliberately different from that pair:
   * A batch shares one rectangle (the union of every frame's painted area),
     otherwise every frame of a video would be framed slightly differently and
     the result would jitter.
-  * Paste-back works in pixels (expand / feather) instead of percent, and only
-    writes the part of the rectangle that lands inside the picture, so a crop
-    that hung outside the frame loses nothing on the way home.
+  * Paste-back takes expand / feather as percentages of the painted area's
+    average side, and only writes the part of the rectangle that lands inside
+    the picture, so a crop that hung outside the frame loses nothing on the way
+    home.
 
 The seam value handed to QG_CropRestore is a plain dict: ComfyUI passes
 arbitrary Python objects between nodes without serialising them.
@@ -42,16 +43,18 @@ from ._qg_tensor_helpers import as_image_batch, as_mask_batch
 from ._qg_mask_crop_helpers import (
     crop_image,
     crop_mask,
+    expand_mask_euclidean,
+    fade_mask_at_crop_edges,
+    feather_mask_softtail,
     mask_bounds,
+    percent_to_pixels,
     plan_crop,
-    resize_image,
+    resize_image_aa,
     resize_mask,
     stitch_back,
 )
 from ._qg_mask_helpers import (
-    blur_mask,
     fill_mask_holes,
-    grow_shrink_mask,
     is_unpainted_mask,
     mask_size_mismatch,
 )
@@ -202,7 +205,7 @@ class QGMaskCrop(io.ComfyNode):
         cut_mask = crop_mask(work_mask, rect)
         rect_h, rect_w = int(rect[3]), int(rect[2])
         if target != (rect_h, rect_w):
-            cropped = resize_image(cropped, target[0], target[1])
+            cropped = resize_image_aa(cropped, target[0], target[1])
             cut_mask = resize_mask(cut_mask, target[0], target[1])
 
         seam = {
@@ -231,8 +234,8 @@ class QGCropRestore(io.ComfyNode):
                 "Pastes a processed crop back where Mask Crop took it from. The crop is "
                 "resized back to the rectangle it was cut at, then blended over the "
                 "source picture through the mask, so every pixel outside the mask stays "
-                "bit-identical to the source. expand grows the mask before pasting (a "
-                "few pixels hide the seam of a repaint), feather softens that edge, and "
+                "bit-identical to the source. expand and feather are percentages of "
+                "the painted area's average side: they grow and soften the paste mask. "
                 "colour_match shifts the patch's overall colour to match the source and "
                 "remove the brightness drift an upscale-and-back leaves behind. Only the "
                 "part of the rectangle inside the picture is written; a crop that hung "
@@ -250,12 +253,12 @@ class QGCropRestore(io.ComfyNode):
                     tooltip="The crop after processing. Any size; it is resized back to the rectangle.",
                 ),
                 io.Int.Input(
-                    "expand", default=0, min=-256, max=256, step=1,
-                    tooltip="Grow the mask this many pixels before pasting; negative shrinks it. 4 to 16 hides a repaint seam.",
+                    "expand", default=5, min=0, max=100, step=1,
+                    tooltip="Grow the mask by this percentage of the painted area's average side before pasting. 4 to 8 hides a repaint seam.",
                 ),
                 io.Int.Input(
-                    "feather", default=8, min=0, max=256, step=1,
-                    tooltip="Soften the pasted edge over this many pixels. 0 gives a hard cut.",
+                    "feather", default=5, min=0, max=100, step=1,
+                    tooltip="Soften the pasted edge over this percentage of the painted area's average side. 0 gives a hard cut.",
                 ),
                 io.Float.Input(
                     "colour_match", default=0.0, min=0.0, max=1.0, step=0.05,
@@ -276,7 +279,7 @@ class QGCropRestore(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, seam, image, expand=0, feather=8, colour_match=0.0, mask=None, background=None):
+    def execute(cls, seam, image, expand=5, feather=5, colour_match=0.0, mask=None, background=None):
         seam = _seam(seam)
         height, width = seam["size"]
         rect = seam["rect"]
@@ -285,9 +288,9 @@ class QGCropRestore(io.ComfyNode):
 
         patch = _as_image(image)
         if (int(patch.shape[1]), int(patch.shape[2])) != (target_h, target_w):
-            patch = resize_image(patch, target_h, target_w)
+            patch = resize_image_aa(patch, target_h, target_w)
         if (target_h, target_w) != (rect_h, rect_w):
-            patch = resize_image(patch, rect_h, rect_w)
+            patch = resize_image_aa(patch, rect_h, rect_w)
 
         if mask is not None:
             blend = _as_mask(mask)
@@ -302,11 +305,15 @@ class QGCropRestore(io.ComfyNode):
                 blend = resize_mask(blend, rect_h, rect_w)
         raise_if_interrupted()
 
-        steps = int(expand)
-        if steps:
-            blend = grow_shrink_mask(blend, steps)
-        if feather > 0:
-            blend = blur_mask(blend, float(feather))
+        bounds = tuple(seam.get("bounds") or mask_bounds(seam["mask"])
+                       or (0, 0, rect_w, rect_h))
+        expand_px = percent_to_pixels(expand, bounds)
+        feather_px = percent_to_pixels(feather, bounds)
+        if expand_px:
+            blend = expand_mask_euclidean(blend, expand_px)
+        if feather_px:
+            blend = feather_mask_softtail(blend, float(feather_px))
+            blend = fade_mask_at_crop_edges(blend, rect, (height, width), feather_px)
         blend = blend.clamp(0.0, 1.0)
 
         if background is not None:
@@ -319,7 +326,9 @@ class QGCropRestore(io.ComfyNode):
         else:
             base = seam["image"]
 
-        result = stitch_back(base, patch, blend, rect, float(colour_match))
+        result = stitch_back(
+            base, patch, blend, rect, float(colour_match), dither=feather_px > 0
+        )
         return io.NodeOutput(result)
 
 
